@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(*)",
+      "Grep(*)",
+      "Glob(*)",
+      "WebSearch",
+      "WebFetch(*)",
+      "Write(campaigns/**)",
+      "Edit(campaigns/**)"
+    ]
+  }
+}
