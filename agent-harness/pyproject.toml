@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "marketing-os"
+version = "0.1.0"
+description = "Provider-agnostic Python harness for the Marketing OS agent pipeline."
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+# The primary provider (DeepSeek) and the OpenAI adapter both speak the
+# OpenAI-compatible chat-completions wire format, so the `openai` SDK covers both.
+openai = ["openai>=1.30"]
+anthropic = ["anthropic>=0.40"]
+playwright = ["playwright>=1.44"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+marketing-os = "marketing_os.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["marketing_os*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
