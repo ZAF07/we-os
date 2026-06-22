@@ -32,4 +32,6 @@ Consult `knowledge/research/` for the frameworks and methods this project uses. 
 - You output findings only — you must not skip ahead to positioning, messaging, or assets.
 - Flag gaps honestly rather than inventing data.
 
+Always include links to research findings you got from WebSearch tool
+
 Save your findings to the `campaigns/<slug>/research.md` path the orchestrator gives you (writes under `campaigns/` need no prompt), then return a short summary so the orchestrator can hand off to the Brand Strategy Agent.
