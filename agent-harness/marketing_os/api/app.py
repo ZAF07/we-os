@@ -1,22 +1,27 @@
-"""FastAPI service exposing the harness over HTTP.
+"""FastAPI service exposing the harness over HTTP, with human-approval resume.
 
 Endpoints:
   GET  /health
-  POST /campaigns                       -> scaffold a campaign goal from the template
-  GET  /campaigns/{slug}/gate?customer= -> Stage 0 gate report
-  GET  /campaigns/{slug}/deliverables   -> list written deliverables
-  POST /campaigns/{slug}/run            -> run the pipeline (or one stage), return results
-  GET  /campaigns/{slug}/stream?customer=&stage= -> SSE progress stream
+  POST /campaigns                         scaffold campaigns/<slug>/goal.md from template
+  GET  /campaigns/{slug}/gate?customer=    Stage-0 gate report
+  GET  /campaigns/{slug}/deliverables      list written deliverable files
+  POST /campaigns/{slug}/run               start a run (background); returns run_id
+  GET  /runs/{run_id}                       run status + result + pending approvals
+  GET  /runs/{run_id}/stream                SSE progress stream
+  POST /approvals/{approval_id}             resolve a pending human-approval gate
 
-Run with:  uvicorn marketing_os.api.app:app --reload
+Runs execute as background asyncio tasks in this process. A run that hits the
+human-approval tool registers a pending approval and awaits it; `POST
+/approvals/{id}` fulfills it and the run resumes. (Single-process; for multi-worker
+deployments back the run/approval registry with shared storage.)
 """
 
 from __future__ import annotations
 
-import json
-import queue
+import asyncio
 import shutil
-import threading
+import uuid
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Optional
 
@@ -25,11 +30,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..config import Settings, load_settings
-from ..errors import GateError, MarketingOSError
+from ..errors import MarketingOSError
 from ..governance import check_gate
-from ..types import ReviewVerdict, StageResult
 
-app = FastAPI(title="Marketing OS", version="0.1.0")
+app = FastAPI(title="Marketing OS (ADK)", version="0.2.0")
 
 
 @lru_cache(maxsize=1)
@@ -37,32 +41,26 @@ def get_settings() -> Settings:
     return load_settings()
 
 
-# ── Serialization helpers ─────────────────────────────────────────────────────
-def _verdict_dict(v: Optional[ReviewVerdict]) -> Optional[dict]:
-    if v is None:
-        return None
-    return {
-        "passed": v.passed,
-        "summary": v.summary,
-        "discrepancies": [
-            {"rubric_point": d.rubric_point, "problem": d.problem, "fix": d.fix}
-            for d in v.discrepancies
-        ],
-    }
+# ── In-process run + approval registry ────────────────────────────────────────
+@dataclass
+class RunState:
+    """Tracks one background campaign run."""
+
+    run_id: str
+    customer: str
+    slug: str
+    status: str = "running"  # running | paused | done | error
+    events: list = field(default_factory=list)
+    pending: dict = field(default_factory=dict)  # approval_id -> {"payload", "future"}
+    result: Optional[dict] = None
+    error: Optional[str] = None
+    queue: "asyncio.Queue" = field(default_factory=asyncio.Queue)
 
 
-def _stage_dict(s: StageResult) -> dict:
-    return {
-        "stage": s.stage,
-        "deliverable_path": s.deliverable_path,
-        "qa_iterations": s.qa_iterations,
-        "approved": s.approved,
-        "verdict": _verdict_dict(s.verdict),
-        "usage": {"input_tokens": s.usage.input_tokens, "output_tokens": s.usage.output_tokens},
-    }
+_RUNS: dict[str, RunState] = {}
 
 
-# ── Request models ──────────────────────────────────────────────────────────
+# ── Request models ────────────────────────────────────────────────────────────
 class CreateCampaign(BaseModel):
     customer: str
     slug: Optional[str] = None
@@ -70,7 +68,13 @@ class CreateCampaign(BaseModel):
 
 class RunCampaign(BaseModel):
     customer: str
-    stage: Optional[str] = None
+    provider: Optional[str] = None
+    fresh: bool = False  # ignore any checkpoint and start over (default: resume)
+
+
+class ApprovalDecision(BaseModel):
+    status: str  # "approved" | "rejected"
+    comment: str = ""
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -82,6 +86,7 @@ def health() -> dict:
 
 @app.post("/campaigns")
 def create_campaign(body: CreateCampaign) -> dict:
+    """Scaffold campaigns/<slug>/goal.md from the template; report the gate."""
     s = get_settings()
     slug = body.slug or body.customer
     cdir = s.campaigns_dir / slug
@@ -106,71 +111,135 @@ def create_campaign(body: CreateCampaign) -> dict:
 
 @app.get("/campaigns/{slug}/gate")
 def gate(slug: str, customer: str) -> dict:
-    s = get_settings()
-    report = check_gate(s, customer, slug)
+    """Run the Stage-0 gate and return its report."""
+    report = check_gate(get_settings(), customer, slug)
     return {"ok": report.ok, "issues": report.all_issues}
+
+
+@app.get("/campaigns/{slug}/runstate")
+def runstate(slug: str) -> dict:
+    """Inspect a campaign's saved checkpoint (which stages are already complete)."""
+    from ..runstate import completed_stages, load_checkpoint
+
+    cp = load_checkpoint(get_settings(), slug)
+    if cp is None:
+        return {"slug": slug, "checkpoint": False, "completed": []}
+    return {"slug": slug, "checkpoint": True, "completed": completed_stages(cp)}
 
 
 @app.get("/campaigns/{slug}/deliverables")
 def deliverables(slug: str) -> dict:
-    s = get_settings()
-    cdir = s.campaigns_dir / slug
+    """List the markdown deliverables written for a campaign."""
+    cdir = get_settings().campaigns_dir / slug
     if not cdir.is_dir():
-        raise HTTPException(404, f"No campaign '{slug}'")
-    files = [
-        {"name": f.name, "size_bytes": f.stat().st_size}
-        for f in sorted(cdir.glob("*.md"))
-    ]
+        raise HTTPException(404, f"no campaign '{slug}'")
+    files = [{"name": f.name, "size_bytes": f.stat().st_size} for f in sorted(cdir.glob("*.md"))]
     return {"slug": slug, "files": files}
 
 
 @app.post("/campaigns/{slug}/run")
-def run(slug: str, body: RunCampaign) -> dict:
+async def run(slug: str, body: RunCampaign) -> dict:
+    """Start a campaign run in the background; return its run_id immediately."""
     s = get_settings()
-    from ..orchestrator import MarketingDirector
+    report = check_gate(s, body.customer, slug)
+    if not report.ok:
+        raise HTTPException(409, {"message": "gate failed", "issues": report.all_issues})
 
-    try:
-        director = MarketingDirector(s, hooks=None)
-        result = director.run_campaign(body.customer, slug, only_stage=body.stage)
-    except GateError as exc:
-        raise HTTPException(409, str(exc)) from exc
-    except MarketingOSError as exc:
-        raise HTTPException(422, str(exc)) from exc
+    run_id = uuid.uuid4().hex
+    state = RunState(run_id=run_id, customer=body.customer, slug=slug)
+    _RUNS[run_id] = state
+    asyncio.create_task(_run_campaign(state, body.provider, body.fresh))
+    return {"run_id": run_id, "status": state.status}
+
+
+@app.get("/runs/{run_id}")
+def run_status(run_id: str) -> dict:
+    """Return a run's status, result, and any pending approvals."""
+    state = _RUNS.get(run_id)
+    if state is None:
+        raise HTTPException(404, "unknown run")
     return {
-        "slug": result.slug,
-        "customer": result.customer,
-        "stages": [_stage_dict(st) for st in result.stages],
-        "usage": {
-            "input_tokens": result.usage.input_tokens,
-            "output_tokens": result.usage.output_tokens,
-        },
+        "run_id": run_id,
+        "status": state.status,
+        "result": state.result,
+        "error": state.error,
+        "pending_approvals": [
+            {"approval_id": aid, "payload": rec["payload"]} for aid, rec in state.pending.items()
+        ],
     }
 
 
-@app.get("/campaigns/{slug}/stream")
-def stream(slug: str, customer: str, stage: Optional[str] = None) -> StreamingResponse:
-    s = get_settings()
-    from ..orchestrator import MarketingDirector
+@app.get("/runs/{run_id}/stream")
+async def run_stream(run_id: str) -> StreamingResponse:
+    """Stream a run's progress events as Server-Sent Events."""
+    state = _RUNS.get(run_id)
+    if state is None:
+        raise HTTPException(404, "unknown run")
 
-    q: "queue.Queue[Optional[dict]]" = queue.Queue()
+    import json
 
-    def worker() -> None:
-        director = MarketingDirector(s, hooks=None, on_event=lambda e: q.put(e))
-        try:
-            result = director.run_campaign(customer, slug, only_stage=stage)
-            q.put({"event": "campaign.done", "stages": [_stage_dict(st) for st in result.stages]})
-        except Exception as exc:  # noqa: BLE001 - report any failure to the client
-            q.put({"event": "error", "message": str(exc)})
-        finally:
-            q.put(None)
-
-    threading.Thread(target=worker, daemon=True).start()
-
-    def gen():
-        while True:
-            item = q.get()
-            if item is None:
-                break
-            yield f"data: {json.dumps(item)}\n\n"
+    async def gen():
+        # Replay buffered events, then tail the live queue.
+        for e in list(state.events):
+            yield f"data: {json.dumps(e)}\n\n"
+        while state.status in ("running", "paused"):
+            try:
+                e = await asyncio.wait_for(state.queue.get(), timeout=15.0)
+                yield f"data: {json.dumps(e)}\n\n"
+            except asyncio.TimeoutError:
+                yield ": keep-alive\n\n"
+        yield f"data: {json.dumps({'event': 'closed', 'status': state.status})}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.post("/approvals/{approval_id}")
+def resolve_approval(approval_id: str, decision: ApprovalDecision) -> dict:
+    """Resolve a pending human-approval gate, resuming the paused run."""
+    for state in _RUNS.values():
+        rec = state.pending.get(approval_id)
+        if rec is not None:
+            if not rec["future"].done():
+                rec["future"].set_result(decision.model_dump())
+            return {"approval_id": approval_id, "accepted": True}
+    raise HTTPException(404, "unknown or already-resolved approval")
+
+
+# ── Background run driver ─────────────────────────────────────────────────────
+async def _run_campaign(state: RunState, provider: Optional[str], fresh: bool = False) -> None:
+    """Execute a campaign run, wiring events and the approval gate into the registry."""
+    from ..orchestrator import MarketingDirector
+
+    def on_event(e: dict) -> None:
+        state.events.append(e)
+        state.queue.put_nowait(e)
+
+    async def approval_handler(payload: dict) -> dict:
+        """Register a pending approval and await the API resume call."""
+        approval_id = uuid.uuid4().hex
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        state.pending[approval_id] = {"payload": payload, "future": future}
+        state.status = "paused"
+        on_event({"event": "approval.pending", "approval_id": approval_id, **payload})
+        decision = await future
+        state.pending.pop(approval_id, None)
+        state.status = "running"
+        return decision
+
+    director = MarketingDirector(
+        get_settings(), provider=provider, on_event=on_event, approval_handler=approval_handler
+    )
+    try:
+        result = await director.run_campaign(state.customer, state.slug, fresh=fresh)
+        state.result = {
+            "deliverables": result.deliverables,
+            "violations": result.violations,
+            "steps": len(result.steps),
+        }
+        state.status = "done"
+    except MarketingOSError as exc:
+        state.error = str(exc)
+        state.status = "error"
+    except Exception as exc:  # noqa: BLE001 - surface any run failure to the client
+        state.error = f"{type(exc).__name__}: {exc}"
+        state.status = "error"

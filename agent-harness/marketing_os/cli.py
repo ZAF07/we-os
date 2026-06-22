@@ -1,10 +1,12 @@
 """Command-line interface.
 
-  marketing-os new-campaign <name> [--slug S] [--stage K] [--provider P] [--no-stream]
-  marketing-os check <name> [--slug S]
-  marketing-os agents
+    marketing-os new-campaign <customer> [--slug S] [--provider P] [--show]
+    marketing-os check <customer> [--slug S]
+    marketing-os agents
 
-Mirrors `/new-campaign <name>`: gate first, then the pipeline.
+`new-campaign` runs the Stage-0 gate, then the full coordinator pipeline, printing
+progress. If any agent requests human approval, the CLI prompts inline (blocking)
+and resumes the run with the decision.
 """
 
 from __future__ import annotations
@@ -13,90 +15,118 @@ import argparse
 import sys
 
 from .config import load_settings
-from .errors import GateError, MarketingOSError
+from .errors import MarketingOSError
 from .governance import check_gate
 
 
 def _print_gate(report) -> bool:
+    """Print a gate report; return True if it passed."""
     if report.ok:
-        print(f"✓ Stage 0 gate passed for customer '{report.customer}', campaign '{report.slug}'.")
+        print(f"✓ Stage 0 gate passed (customer '{report.customer}', campaign '{report.slug}').")
         return True
-    print(f"✗ Stage 0 gate FAILED for customer '{report.customer}', campaign '{report.slug}':")
+    print(f"✗ Stage 0 gate FAILED (customer '{report.customer}', campaign '{report.slug}'):")
     for issue in report.all_issues:
         print(f"    - {issue}")
     return False
 
 
+def _cli_approval_handler(payload: dict) -> dict:
+    """Blocking terminal prompt used to resolve a human-approval request."""
+    print("\n" + "=" * 60)
+    print("HUMAN APPROVAL REQUESTED")
+    print(f"  summary: {payload.get('summary', '')}")
+    if payload.get("details"):
+        print(f"  details: {payload['details']}")
+    print(f"  risk:    {payload.get('risk_level', 'medium')}")
+    answer = input("Approve? [y/N] ").strip().lower()
+    if answer == "y":
+        return {"status": "approved"}
+    comment = input("Rejection reason (optional): ").strip()
+    return {"status": "rejected", "comment": comment}
+
+
+def _on_event(e: dict) -> None:
+    """Compact progress printer for the CLI."""
+    ev = e.get("event")
+    if ev == "gate.passed":
+        print("Gate passed; starting pipeline.\n")
+    elif ev == "resume":
+        done = ", ".join(e.get("completed", [])) or "(nothing yet)"
+        print(f"Resuming — already complete: {done}. Skipping those stages.\n")
+    elif ev == "transient_retry":
+        print(f"\n⏳ transient error (attempt {e.get('attempt')}); retrying in "
+              f"{e.get('delay_s')}s and resuming where it stopped…")
+    elif ev == "step" and e.get("envelope"):
+        env = e["envelope"]
+        flag = "  ⚠" if e.get("violations") else ""
+        print(f"[{e.get('stage')}] {env.get('next_action','?')} — {env.get('thought_summary','')[:80]}{flag}")
+    elif ev == "step" and e.get("violations"):
+        print(f"[{e.get('stage')}] guardrail flags: {e['violations']}")
+    elif ev == "approval.resolved":
+        print(f"  approval -> {e.get('status')}")
+    elif ev == "campaign.done":
+        print(f"\nDone. Deliverables: {', '.join(e.get('stages', []))}")
+
+
 def _cmd_check(args) -> int:
     settings = load_settings()
-    slug = args.slug or args.name
-    report = check_gate(settings, args.name, slug)
+    report = check_gate(settings, args.name, args.slug or args.name)
     return 0 if _print_gate(report) else 1
 
 
 def _cmd_agents(args) -> int:
-    from .agents import load_all_agents
+    from .agents import load_registry
 
-    settings = load_settings()
-    for name, spec in load_all_agents(settings).items():
-        print(f"{name:24} tools=[{', '.join(spec.tools)}]")
+    reg = load_registry(load_settings())
+    for key, cfg in reg.agents.items():
+        hc = " human_check" if cfg.human_check else ""
+        print(f"{key:14} tools={cfg.tools}{hc}")
+    print(f"approval gate enabled: {reg.approval_enabled}")
     return 0
 
 
 def _cmd_new_campaign(args) -> int:
     settings = load_settings()
-    if args.provider:
-        settings.provider = args.provider
-    if args.no_stream:
-        settings.stream = False
     slug = args.slug or args.name
-
-    # Gate up front with a clear message, matching the orchestrator's stop behavior.
     report = check_gate(settings, args.name, slug)
     if not _print_gate(report):
         return 1
 
-    from .loop import StreamToStdout
     from .orchestrator import MarketingDirector
-
-    def on_event(e: dict) -> None:
-        ev = e.get("event")
-        if ev == "stage.start":
-            print(f"\n── Stage: {e['stage']} (agent: {e['agent']}) " + "─" * 20)
-        elif ev == "stage.review":
-            status = "PASS" if e["passed"] else f"{e['discrepancies']} issue(s)"
-            print(f"\n  [QA iter {e['iteration']}] {status}")
-        elif ev == "stage.save_retry":
-            print(f"\n  [save retry {e['attempt']}] asking agent to write its deliverable")
-        elif ev == "stage.done":
-            print(f"\n  ✓ wrote {e['deliverable']} (QA iterations: {e['qa_iterations']})")
 
     director = MarketingDirector(
         settings,
-        hooks=StreamToStdout() if settings.stream else None,
-        on_event=on_event,
+        provider=args.provider,
+        on_event=_on_event,
+        approval_handler=_cli_approval_handler,
+        headless=not args.show,
     )
-    result = director.run_campaign(args.name, slug, only_stage=args.stage)
-
+    result = director.run_campaign_sync(args.name, slug, fresh=args.fresh)
     print("\n" + "=" * 60)
-    print(f"Campaign '{result.slug}' complete. Stages run: {len(result.stages)}")
-    for s in result.stages:
-        print(f"  - {s.stage}: {s.deliverable_path}  (QA iters {s.qa_iterations})")
-    u = result.usage
-    print(f"Tokens — in: {u.input_tokens}, out: {u.output_tokens}")
+    print(f"Campaign '{result.slug}' complete.")
+    print(f"  stages produced : {', '.join(result.deliverables) or '(none)'}")
+    print(f"  steps captured  : {len(result.steps)}")
+    if result.violations:
+        print(f"  guardrail flags : {len(result.violations)}")
+    print(f"  deliverable files under: campaigns/{slug}/")
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="marketing-os", description="Marketing OS agent harness.")
+    """Build the argparse CLI."""
+    p = argparse.ArgumentParser(prog="marketing-os", description="ADK marketing agent harness.")
     sub = p.add_subparsers(dest="command", required=True)
 
     nc = sub.add_parser("new-campaign", help="Run the pipeline for a customer.")
-    nc.add_argument("name", help="Customer name (folder under customers/).")
-    nc.add_argument("--slug", help="Campaign slug (default: same as customer name).")
-    nc.add_argument("--stage", help="Run only this stage (e.g. research).")
-    nc.add_argument("--provider", help="Override provider (deepseek|anthropic|openai).")
-    nc.add_argument("--no-stream", action="store_true", help="Disable token streaming.")
+    nc.add_argument("name", help="Customer folder name under customers/.")
+    nc.add_argument("--slug", help="Campaign slug (default: customer name).")
+    nc.add_argument("--provider", help="Override provider (gemini|deepseek|anthropic|openai).")
+    nc.add_argument("--show", action="store_true", help="Run the browser non-headless.")
+    nc.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Ignore any saved checkpoint and start over (default: resume where it stopped).",
+    )
     nc.set_defaults(func=_cmd_new_campaign)
 
     ck = sub.add_parser("check", help="Run only the Stage 0 gate.")
@@ -104,19 +134,16 @@ def build_parser() -> argparse.ArgumentParser:
     ck.add_argument("--slug")
     ck.set_defaults(func=_cmd_check)
 
-    ag = sub.add_parser("agents", help="List the specialist agents and their tools.")
+    ag = sub.add_parser("agents", help="List agents and their tool grants.")
     ag.set_defaults(func=_cmd_agents)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    """CLI entrypoint."""
+    args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except GateError as exc:
-        print(f"\nGate error: {exc}", file=sys.stderr)
-        return 1
     except MarketingOSError as exc:
         print(f"\nError: {exc}", file=sys.stderr)
         return 1

@@ -1,15 +1,25 @@
-"""Specialist loading + execution."""
+"""Agent construction: per-agent config + the worker/formatter/evaluator builders."""
 
 from __future__ import annotations
 
-from .loader import AgentSpec, load_agent, load_agent_file, load_all_agents
-from .specialist import Specialist, compose_system
+from .builder import (
+    BuildContext,
+    EscalationGate,
+    build_approval_stage,
+    build_evaluator,
+    build_stage,
+    make_skip_if_done,
+)
+from .registry import AgentCfg, RegistryConfig, load_registry
 
 __all__ = [
-    "AgentSpec",
-    "load_agent",
-    "load_agent_file",
-    "load_all_agents",
-    "Specialist",
-    "compose_system",
+    "BuildContext",
+    "build_stage",
+    "build_evaluator",
+    "build_approval_stage",
+    "EscalationGate",
+    "make_skip_if_done",
+    "AgentCfg",
+    "RegistryConfig",
+    "load_registry",
 ]

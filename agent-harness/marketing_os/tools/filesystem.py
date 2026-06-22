@@ -1,10 +1,12 @@
 """Filesystem tools, path-scoped to the Marketing OS repo.
 
-Mirrors `.claude/settings.json`: the agent may **read** anywhere under the repo
-root (governance, templates, knowledge, customers, campaigns) but may **write**
-only under the configured write globs (`campaigns/**`). `customers/` is therefore
-read-only to agents, exactly as in the Claude Code config. Scoping is enforced
-here in the tool, never trusted to the prompt.
+Mirrors the repo's `.claude/settings.json`: the agent may **read** anywhere under
+the repo root (governance, templates, knowledge, customers, campaigns) but may
+**write** only under `campaigns/**`. `customers/` is therefore read-only to
+agents. Scoping is enforced here, never trusted to the prompt.
+
+`FilesystemTools` holds the sandbox and exposes bound methods that the agent
+builder registers as ADK FunctionTools.
 """
 
 from __future__ import annotations
@@ -13,57 +15,100 @@ import re
 from pathlib import Path
 
 from ..errors import ToolError
-from .registry import Tool
 
-_MAX_GREP_MATCHES = 200
 _MAX_READ_BYTES = 400_000
+_MAX_MATCHES = 200
 
 
-class FilesystemSandbox:
-    """Resolves and guards every path a filesystem tool touches."""
+class FilesystemTools:
+    """Path-scoped read/write/list/search tools over the repo root."""
 
     def __init__(self, root: Path, write_prefixes: list[str] | None = None) -> None:
+        """Bind the sandbox.
+
+        Args:
+            root: Repo root; all paths resolve relative to it.
+            write_prefixes: Top-level dirs writes are confined to (default ``campaigns``).
+        """
         self.root = root.resolve()
-        # Derive allowed write roots from glob-ish prefixes ("campaigns/**" -> "campaigns").
         prefixes = write_prefixes or ["campaigns"]
         self.write_roots = [self.root / p.split("/")[0] for p in prefixes]
 
     def _resolve(self, rel: str) -> Path:
+        """Resolve a repo-relative path, rejecting anything escaping the root."""
         p = (self.root / rel).resolve()
         if not p.is_relative_to(self.root):
-            raise ToolError(f"Path '{rel}' escapes the repository root.")
+            raise ToolError(f"path '{rel}' escapes the repository root")
         return p
 
-    def read(self, path: str) -> str:
-        p = self._resolve(path)
-        if not p.is_file():
-            raise ToolError(f"File not found: {path}")
-        data = p.read_bytes()[:_MAX_READ_BYTES]
-        return data.decode("utf-8", errors="replace")
+    def read_file(self, path: str) -> dict:
+        """Read a UTF-8 text file by its repo-relative path.
 
-    def write(self, path: str, content: str) -> str:
-        p = self._resolve(path)
+        Args:
+            path: Path relative to the repo root.
+
+        Returns:
+            {path, content} or {error}.
+        """
+        try:
+            p = self._resolve(path)
+            if not p.is_file():
+                return {"error": f"file not found: {path}"}
+            return {"path": path, "content": p.read_bytes()[:_MAX_READ_BYTES].decode("utf-8", "replace")}
+        except ToolError as exc:
+            return {"error": str(exc)}
+
+    def write_file(self, path: str, content: str) -> dict:
+        """Write a UTF-8 text file under the allowed write roots (campaigns/**).
+
+        Args:
+            path: Repo-relative destination (must be under campaigns/).
+            content: File contents.
+
+        Returns:
+            {path, bytes_written} or {error} if outside the write scope.
+        """
+        try:
+            p = self._resolve(path)
+        except ToolError as exc:
+            return {"error": str(exc)}
         if not any(p.is_relative_to(w) for w in self.write_roots):
             allowed = ", ".join(str(w.relative_to(self.root)) + "/" for w in self.write_roots)
-            raise ToolError(
-                f"Writes are only permitted under: {allowed}. Refused write to '{path}'."
-            )
+            return {"error": f"writes only allowed under: {allowed}"}
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
-        return f"Wrote {len(content)} chars to {path}"
+        return {"path": path, "bytes_written": len(content.encode("utf-8"))}
 
-    def glob(self, pattern: str) -> str:
-        matches = sorted(str(m.relative_to(self.root)) for m in self.root.glob(pattern))
-        if not matches:
-            return f"No files match '{pattern}'."
-        return "\n".join(matches[:_MAX_GREP_MATCHES])
+    def list_files(self, pattern: str) -> dict:
+        """List files matching a glob pattern relative to the repo root.
 
-    def grep(self, pattern: str, path: str | None = None) -> str:
+        Args:
+            pattern: e.g. ``knowledge/**/*.md``.
+
+        Returns:
+            {matches:[...]}.
+        """
+        matches = sorted(str(m.relative_to(self.root)) for m in self.root.glob(pattern) if m.is_file())
+        return {"matches": matches[:_MAX_MATCHES]}
+
+    def search_files(self, pattern: str, path: str | None = None) -> dict:
+        """Regex-search repository markdown; return file:line matches.
+
+        Args:
+            pattern: Python regex.
+            path: Optional file or directory to limit the search to.
+
+        Returns:
+            {matches:[...]} or {error}.
+        """
         try:
             rx = re.compile(pattern)
         except re.error as exc:
-            raise ToolError(f"Invalid regex: {exc}") from exc
-        base = self._resolve(path) if path else self.root
+            return {"error": f"invalid regex: {exc}"}
+        try:
+            base = self._resolve(path) if path else self.root
+        except ToolError as exc:
+            return {"error": str(exc)}
         files = [base] if base.is_file() else [f for f in base.rglob("*.md") if f.is_file()]
         out: list[str] = []
         for f in files:
@@ -71,61 +116,20 @@ class FilesystemSandbox:
                 for i, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
                     if rx.search(line):
                         out.append(f"{f.relative_to(self.root)}:{i}: {line.strip()}")
-                        if len(out) >= _MAX_GREP_MATCHES:
-                            return "\n".join(out) + "\n… (truncated)"
+                        if len(out) >= _MAX_MATCHES:
+                            return {"matches": out}
             except OSError:
                 continue
-        return "\n".join(out) if out else f"No matches for '{pattern}'."
+        return {"matches": out}
 
+    def as_tools(self) -> dict:
+        """Return capability-name -> bound method, for the per-agent allowlist.
 
-def filesystem_tools(sandbox: FilesystemSandbox, *, include_write: bool) -> dict[str, Tool]:
-    """Build the filesystem Tool objects, keyed by Claude-style capability name."""
-    read_file = Tool(
-        name="read_file",
-        description="Read a UTF-8 text file from the repository by its path relative to the repo root.",
-        parameters={
-            "type": "object",
-            "properties": {"path": {"type": "string", "description": "Path relative to repo root."}},
-            "required": ["path"],
-        },
-        fn=lambda path: sandbox.read(path),
-    )
-    glob_tool = Tool(
-        name="glob",
-        description="List files matching a glob pattern (relative to the repo root), e.g. 'knowledge/**/*.md'.",
-        parameters={
-            "type": "object",
-            "properties": {"pattern": {"type": "string"}},
-            "required": ["pattern"],
-        },
-        fn=lambda pattern: sandbox.glob(pattern),
-    )
-    grep_tool = Tool(
-        name="grep",
-        description="Search repository markdown for a regex; returns file:line matches. Optional path narrows the search.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string"},
-                "path": {"type": "string", "description": "Optional file or directory to search within."},
-            },
-            "required": ["pattern"],
-        },
-        fn=lambda pattern, path=None: sandbox.grep(pattern, path),
-    )
-    tools = {"Read": read_file, "Glob": glob_tool, "Grep": grep_tool}
-    if include_write:
-        tools["Write"] = Tool(
-            name="write_file",
-            description="Write a UTF-8 text file under campaigns/. Use this to save your deliverable.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Path under campaigns/, relative to repo root."},
-                    "content": {"type": "string"},
-                },
-                "required": ["path", "content"],
-            },
-            fn=lambda path, content: sandbox.write(path, content),
-        )
-    return tools
+        Keys match agents.yaml: read_file, write_file, list_files, search_files.
+        """
+        return {
+            "read_file": self.read_file,
+            "write_file": self.write_file,
+            "list_files": self.list_files,
+            "search_files": self.search_files,
+        }

@@ -1,137 +1,130 @@
-# Usage — Marketing OS as an API
+# Usage — Marketing OS (ADK) as an API
 
-**What** this is: an HTTP + library interface to the Marketing OS agent pipeline.
-**Why** use it as an API: so your SaaS frontend (or another service) can start
-campaigns, watch progress, and fetch deliverables without embedding the engine.
-**How** it works: every request runs the same governance the CLI does — Stage 0
-gate → mandatory pipeline → specialist agent + QA self-critique per stage.
-
----
+**What** this is: an HTTP interface to the ADK coordinator pipeline. **Why** an
+API: so a frontend/service can start campaigns, watch progress, and resolve human
+approvals without embedding the engine. **How**: every request runs the same
+governance the CLI does — Stage-0 gate → coordinator (intake → research →
+strategy/creative/media + Evaluator loop → [approval] → execution → performance).
 
 ## 1. Run the service
 
 ```bash
 cd agent-harness
-. .venv/bin/activate
-pip install -e '.[openai]'                 # DeepSeek (primary) + OpenAI adapters
-export DEEPSEEK_API_KEY=...                # primary provider key
-export DEEPSEEK_MODEL=deepseek-v4-pro      # confirm the exact id for your account
-export DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-uvicorn marketing_os.api.app:app --reload  # serves on http://127.0.0.1:8000
+uv sync --extra dev && uv run playwright install chromium
+export GOOGLE_API_KEY=...                  # primary provider (Gemini, AI Studio)
+export GOOGLE_MODEL=gemini-2.5-flash       # confirm/override the model id
+uv run uvicorn marketing_os.api.app:app --reload    # http://127.0.0.1:8000
 ```
 
-Provider is config-only: set `MARKETING_OS_PROVIDER=anthropic` (+ `ANTHROPIC_API_KEY`)
-or `openai` to swap backends with no code change.
+Gemini is native to ADK (no LiteLLM). For Vertex AI instead of an AI Studio key,
+set `GOOGLE_GENAI_USE_VERTEXAI=TRUE` + `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_LOCATION`.
+Swap providers with `MARKETING_OS_PROVIDER=deepseek` (+ `DEEPSEEK_API_KEY`) or
+`anthropic`/`openai` — no code change.
 
----
+## 2. Lifecycle
 
-## 2. The lifecycle (what → why → how)
+| Step | What | Endpoint |
+|---|---|---|
+| 1 | Scaffold `campaigns/<slug>/goal.md` from the template | `POST /campaigns` |
+| 2 | Check the Stage-0 gate (DNA + goal complete) | `GET /campaigns/{slug}/gate` |
+| 3 | Start the run (background); get a `run_id` | `POST /campaigns/{slug}/run` |
+| 4 | Watch progress | `GET /runs/{run_id}` or `GET /runs/{run_id}/stream` |
+| 5 | Resolve any human approval | `POST /approvals/{approval_id}` |
+| 6 | Fetch deliverables | `GET /campaigns/{slug}/deliverables` |
 
-| Step | What | Why | Endpoint |
-|---|---|---|---|
-| 1 | Scaffold a campaign | create `campaigns/<slug>/goal.md` from the template to fill in | `POST /campaigns` |
-| 2 | Check the gate | confirm DNA + goal are complete before spending tokens | `GET /campaigns/{slug}/gate` |
-| 3 | Run the pipeline | produce the deliverables (research → … → performance plan) | `POST /campaigns/{slug}/run` or `GET …/stream` |
-| 4 | Fetch results | read the written deliverables | `GET /campaigns/{slug}/deliverables` |
-
-Customer DNA (`customers/<name>/dna.md`) is authored once by a human and reused
-across campaigns — the API does not create it. If it's missing/incomplete the
-gate fails and `run` returns `409`.
-
----
+The Customer DNA (`customers/<name>/dna.md`) is authored once by a human and reused
+across campaigns; the API does not create it. If DNA/goal are incomplete the gate
+fails and `run` returns `409`.
 
 ## 3. Endpoints
 
-### `GET /health`
-```json
-{ "status": "ok", "provider": "deepseek", "root": "/…/we-os" }
-```
-
-### `POST /campaigns`  — scaffold a goal file
 ```bash
+# Health
+curl localhost:8000/health
+
+# Scaffold a campaign goal file (then a human fills its <…> placeholders)
 curl -X POST localhost:8000/campaigns -H 'content-type: application/json' \
   -d '{"customer":"coast-coffee","slug":"coast-spring"}'
-```
-```json
-{ "slug":"coast-spring","customer":"coast-coffee",
-  "goal_created_from_template": true,
-  "gate_ok": false, "gate_issues": ["Goal: placeholder/empty Required field: 'Timeframe'", "…"] }
-```
-**Why** `gate_ok:false` here is expected — the freshly-copied `goal.md` still has
-`<…>` placeholders. Fill them in, then re-check.
+#  → {slug, gate_ok:false, gate_issues:[...]}   # placeholders still unfilled
 
-### `GET /campaigns/{slug}/gate?customer=<name>`
-```json
-{ "ok": true, "issues": [] }
-```
-**Why**: the Stage 0 gate — DNA + goal completeness. `run` enforces this too;
-call it first to give users a precise "fix these fields" list.
+# Gate
+curl "localhost:8000/campaigns/coast-spring/gate?customer=coast-coffee"
+#  → {ok:true, issues:[]}
 
-### `POST /campaigns/{slug}/run`  — run the pipeline (blocking)
-```bash
+# Start a run (returns immediately)
 curl -X POST localhost:8000/campaigns/coast-spring/run -H 'content-type: application/json' \
-  -d '{"customer":"coast-coffee"}'            # add "stage":"research" to run one stage
-```
-```json
-{ "slug":"coast-spring","customer":"coast-coffee",
-  "stages":[
-    { "stage":"research","deliverable_path":"campaigns/coast-spring/research.md",
-      "qa_iterations":1,"approved":true,
-      "verdict":{"passed":true,"summary":"…","discrepancies":[]},
-      "usage":{"input_tokens":12000,"output_tokens":3000} }
-    /* … one per stage … */ ],
-  "usage":{"input_tokens":80000,"output_tokens":21000} }
-```
-**Errors:** `409` = gate failed (fix DNA/goal); `422` = pipeline/guardrail block
-(e.g. a stage's QA discrepancies stayed unresolved past the iteration budget).
+  -d '{"customer":"coast-coffee"}'
+#  → {run_id:"…", status:"running"}
 
-### `GET /campaigns/{slug}/stream?customer=<name>[&stage=<key>]`  — SSE progress
-**Why**: the pipeline is long-running; stream stage/QA events to a UI instead of
-blocking. Server-Sent Events, one JSON object per `data:` line:
+# Poll status (includes result when done + any pending approvals)
+curl localhost:8000/runs/<run_id>
+#  → {status:"running|paused|done|error", result:{deliverables, violations, steps},
+#     pending_approvals:[{approval_id, payload}]}
+
+# Stream progress (SSE: gate.passed, step, agent_event, approval.pending, campaign.done…)
+curl -N localhost:8000/runs/<run_id>/stream
+
+# Resolve a human approval (only when approval gate is enabled — see below)
+curl -X POST localhost:8000/approvals/<approval_id> -H 'content-type: application/json' \
+  -d '{"status":"approved"}'      # or {"status":"rejected","comment":"…"}
+
+# Deliverables written under campaigns/<slug>/
+curl localhost:8000/campaigns/coast-spring/deliverables
 ```
-data: {"event":"gate.passed","customer":"coast-coffee","slug":"coast-spring"}
-data: {"event":"stage.start","stage":"research","agent":"market-research"}
-data: {"event":"stage.review","stage":"research","passed":false,"discrepancies":2,"iteration":0}
-data: {"event":"stage.review","stage":"research","passed":true,"discrepancies":0,"iteration":1}
-data: {"event":"stage.done","stage":"research","deliverable":"campaigns/coast-spring/research.md","qa_iterations":1}
-data: {"event":"campaign.done","stages":[ … same shape as /run … ]}
-```
-Event types: `gate.start|gate.passed`, `stage.start`, `stage.save_retry`,
-`stage.review`, `stage.done`, `campaign.done`, `error`.
 
-### `GET /campaigns/{slug}/deliverables`
-```json
-{ "slug":"coast-spring","files":[{"name":"research.md","size_bytes":4210}, …] }
-```
-Fetch file contents with your own static file serving (writes land under
-`campaigns/<slug>/`), or extend the API to stream them.
+**The structured deliverables** (typed per-stage JSON) are in
+`GET /runs/{run_id}.result.deliverables` keyed by stage (`intake, research,
+strategy, creative, media, eval, execution, performance`). The markdown files are
+under `campaigns/<slug>/`.
 
----
+## 3a. Resuming runs (checkpoints)
 
-## 4. Library use (same engine, in-process)
+Every run checkpoints its state to `campaigns/<slug>/.run_state.json` after each
+stage. Runs **resume by default**: completed stages are skipped and work continues
+where it stopped — after a crash, a Ctrl-C, or a transient model error.
 
-**Why**: for tests, batch jobs, or wrapping in a different transport.
+- **Transient model errors (e.g. Gemini 503 "high demand") auto-retry in-process**
+  with exponential backoff and resume at the failed stage — no action needed.
+- **After a hard stop**, just run again — it picks up from the checkpoint:
+  - CLI: `uv run marketing-os new-campaign coast-coffee --slug coast-test` (add
+    `--fresh` to ignore the checkpoint and start over).
+  - API: `POST /campaigns/{slug}/run` again (resume is automatic; pass
+    `{"fresh": true}` to start over).
+- Inspect progress: `GET /campaigns/{slug}/runstate` → `{checkpoint, completed:[…stages]}`.
+
+The Evaluator refine loop is treated as one unit: it only skips on resume if a
+**passing** verdict already exists; a present-but-failed verdict keeps iterating.
+
+## 4. Human approval
+
+Off by default (autonomous runs). To require sign-off, set `approval.enabled: true`
+in `marketing_os/agents/agents.yaml` (and/or `human_check: true` on specific
+agents). When enabled, the run goes `paused`, surfaces a `pending_approvals` entry
+(and an `approval.pending` SSE event with an `approval_id`), and waits until you
+`POST /approvals/{approval_id}` — then it resumes in place. (Single-process: the
+run lives in the server process; back the run/approval registry with shared storage
+for multi-worker deployments.)
+
+## 5. Library use
+
 ```python
+import asyncio
 from marketing_os import load_settings, MarketingDirector
 
-director = MarketingDirector(load_settings())          # provider from env
-result = director.run_campaign("coast-coffee", "coast-spring")   # or only_stage="research"
-for s in result.stages:
-    print(s.stage, s.deliverable_path, "QA:", s.qa_iterations, "ok:", s.approved)
+async def main():
+    director = MarketingDirector(load_settings())          # provider/keys from env
+    result = await director.run_campaign("coast-coffee", "coast-spring")
+    print(result.deliverables.keys(), len(result.steps), "steps")
+
+asyncio.run(main())
 ```
-Inject behavior via constructor kwargs (see `TODO.md` for the seams):
-`provider=…`, `approval=…`, `hooks=…`, `loop_factory=…`, `web_backend=…`,
-`on_event=…`.
 
----
+Inject behavior via constructor kwargs: `provider=`, `on_event=` (progress sink),
+`approval_handler=` (return the decision dict; may block or be async), `headless=`.
 
-## 5. Notes for production
+## 6. Notes
 
-- **Concurrency**: `run` is synchronous and CPU-light but network-bound on the
-  LLM; put it behind a task queue for many campaigns, or use `/stream`.
-- **Auth/multitenancy**: not included — front the API with your own auth and map
-  tenants to `customer`/`slug`.
-- **Cost**: each stage = one specialist loop + up to `MARKETING_OS_MAX_QA`
-  reviewer+revision passes. `usage` is returned per stage and per campaign.
-- **Idempotence**: re-running a stage overwrites its deliverable; a stage refuses
-  to start until its prerequisite deliverable exists (`422`).
+- **Cost/latency**: each stage is a worker + formatter LLM call; the strategy
+  package may run the Evaluator loop up to `MARKETING_OS_MAX_EVAL` times.
+- **Web browsing** is real (Playwright/Chromium) and runs headless server-side.
+- **Auth/multitenancy/rate-limiting** are out of scope — front the API with your own.

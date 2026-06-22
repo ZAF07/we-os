@@ -1,26 +1,27 @@
-"""Governance: rules preamble, Stage 0 gate, the pipeline, and the QA reviewer."""
+"""Governance: the Stage-0 gate and the rules preamble.
+
+The pipeline graph itself now lives in `marketing_os.agents` (ADK agents) and is
+assembled in `marketing_os.pipeline`; the editable review rubrics live in
+`marketing_os.guardrails`.
+"""
 
 from __future__ import annotations
 
-from .gate import GateReport, check_gate, enforce_gate, required_fields, validate_document
-from .pipeline import DIRECTOR, PIPELINE, PIPELINE_BY_KEY, Stage, deliverable_path, prerequisite_met
-from .review import Reviewer, load_rubric
+from .gate import (
+    GateReport,
+    check_gate,
+    enforce_gate,
+    required_fields,
+    validate_document,
+)
 from .rules import load_governance, load_operating_principles
 
 __all__ = [
-    "load_governance",
-    "load_operating_principles",
     "GateReport",
     "check_gate",
     "enforce_gate",
     "required_fields",
     "validate_document",
-    "PIPELINE",
-    "PIPELINE_BY_KEY",
-    "Stage",
-    "DIRECTOR",
-    "deliverable_path",
-    "prerequisite_met",
-    "Reviewer",
-    "load_rubric",
+    "load_governance",
+    "load_operating_principles",
 ]

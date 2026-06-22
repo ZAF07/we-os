@@ -1,256 +1,130 @@
-# TODO — Completing the Harness
+# TODO — Completing & Extending the ADK Harness
 
-What ships working today, and what *you* fill in to make it production-complete.
-Each item is **what / why / how**.
+What ships working, and where to extend. Each item is **what / why / how**.
 
----
-
-## 0. Status at a glance
+## 0. Status
 
 | Area | State | You do |
 |---|---|---|
-| Provider adapters (DeepSeek/Claude/OpenAI) | working behind one interface | confirm DeepSeek model/URL; add keys |
-| Agent loop | `DefaultToolUseLoop` works | extend via seams/hooks as needed |
-| Tools — filesystem | working, scoped | nothing required |
-| Tools — web search | **stub only** | implement Playwright `search`/`fetch` |
-| Gate · pipeline · specialists · QA reviewer · orchestrator | working | nothing required |
-| Guardrail rubrics (`guardrails/*.md`) | starter rubrics written | sharpen with your professional bar |
-| Approval gate | auto-approve-if-QA-passes | plug human/SaaS sign-off if wanted |
+| ADK runtime, coordinator, 9 stages | working (30 tests green) | — |
+| Provider: Gemini native (primary) + DeepSeek/Claude/OpenAI via LiteLLM | working | confirm Gemini model id; set key |
+| Tools: filesystem (scoped) | working | — |
+| Tools: **real Playwright browser** | working (tested on local pages) | — |
+| Two-tier guardrails + callbacks | working | tune `guardrails/*.md`; extend `hard.py` |
+| File-backed cross-task memory | working | optional: swap SQLite LIKE for FTS5/vectors |
+| Per-agent tool/human-check config | working | edit `agents.yaml` |
+| Human approval (CLI + API resume) | working | enable in `agents.yaml` |
+| Live end-to-end LLM run | needs a key | run with `DEEPSEEK_API_KEY` |
 
-The offline test suite (`pytest`) is green and proves the wiring without a key.
+## 1. Run live
+- **What**: confirm the Gemini model id and set the key.
+- **Why**: `config.py` ships `gemini-2.5-flash` as a placeholder; a wrong id 4xxs.
+- **How**: `export GOOGLE_API_KEY=… GOOGLE_MODEL=gemini-<your-model>`, then
+  `uv run marketing-os new-campaign coast-coffee --slug coast-test`. (For Vertex:
+  `GOOGLE_GENAI_USE_VERTEXAI=TRUE` + project/location instead of the key.) Wiring is
+  verified up to the model boundary; only the key/model is missing.
 
----
+## 2. Configure agents (`marketing_os/agents/agents.yaml`)
+- **What**: per-agent `tools` allowlist, `confirm` (per-tool human confirmation),
+  `human_check` (attach the approval tool), and `approval.enabled`.
+- **Why**: this is the single, declarative place to control capability + where
+  humans gate — no code change.
+- **How**: add/remove capability names (vocabulary listed at the top of the file);
+  set `confirm: [write_file]` to gate a tool; set `human_check: true` or
+  `approval.enabled: true` to require sign-off.
 
-## 1. Must-do to run live
+## 3. Tune guardrails
+- **Editable rubrics** (`guardrails/*.md`, repo root): the Evaluator's quality bar.
+  Edit freely — concrete, checkable bullets work best.
+- **Non-editable floor** (`marketing_os/guardrails/hard.py`): the governance floor
+  in code. Extend `HARD_GUARDRAILS` (injected into every prompt) and `scan_output`
+  (cheap structural checks) — keep scans high-precision to avoid false positives.
 
-### 1a. Confirm the DeepSeek connection
-- **What**: the exact model id and base URL for DeepSeek v4 pro.
-- **Why**: `config.py` ships placeholders (`deepseek-v4-pro`,
-  `https://api.deepseek.com/v1`); a wrong value 404s on first call.
-- **How**: set env `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_API_KEY`.
-  If DeepSeek's tool-call wire format ever diverges from OpenAI's, override the
-  translation methods in `providers/deepseek_provider.py` (it currently inherits
-  `_chat_base.ChatCompletionsProvider` unchanged).
+## 4. Extend the agent loop (seams)
+- **Callbacks** (`guardrails/callbacks.py`): `after_model_callback` captures the
+  DecisionEnvelope + scans output; `before_tool_callback` logs calls. Add an
+  `after_tool_callback` or `before_model_callback` here for redaction, budgets, or
+  blocking — they're wired the same way (return a value to short-circuit).
+- **Evaluator loop**: `MARKETING_OS_MAX_EVAL` bounds iterations; `EscalationGate`
+  in `builder.py` decides pass/continue from `state['eval']`. To auto-revise a
+  different artifact, change what `refine_loop` wraps in `pipeline.py`.
+- **New stage**: add a prompt md + a schema in `schemas.STAGE_SCHEMAS` + an entry in
+  `agents.yaml`, then insert `build_stage(ctx, "<key>")` into `build_coordinator`.
 
-### 1b. Implement web search (the Playwright stub)
-- **What**: `marketing_os/tools/websearch_playwright.py` — `_new_page()`,
-  `search(query, max_results)`, `fetch(url)` currently raise `NotImplementedError`.
-- **Why**: `market-research` and `performance-marketing` declare `WebSearch`/
-  `WebFetch`; without a backend they get the honest "search unavailable" stub
-  (`NoopWebSearch`) and reason from DNA only.
-- **How**:
-  1. `pip install -e '.[playwright]' && playwright install chromium`
-  2. Fill the three methods using `playwright.sync_api` (the file has step-by-step
-     TODOs). Keep them **synchronous** — the loop dispatches tools synchronously.
-  3. Wire it in: pass an instance as `web_backend=` to `MarketingDirector`, e.g.
-     ```python
-     from marketing_os.tools.websearch_playwright import PlaywrightWebSearch
-     MarketingDirector(settings, web_backend=PlaywrightWebSearch())
-     ```
-  The registry only hands web tools to agents that declared them, so no other
-  change is needed.
+## 5. Memory backend
+- **What**: cross-task recall is SQLite keyword search (`memory/service.py`).
+- **Why/How**: for semantic recall, implement the same `BaseMemoryService` interface
+  over FTS5 or a vector store and pass it to the `Runner` in `orchestrator.py` —
+  callers and tools (`recall`) don't change.
 
----
-
-## 2. The loop seams (`marketing_os/loop/base.py`)
-
-**What**: `AgentLoop` is the scaffold. `DefaultToolUseLoop` (`loop/default.py`)
-is a complete reference implementation. The seams are overridable methods with
-sensible defaults — override only what you need; the loop body stays intact.
-
-**Why**: real agents need behavior the bare loop omits — context trimming,
-spend caps, custom stop signals, retries, parallel tools. Putting these on seams
-means you change behavior without forking the loop.
-
-**How**: subclass `AgentLoop` (or `DefaultToolUseLoop`) and override a seam, then
-pass it via `loop_factory=lambda: MyLoop(hooks)` to `MarketingDirector`.
-
-| Seam | Default | Fill in to… |
-|---|---|---|
-| `prepare_messages(ctx)` | returns full history | inject reminders, trim/compact long context, add a scratchpad |
-| `model_turn(ctx)` | one `provider.complete()` + usage accounting | wrap with custom logging/retry/fallback |
-| `execute_tool(ctx, call)` | dispatch via registry | approval gates, sandboxing, parallel/async tool runs, mocking |
-| `should_continue(ctx, result)` | continue iff `stop_reason=="tool_use"` and steps < max | token-budget caps, max-tool-call limits, custom stop conditions |
-| `on_finish(ctx, result)` | notify hooks | persistence, metrics flush, end-of-run summary |
-
-Minimal example — cap total output tokens:
-```python
-from marketing_os.loop import DefaultToolUseLoop
-
-class BudgetedLoop(DefaultToolUseLoop):
-    def should_continue(self, ctx, result):
-        if ctx.usage.output_tokens > 50_000:
-            return False
-        return super().should_continue(ctx, result)
-```
+## 6. Known deprecation (ADK 2.3)
+- `SequentialAgent` / `LoopAgent` emit a DeprecationWarning ("use Workflow"). They
+  still function. When you migrate, the change is localized to `pipeline.py` and
+  `agents/builder.py` (stage = worker+formatter); the rest is unaffected.
 
 ---
 
-## 3. The hooks (`marketing_os/loop/hooks.py`)
+## What each component is, why it exists, how it completes the harness
 
-**What**: `LoopHooks` is the cross-cutting observer surface; `NoopHooks` is the
-default (does nothing); `StreamToStdout` is a ready example.
-
-**Why**: streaming, logging, tracing, budget metering, and **human-in-the-loop
-tool approval** are concerns that wrap the loop rather than change its logic.
-
-**How**: subclass `NoopHooks`, override the events you care about, pass as
-`hooks=` to `MarketingDirector` (forwarded into the loop).
-
-| Hook | Fires | Use for |
-|---|---|---|
-| `on_text(delta)` | each streamed text chunk | live UI output |
-| `before_step(ctx)` | start of each loop step | progress, step metering |
-| `on_assistant_message(ctx, result)` | after each model turn | logging, token accounting |
-| `before_tool_call(ctx, call)` | before a tool runs | **approval gate**, audit |
-| `after_tool_call(ctx, call, result)` | after a tool runs | logging, redaction |
-| `on_finish(ctx, result)` | loop end | metrics flush |
-
-Human approval example:
-```python
-from marketing_os.loop import NoopHooks
-class ApproveWrites(NoopHooks):
-    def before_tool_call(self, ctx, call):
-        if call.name == "write_file":
-            wait_for_human_ok(call.arguments["path"])   # block on your channel
-```
-
----
-
-## 4. The guardrails (`guardrails/*.md`) — the QA bar
-
-**What**: human-written rubrics the QA reviewer scores each deliverable against
-(`shared.md` + one per stage).
-
-**Why**: this is *your* professional standard as a marketer/creative director.
-The agent cross-references its output against these and iterates to fix
-discrepancies before a stage advances. The sharper and more concrete the rubric,
-the better the output and the fewer wasted iterations.
-
-**How**: edit the markdown — no code change. Use concrete, checkable bullets
-("names actual competitors and how they position"), not vibes ("good research").
-The reviewer can only enforce what is stated. To change how many fix-up rounds it
-gets, set `MARKETING_OS_MAX_QA` (default 3).
-
----
-
-## 5. The approval gate (`MarketingDirector(approval=…)`)
-
-**What**: `approval: (stage_key, deliverable_path, ReviewVerdict) -> bool` decides
-whether a stage may advance. Default: advance iff QA passed; otherwise the stage
-is blocked (`GuardrailError`).
-
-**Why**: client work often needs explicit human sign-off, or a "accept with noted
-issues" policy, beyond the automated QA pass.
-
-**How**: pass a callback. Example — require human sign-off even on a QA pass:
-```python
-def approve(stage, path, verdict):
-    return verdict.passed and human_signs_off(stage, path)
-MarketingDirector(settings, approval=approve)
-```
-
----
-
-## 6. Optional / hardening
-
-- **Add a provider**: write one adapter (subclass `Provider` or
-  `ChatCompletionsProvider`) and `register("name", importer)` in
-  `providers/__init__.py`. Nothing else changes.
-- **Deliverable contents over HTTP**: `GET /deliverables` lists files; add an
-  endpoint to return file bodies if your UI needs them.
-- **Auth / multitenancy / rate limiting**: front the FastAPI app (out of scope here).
-- **Persistence/telemetry**: emit from `on_event` (orchestrator) and `on_finish`
-  (loop) into your store.
-
----
-
-## 7. What each component is, why it exists, how it completes the harness
-
-| Component | What | Why it's needed | How it completes the whole |
+| Component | What | Why | Completes |
 |---|---|---|---|
-| `config.py` | env-driven settings + repo-path resolver | one switch for provider/model/limits; finds the `.claude/` governance | every component reads paths/limits from here — single control point |
-| `types.py` | normalized `Message`/`ToolCall`/`CompletionResult`/`ReviewVerdict`… | a vendor-neutral vocabulary | lets the loop, agents, and orchestrator stay provider-agnostic |
-| `providers/` | adapter pattern over DeepSeek/Claude/OpenAI | swap LLM backends without touching logic | turns "an LLM call" into a uniform `complete()` the loop calls |
-| `loop/` | the agent loop scaffold + working default | the actual think→act→observe cycle, extensible | drives every specialist turn; the seam you grow into |
-| `tools/` | scoped filesystem + pluggable web + registry | give agents safe, real capabilities; enforce write-scope in code | the "act" half of the loop; gates what agents can do |
-| `agents/` | load `.claude/agents/*.md` → `Specialist` | reuse the repo's prompts as the source of truth | each pipeline stage is a Specialist = prompt + tools + loop |
-| `governance/rules.py` | concatenate `.claude/rules/*.md` | the non-negotiable principles | prepended to every agent's system prompt |
-| `governance/gate.py` | Stage 0 DNA + goal validation | no work on incomplete inputs (garbage-in guard) | the blocking entry condition for the whole pipeline |
-| `governance/pipeline.py` | ordered stages + deliverable gating | enforce "never skip / never bypass upstream" | the spine the orchestrator walks |
-| `governance/review.py` | LLM-as-judge vs `guardrails/*.md` | enforce the professional bar; self-correct | the QA loop that gates each stage's exit |
-| `orchestrator.py` | `MarketingDirector` ties it together | runs gate → pipeline → specialist + QA + approval | the entrypoint the CLI/API both call |
-| `cli.py` / `api/app.py` | CLI + FastAPI surfaces | human + machine access | how requests enter the system |
-| `guardrails/*.md` | human QA rubrics | encode your standards as data | what `review.py` checks against |
+| `config.py` | env settings + paths + provider resolution | one control point | every module reads it |
+| `model.py` | build `LiteLlm` from config | provider-agnostic | the model all agents share |
+| `schemas.py` | DecisionEnvelope + per-stage deliverables | typed I/O + the per-step trace | what formatters emit, what callbacks capture |
+| `agents/builder.py` | worker(+tools) / formatter(+schema) / evaluator / gate | ADK's tools-vs-schema split | the agents the coordinator runs |
+| `agents/agents.yaml` + `registry.py` | per-agent capability + human-check policy | configurable, not hard-coded | enforces tool access |
+| `tools/browser.py` | real Playwright session | actual web browsing | the "act on the web" capability |
+| `tools/filesystem.py` | scoped read/write | safe file I/O | deliverable persistence |
+| `tools/approval.py` | long-running approval tool | human-in-the-loop | the pause/resume gate |
+| `guardrails/hard.py` | non-editable floor | governance that ops can't soften | self-check + scan |
+| `guardrails/callbacks.py` | ADK callbacks | live enforcement + capture | guardrails actually fire |
+| `guardrails/review.py` | editable rubric loader | professional bar as data | the Evaluator's criteria |
+| `memory/service.py` | SQLite MemoryService | cross-task recall | future tasks reuse past work |
+| `governance/gate.py` | Stage-0 DNA/goal gate | no work on bad inputs | the blocking entry condition |
+| `pipeline.py` | coordinator graph | the 9-stage spine | what the Runner runs |
+| `orchestrator.py` | gate→run→approve→persist | ties it together | the entrypoint |
+| `cli.py` / `api/app.py` | the two surfaces | human + machine access | how requests enter |
 
----
-
-## 8. Visual flow — request → campaign → loops → tools → guardrails
+## Visual flow — request → campaign → loops → tools → guardrails
 
 ```
-  CLI: marketing-os new-campaign <customer>          API: POST /campaigns/{slug}/run
-                       │                                         │
-                       └──────────────┬──────────────────────────┘
-                                      ▼
-                         ┌───────────────────────────┐
-                         │  MarketingDirector          │   (orchestrator.py)
-                         └───────────────────────────┘
-                                      │
-                                      ▼
-                    ┌─────────────────────────────────────┐
-                    │ STAGE 0 GATE  (governance/gate.py)    │
-                    │  • customers/<name>/dna.md complete?  │
-                    │  • campaigns/<slug>/goal.md complete? │
-                    └─────────────────────────────────────┘
-                          fail → 409 / stop  │ pass
-                                              ▼
-        ┌────────────────────────── PIPELINE (pipeline.py) ──────────────────────────┐
-        │  research → brand-strategy → campaign-strategy → creative-brief →           │
-        │  asset-prompts → performance-plan        (deliverable file = gate to next)  │
-        └─────────────────────────────────────────────────────────────────────────-─┘
-                                              │  for each stage:
-                                              ▼
-                         ┌───────────────────────────────────────┐
-                         │ Specialist  (agents/specialist.py)      │
-                         │ system = rules + Customer DNA + agent   │
-                         │          body (.claude/agents/*.md)     │
-                         └───────────────────────────────────────┘
-                                              │ start(task)
-                                              ▼
-        ┌──────────────────── AGENT LOOP  (loop/default.py) ─────────────────────┐
-        │   ┌──────────────┐  tool_use   ┌───────────────────────────┐           │
-        │   │ provider     │────────────▶│ execute_tool (registry)    │           │
-        │   │ .complete()  │             │  read_file / write_file /  │           │
-        │   │  (DeepSeek/  │◀────────────│  glob / grep / web_search  │ ◀ HOOKS:  │
-        │   │  Claude/…)   │ tool_result └───────────────────────────┘  before/  │
-        │   └──────────────┘                                            after_*   │
-        │          │ end_turn (deliverable written under campaigns/<slug>/)       │
-        └──────────┼──────────────────────────────────────────────────────────-──┘
-                   ▼
-        ┌──────────────────── QA GUARDRAIL LOOP  (review.py) ────────────────────┐
-        │  reviewer scores deliverable vs guardrails/<stage>.md + shared.md +     │
-        │  operating-principles  →  ReviewVerdict{passed, discrepancies[]}        │
-        │                                                                         │
-        │   passed? ── no, and iters < MAX_QA ──▶ specialist.resume(fixes) ──┐    │
-        │     │                                                              │    │
-        │     │◀───────────────────── re-review ─────────────────────────---┘    │
-        │     yes (or budget exhausted)                                           │
-        └─────────────────────────────────────────────────────────────────-─────┘
-                   ▼
-        ┌─────────────────────────────────────────┐
-        │ approval(stage, path, verdict)            │  default: advance iff passed
-        │  not approved → GuardrailError (422/stop) │  (override for human sign-off)
-        └─────────────────────────────────────────┘
-                   │ approved → next stage … until pipeline complete
-                   ▼
-        deliverables in campaigns/<slug>/*.md   +   StageResult/CampaignResult
-        (events streamed throughout via on_event → SSE / CLI prints)
+ CLI new-campaign <customer>            API POST /campaigns/{slug}/run
+              │                                      │
+              └──────────────────┬───────────────────┘
+                                 ▼
+                    MarketingDirector (orchestrator.py)
+                                 │
+                                 ▼
+                 STAGE 0 GATE (governance/gate.py)
+            DNA complete? goal complete?  ──fail──▶ 409 / stop
+                                 │ pass
+                                 ▼
+        seed session.state: overall_goal, dna, goal, slug   (shared with all agents)
+                                 ▼
+            ADK Runner  →  marketing_coordinator (SequentialAgent)
+                                 │
+   ┌─────────────────────────────┼───────────────────────────────────────────┐
+   │ each stage = SequentialAgent[ worker , formatter ]                        │
+   │                                                                           │
+   │  worker (LlmAgent + tools)        formatter (LlmAgent + output_schema)    │
+   │   ├ thinks in DecisionEnvelope     └ emits strict per-stage Pydantic JSON │
+   │   ├ calls tools: read/write_file, open_page/click_link/tabs (Playwright), │
+   │   │              recall/remember/load_memory                              │
+   │   └ callbacks: after_model → capture envelope + scan vs HARD floor;       │
+   │               before_tool → log (allowlist already enforced by build)     │
+   └─────────────────────────────┬───────────────────────────────────────────┘
+   intake → research →            ▼
+        refine_loop (LoopAgent): strategy → creative → media → Evaluator → gate
+              Evaluator scores vs editable rubric + hard floor → EvalReport
+              gate: passed? ──no──▶ loop again (≤ MAX_EVAL)   ──yes──▶ escalate, exit
+                                 ▼
+        [approval_gate]  request_human_approval → run PAUSES
+              CLI prompt  /  API POST /approvals/{id}  → resume          (if enabled)
+                                 ▼
+            execution → performance   (write asset + monitoring deliverables)
+                                 ▼
+        session persisted to FileBackedMemoryService (future-task recall)
+                                 ▼
+        result: typed deliverables + step trace + violations
+        (progress streamed throughout via on_event → CLI / SSE)
 ```
-
-**Reading the flow**: a request hits the Director; the **gate** blocks bad inputs;
-the **pipeline** walks stages in mandatory order; each stage runs a **specialist**
-inside the **agent loop** (think → tool use → observe, with hooks wrapping tool
-calls); the deliverable then passes the **QA guardrail loop**, iterating against
-your rubrics; an **approval** decision gates advancement. The seams you fill
-(§2–§5) and the web tool (§1b) are the points marked HOOKS / execute_tool /
-review / approval above.

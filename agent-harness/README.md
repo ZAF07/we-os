@@ -1,121 +1,134 @@
-# Marketing OS — Agent Harness
+# Marketing OS — ADK Agent Harness
 
-A provider-agnostic Python harness that runs the Marketing OS decision pipeline
-over **direct LLM API access**. It reproduces the governance encoded in the
-repo's `.claude/` configuration — the Customer DNA gate, the mandatory decision
-pipeline, the five specialist agents, and a per-stage self-critique loop — as a
-library, a CLI, and an HTTP API you can build a SaaS on.
+A coordinator-led, multi-agent marketing system built on **Google ADK**. One
+coordinator runs a 9-stage specialist pipeline; agents have real tools (file I/O
+and a **real Playwright web browser**), per-agent-configurable tool access and
+human checks, a two-tier guardrail system, persistent cross-task memory, and
+strict per-stage typed deliverables. Driven from a CLI and a FastAPI service.
 
-It reads its prompts and rules from the repo at runtime (single source of truth):
-`.claude/agents/*.md` are the specialist system prompts, `.claude/rules/*.md` are
-the governance preamble, `templates/*.md` define the gate, `guardrails/*.md` are
-the QA rubrics, and `knowledge/**` is what the agents cite. Editing that markdown
-changes behavior with no code change. The harness writes only under
-`campaigns/<slug>/`, exactly like the Claude Code config.
+```
+User request
+ → Intake
+ → refine loop(                                            ← iterates until the Evaluator passes
+      Research → Brand strategy → Campaign strategy →
+      Creative brief → Asset prompts → Performance plan → Evaluator → gate )
+ → [Human approval]      (optional; off by default)
+ → Execution   → Performance monitoring
+```
 
-## Install
+The six stages inside the refine loop are the canonical `.claude` pipeline, in
+order (research first), writing `research.md`, `brand-strategy.md`,
+`campaign-strategy.md`, `creative-brief.md`, `asset-prompts.md`,
+`performance-plan.md`. The loop re-runs the whole pipeline until the Evaluator
+passes, so each stage can incorporate the Evaluator's feedback.
+
+**Google Gemini is the primary model** (native to ADK); DeepSeek/Claude/OpenAI
+are a config switch (via ADK's LiteLLM wrapper). Governance (the Customer DNA gate and the
+`.claude/rules/*.md` preamble) and the editable `guardrails/*.md` rubrics are
+reused from the repo unchanged; deliverables are written only under
+`campaigns/<slug>/`.
+
+## Install (uv)
 
 ```bash
 cd agent-harness
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e .                # core: pydantic, pyyaml, httpx, fastapi, uvicorn
-pip install -e '.[openai]'      # DeepSeek (primary) + OpenAI adapters
-pip install -e '.[anthropic]'   # Claude adapter
-pip install -e '.[playwright]'  # to implement the Playwright web-search stub
-pip install -e '.[dev]'         # pytest
+uv sync --extra dev            # creates .venv, installs google-adk, litellm, playwright, fastapi…
+uv run playwright install chromium
 ```
 
 ## Configure (environment)
 
-The active provider and its connection details are pure config:
-
 | Var | Default | Notes |
 |---|---|---|
-| `MARKETING_OS_PROVIDER` | `deepseek` | `deepseek` \| `anthropic` \| `openai` |
-| `MARKETING_OS_ROOT` | auto-discovered | repo dir containing `.claude/` |
-| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL` | — / `deepseek-v4-pro` / `https://api.deepseek.com/v1` | **CONFIRM** the model id + base URL for your account |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `claude-opus-4-8` | Claude adapter |
-| `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | — / *(required)* / — | OpenAI adapter |
-| `MARKETING_OS_MAX_STEPS` | `20` | tool-use steps per agent |
-| `MARKETING_OS_MAX_QA` | `3` | self-critique iterations per stage |
-| `MARKETING_OS_STREAM` | `1` | token streaming |
-
-> The DeepSeek model id and base URL are **placeholders to confirm** — set the
-> env vars to the exact values for your account. Nothing about the endpoint is
-> hard-coded.
+| `MARKETING_OS_PROVIDER` | `gemini` | `gemini` \| `deepseek` \| `anthropic` \| `openai` |
+| `GOOGLE_API_KEY` / `GOOGLE_MODEL` | — / `gemini-2.5-flash` | **Primary.** AI Studio key; native to ADK. **Confirm/override the model id.** For Vertex instead, set `GOOGLE_GENAI_USE_VERTEXAI=TRUE` + `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_LOCATION` (no API key). |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` | — / `deepseek/deepseek-chat` | DeepSeek via LiteLLM |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `anthropic/claude-opus-4-8` | Claude via LiteLLM |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `openai/gpt-4o` | OpenAI via LiteLLM |
+| `MARKETING_OS_ROOT` | auto | Repo dir containing `.claude/` |
+| `MARKETING_OS_MAX_EVAL` | `3` | Evaluator refine-loop iterations |
+| `MARKETING_OS_MEMORY_DB` | `<root>/.marketing_os/memory.sqlite3` | Cross-task memory store |
 
 ## CLI
 
 ```bash
-marketing-os agents                 # list specialists + their tool grants
-marketing-os check <customer>       # run only the Stage 0 gate
-marketing-os new-campaign <customer> [--slug S] [--stage research] [--provider anthropic] [--no-stream]
+uv run marketing-os agents                 # list agents + their tool grants
+uv run marketing-os check <customer>        # Stage-0 gate only
+uv run marketing-os new-campaign <customer> [--slug S] [--provider P] [--show]
 ```
 
-`new-campaign` runs the gate, then the pipeline (research → brand-strategy →
-campaign-strategy → creative-brief → asset-prompts → performance-plan), printing
-each stage and its QA iterations, writing deliverables under `campaigns/<slug>/`.
+`new-campaign` runs the gate then the full pipeline, printing each step's decision
+envelope and any guardrail flags. If an agent requests human approval, the CLI
+prompts inline and resumes.
 
-## HTTP API
+**Runs are resumable.** State is checkpointed to `campaigns/<slug>/.run_state.json`
+after each stage; re-running resumes where it stopped (transient model errors like
+a Gemini 503 auto-retry and resume in-process). Use `--fresh` to start over.
+
+## API
 
 ```bash
-uvicorn marketing_os.api.app:app --reload
+uv run uvicorn marketing_os.api.app:app --reload
 ```
 
-- `POST /campaigns` `{customer, slug?}` — scaffold `goal.md` from the template
-- `GET  /campaigns/{slug}/gate?customer=` — Stage 0 report
-- `POST /campaigns/{slug}/run` `{customer, stage?}` — run the pipeline/one stage
-- `GET  /campaigns/{slug}/deliverables` — list written deliverables
-- `GET  /campaigns/{slug}/stream?customer=&stage=` — SSE progress
+See `USAGE.md` for the full endpoint guide (campaign scaffold, gate, background
+run, SSE progress, and the `POST /approvals/{id}` resume).
 
-## Library
-
-```python
-from marketing_os import load_settings, MarketingDirector
-
-director = MarketingDirector(load_settings())
-result = director.run_campaign("coast-coffee")
-for s in result.stages:
-    print(s.stage, s.deliverable_path, "QA:", s.qa_iterations)
-```
-
-## Architecture (extension points)
+## Architecture
 
 ```
-providers/   adapter pattern — DeepSeek (primary), Anthropic, OpenAI behind one
-             Provider interface. Add a backend: one adapter + register().
-loop/        agent-loop SCAFFOLD — AgentLoop ABC with `# SEAM (fill in)` hooks +
-             a working DefaultToolUseLoop. Subclass to add budget caps, planning,
-             human-in-the-loop approval, parallel tools, etc.
-tools/       filesystem (scoped: write only campaigns/**), pluggable web search.
-             websearch_playwright.py is a STUB to fill in for browser search.
-agents/      loads .claude/agents/*.md -> AgentSpec; Specialist runs one agent.
-governance/  rules preamble, Stage 0 gate, the pipeline, and the QA reviewer.
-orchestrator MarketingDirector: gate -> pipeline -> specialist + QA + approval.
+marketing_os/
+  config.py        settings, provider/model resolution, paths, memory + loop limits
+  model.py         build the ADK model (LiteLlm) from config — provider switch
+  schemas.py       DecisionEnvelope (per-step) + strict per-stage deliverable schemas
+  agents/
+    prompts/*.md   role instruction bodies (intake … performance)
+    agents.yaml    PER-AGENT tools + confirm + human_check; approval-gate switch
+    registry.py    load agents.yaml -> typed configs
+    builder.py     per stage: worker (tools) + formatter (output_schema); evaluator; escalation gate
+  tools/
+    browser.py     REAL Playwright (async) browser: open/read/links/click/tabs/switch/back
+    filesystem.py  read/write/list/search, write-scoped to campaigns/**
+    memory_tools.py recall (search long-term) / remember (durable note)
+    approval.py    request_human_approval (LongRunningFunctionTool → pause/resume)
+    __init__.py    build_tools: maps an agent's allowlist -> concrete ADK tools
+  guardrails/
+    hard.py        NON-EDITABLE floor (code) + cheap scan_output checks
+    callbacks.py   after_model (capture envelope + scan), before_tool (log) — the enforcement points
+    review.py      load editable repo-root guardrails/*.md rubrics for the Evaluator
+  memory/service.py  FileBackedMemoryService(BaseMemoryService) — SQLite, cross-task recall
+  governance/
+    gate.py        Stage-0 Customer DNA + goal gate (unchanged logic)
+    rules.py       load .claude/rules/*.md into every agent's preamble
+  pipeline.py      build_coordinator: the 9-stage ADK graph (Sequential + Loop)
+  orchestrator.py  MarketingDirector: gate → Runner(session+memory) → run + approval resume → persist
+  cli.py  api/app.py   the two surfaces
 ```
 
-**Self-critique loop:** after a specialist writes its deliverable, the reviewer
-scores it against `guardrails/<stage>.md` + `guardrails/shared.md` + the operating
-principles and returns structured discrepancies; the specialist revises until the
-verdict passes or `MARKETING_OS_MAX_QA` is hit. Unresolved discrepancies block the
-stage (override via the `approval` hook on `MarketingDirector`).
+## How the pieces realize the requirements
+
+- **Coordinator + sub-agents** — `SequentialAgent` coordinator; the Evaluator sits
+  in a `LoopAgent` that re-runs strategy→creative→media until it passes.
+- **Tools** — ADK function tools; the browser is a real stateful Playwright session.
+- **Per-agent config** — `agents.yaml` is authoritative: a capability not listed is
+  never handed to the agent. `confirm:` gates a tool behind human confirmation;
+  `human_check:` attaches the approval tool.
+- **Two-tier guardrails** — non-editable `hard.py` (injected into every prompt +
+  scanned via callbacks) and editable `guardrails/*.md` rubrics (scored by the Evaluator).
+- **Self-check each step** — every worker thinks in the `DecisionEnvelope` schema;
+  `after_model_callback` captures it and scans against the hard floor; the Evaluator
+  loop is the formal gate.
+- **Memory** — session state shares deliverables downstream in a run; the file-backed
+  `MemoryService` + `recall` tool retrieve prior campaigns across runs.
+- **Typed output** — each stage's formatter emits a strict Pydantic deliverable.
 
 ## Tests
 
 ```bash
-pytest                  # offline; uses a deterministic FakeProvider (no network)
+uv run pytest -q
 ```
 
-Covers the gate (incl. multi-line field values), the agent loader, pipeline
-gating, the QA loop (pass/fail/unparseable), and the default tool-use loop
-(dispatch, refusal, max-steps).
-
-### Live checks (need a real key)
-
-```bash
-export DEEPSEEK_API_KEY=...        # or ANTHROPIC_API_KEY + --provider anthropic
-marketing-os new-campaign coast-coffee --slug coast-coffee-test   # throwaway slug
-# Provider-swap proof: run the same stage under two adapters
-marketing-os new-campaign coast-coffee --slug t1 --stage research
-marketing-os new-campaign coast-coffee --slug t2 --stage research --provider anthropic
-```
+Offline (no network, no key): gate, schemas, per-agent tool allowlist + confirmation
+wiring, guardrail scan + envelope capture, the **real browser** against local pages,
+and ADK graph assembly + the escalation gate. A live end-to-end run needs a real
+`DEEPSEEK_API_KEY` — see `USAGE.md`.

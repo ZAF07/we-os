@@ -1,0 +1,86 @@
+# Per-agent configuration: which tools each agent may call, which tool calls
+# require human confirmation, and whether the agent runs an explicit human-check.
+#
+# This is the single place to tune capability per agent. A capability NOT listed
+# in an agent's `tools` is never handed to it, so it cannot be called.
+# `human_check` and `confirm` are OFF by default — turn them on per agent.
+#
+# Capability vocabulary:
+#   filesystem : read_file, write_file, list_files, search_files
+#   browser    : open_page, read_page, get_links, click_link, open_in_new_tab,
+#                list_tabs, switch_tab, go_back
+#   memory     : recall, remember, load_memory
+
+agents:
+  intake:
+    tools: [read_file, write_file, recall]
+    confirm: []
+    human_check: false
+
+  research:
+    tools:
+      - read_file
+      - write_file
+      - list_files
+      - search_files
+      - open_page
+      - read_page
+      - get_links
+      - click_link
+      - open_in_new_tab
+      - list_tabs
+      - switch_tab
+      - go_back
+      - recall
+      - remember
+      - load_memory
+    confirm: []
+    human_check: false
+
+  strategy:
+    tools: [read_file, write_file, recall, remember]
+    confirm: []
+    human_check: false
+
+  # Marketing Director: campaign approach, channels, budget, KPI tiers.
+  campaign_strategy:
+    tools: [read_file, write_file, recall]
+    confirm: []
+    human_check: false
+
+  creative:
+    tools: [read_file, write_file, recall]
+    confirm: []
+    human_check: false
+
+  # Creative Asset Prompt agent: generation prompts derived strictly from the brief.
+  asset_prompts:
+    tools: [read_file, write_file, recall]
+    confirm: []
+    human_check: false
+
+  media:
+    tools: [read_file, write_file, open_page, read_page, recall]
+    confirm: []
+    human_check: false
+
+  # The Evaluator is pure judgement (strict output schema, no tools).
+  evaluator:
+    tools: []
+    confirm: []
+    human_check: false
+
+  execution:
+    tools: [read_file, write_file, recall]
+    confirm: [write_file]   # example: writing asset drafts asks for confirmation
+    human_check: false
+
+  performance:
+    tools: [read_file, write_file, open_page, read_page]
+    confirm: []
+    human_check: false
+
+# The explicit human-approval gate between the Evaluator and Execution.
+# Off by default (autonomous runs); set enabled: true to require sign-off.
+approval:
+  enabled: false

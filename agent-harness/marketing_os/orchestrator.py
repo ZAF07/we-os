@@ -1,226 +1,322 @@
-"""The Marketing Director — orchestrates the whole pipeline.
+"""The Marketing Director — drives a campaign run on ADK.
 
-Reproduces `/new-campaign`: run the Stage 0 gate, then walk the mandatory
-pipeline, delegating each stage to its specialist, running the QA self-critique
-loop against the human-written rubrics, and gating advancement on deliverable +
-approval. Owns the `campaign-strategy` stage directly (no specialist file exists
-for the Director). Never produces assets itself.
+Responsibilities:
+- enforce the Stage-0 Customer DNA gate before any model call;
+- build the per-run tools (filesystem + a fresh browser), model, and coordinator;
+- run the coordinator via an ADK `Runner`, seeding session state with the overall
+  goal and the Customer DNA so every agent can self-check against them;
+- handle the human-approval pause/resume loop (long-running approval tool);
+- persist the finished session to long-term memory for future-task retrieval.
+
+`run_campaign` is async (ADK's runtime is async); `run_campaign_sync` wraps it.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable, Optional
+import asyncio
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Optional
 
-from .agents.loader import AgentSpec, load_agent
-from .agents.specialist import Specialist
-from .config import Settings
-from .errors import GuardrailError, PipelineError
-from .governance import (
-    PIPELINE,
-    PIPELINE_BY_KEY,
-    Reviewer,
-    Stage,
-    enforce_gate,
-    load_governance,
-    prerequisite_met,
-)
-from .governance.pipeline import DIRECTOR, campaign_dir, deliverable_path
-from .loop import AgentLoop, DefaultToolUseLoop, LoopHooks, NoopHooks
-from .providers import Provider, provider_from_settings
-from .types import ReviewVerdict, StageResult, Usage
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import errors as genai_errors
+from google.genai import types
 
-# Approval hook signature: decide whether a stage may advance given its verdict.
-ApprovalHook = Callable[[str, Path, ReviewVerdict], bool]
-EventHook = Callable[[dict], None]
+from .agents import BuildContext, load_registry
+from .config import Settings, supports_structured_output
+from .governance import enforce_gate, load_governance
+from .memory import FileBackedMemoryService
+from .model import build_model
+from .pipeline import DELIVERABLE_KEYS, build_coordinator
+from .runstate import clear_checkpoint, completed_stages, load_checkpoint, save_checkpoint
+from .tools import FilesystemTools, WebBrowser
+from .tools.approval import APPROVAL_TOOL_NAME
 
-# Inline system body for the Director-owned stage (no .claude/agents file exists
-# for the Marketing Director — it is the orchestrator role).
-_DIRECTOR_BODY = """\
-You are the **Marketing Director** in the Marketing OS specialist hierarchy — the
-orchestrator. You own the business goal, campaign strategy, budget allocation, and
-KPI planning. You NEVER produce creative assets or generation prompts.
-
-## Your single output
-A campaign strategy: the approach, channels-at-a-glance, budget allocation, and the
-three KPI tiers (Business / Marketing / Creative), each tied to the business
-objective.
-
-## Guardrails (non-negotiable)
-- Ground everything in the Customer DNA and the approved brand strategy. Never invent
-  what the DNA omits — say so instead.
-- Strategy before content: do not specify creative or assets.
-- Every decision explains its 'why' and ties back to the business KPI.
-- Define all three KPI tiers before recommending spend.
-"""
+# HTTP-ish codes that are worth a transient retry / resume (overload, rate limit,
+# gateway hiccups) — e.g. Gemini's 503 "high demand".
+_TRANSIENT_CODES = {408, 429, 500, 502, 503, 504}
 
 
-def _default_approval(stage_key: str, path: Path, verdict: ReviewVerdict) -> bool:
-    """Default policy: advance only if QA passed."""
-    return verdict.passed
+def _is_transient(exc: BaseException) -> bool:
+    """True if `exc` is a retryable model/transport error (overload, rate limit)."""
+    if isinstance(exc, genai_errors.ServerError):  # all 5xx
+        return True
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    return isinstance(exc, genai_errors.APIError) and code in _TRANSIENT_CODES
 
-
-def _director_spec() -> AgentSpec:
-    return AgentSpec(
-        name=DIRECTOR,
-        description="Marketing Director — campaign strategy, budget, KPIs.",
-        tools=["Read", "Grep", "Glob", "Write"],
-        body=_DIRECTOR_BODY,
-    )
+# Approval handler: given the approval payload, return the human's decision dict
+# (e.g. {"status": "approved"} | {"status": "rejected", "comment": "..."}).
+# May be sync or async; may block (the run waits on it).
+ApprovalHandler = Callable[[dict], "dict | Awaitable[dict]"]
+EventSink = Callable[[dict], None]
 
 
 @dataclass
 class CampaignResult:
+    """Outcome of a campaign run."""
+
     customer: str
     slug: str
-    stages: list[StageResult]
-    usage: Usage
+    deliverables: dict = field(default_factory=dict)  # stage key -> structured JSON
+    steps: list = field(default_factory=list)  # captured DecisionEnvelope trace
+    violations: list = field(default_factory=list)
+    notes: list = field(default_factory=list)
 
 
 class MarketingDirector:
-    """Top-level entrypoint: gate -> pipeline -> per-stage specialist + QA + approval."""
+    """Builds and runs the ADK coordinator for one customer/campaign."""
 
     def __init__(
         self,
         settings: Settings,
         *,
-        provider: Optional[Provider] = None,
-        web_backend=None,
-        approval: ApprovalHook = _default_approval,
-        hooks: Optional[LoopHooks] = None,
-        loop_factory: Optional[Callable[[], AgentLoop]] = None,
-        on_event: Optional[EventHook] = None,
+        provider: Optional[str] = None,
+        on_event: Optional[EventSink] = None,
+        approval_handler: Optional[ApprovalHandler] = None,
+        headless: bool = True,
+        max_transient_retries: int = 3,
+        transient_backoff: float = 10.0,
     ) -> None:
+        """Wire the director.
+
+        Args:
+            settings: Resolved settings.
+            provider: Optional provider override (else the active one).
+            on_event: Optional sink for progress events (CLI prints / SSE).
+            approval_handler: Optional human-approval resolver; if omitted, approval
+                requests auto-approve with a note (so library/test runs don't hang).
+            headless: Run the browser headless.
+            max_transient_retries: How many times to auto-retry a transient model
+                error (e.g. a 503) before giving up; the run resumes where it stopped.
+            transient_backoff: Base seconds for exponential backoff between retries.
+        """
         self.settings = settings
-        self.provider = provider or provider_from_settings(settings)
-        self.web_backend = web_backend
-        self.approval = approval
-        self.hooks = hooks or NoopHooks()
-        self.loop_factory = loop_factory or (lambda: DefaultToolUseLoop(self.hooks))
+        self.provider = provider
         self.on_event = on_event
-        self.governance = load_governance(settings)
-        self.reviewer = Reviewer(self.provider, settings)
+        self.approval_handler = approval_handler
+        self.headless = headless
+        self.max_transient_retries = max_transient_retries
+        self.transient_backoff = transient_backoff
 
     # ── Public API ────────────────────────────────────────────────────────────
-    def run_campaign(
-        self, customer: str, slug: Optional[str] = None, *, only_stage: Optional[str] = None
+    async def run_campaign(
+        self,
+        customer: str,
+        slug: Optional[str] = None,
+        *,
+        resume: bool = True,
+        fresh: bool = False,
     ) -> CampaignResult:
-        """Run the full pipeline (or a single stage) for a customer/campaign."""
+        """Run (or resume) the full pipeline for a customer/campaign.
+
+        State is checkpointed to `campaigns/<slug>/.run_state.json` after each
+        stage. By default a run **resumes** from that checkpoint — completed stages
+        are skipped and work continues where it stopped (after a crash or a
+        transient model error). Transient errors are auto-retried in-process.
+
+        Args:
+            customer: Customer folder name under `customers/`.
+            slug: Campaign slug under `campaigns/` (defaults to the customer name).
+            resume: Pre-seed state from an existing checkpoint and skip done stages.
+            fresh: Ignore/clear any checkpoint and start over (overrides `resume`).
+
+        Returns:
+            A CampaignResult with the structured deliverables and the step trace.
+
+        Raises:
+            GateError: if the Stage-0 gate fails.
+        """
         slug = slug or customer
-        self._emit("gate.start", customer=customer, slug=slug)
+        self._emit({"event": "gate.start", "customer": customer, "slug": slug})
         enforce_gate(self.settings, customer, slug)
-        self._emit("gate.passed", customer=customer, slug=slug)
+        self._emit({"event": "gate.passed", "customer": customer, "slug": slug})
 
-        dna_text = (self.settings.customers_dir / customer / "dna.md").read_text(encoding="utf-8")
-        campaign_dir(self.settings, slug).mkdir(parents=True, exist_ok=True)
+        dna = (self.settings.customers_dir / customer / "dna.md").read_text(encoding="utf-8")
+        goal = (self.settings.campaigns_dir / slug / "goal.md").read_text(encoding="utf-8")
+        (self.settings.campaigns_dir / slug).mkdir(parents=True, exist_ok=True)
 
-        stages = [PIPELINE_BY_KEY[only_stage]] if only_stage else PIPELINE
-        if only_stage and only_stage not in PIPELINE_BY_KEY:
-            raise PipelineError(f"Unknown stage '{only_stage}'. Known: {', '.join(PIPELINE_BY_KEY)}.")
+        # Seed = fresh governance context + (on resume) the prior run's deliverables.
+        if fresh:
+            clear_checkpoint(self.settings, slug)
+        checkpoint = None if fresh else (load_checkpoint(self.settings, slug) if resume else None)
+        seed: dict = dict(checkpoint or {})
+        seed.update(  # always refresh governance inputs from disk
+            {"overall_goal": goal.strip(), "dna": dna, "goal": goal, "slug": slug, "customer": customer}
+        )
+        if checkpoint:
+            done = completed_stages(seed)
+            self._emit({"event": "resume", "slug": slug, "completed": done})
 
-        results: list[StageResult] = []
-        total = Usage()
-        for stage in stages:
-            if not prerequisite_met(self.settings, slug, stage):
-                raise PipelineError(
-                    f"Cannot start stage '{stage.key}': prerequisite '{stage.prerequisite}' "
-                    f"does not exist in campaigns/{slug}/. Stages cannot bypass upstream decisions."
-                )
-            result = self._run_stage(stage, customer, slug, dna_text)
-            results.append(result)
-            total = total + result.usage
-        return CampaignResult(customer=customer, slug=slug, stages=results, usage=total)
+        browser = WebBrowser(headless=self.headless)
+        ctx = BuildContext(
+            settings=self.settings,
+            model=build_model(self.settings, self.provider),
+            governance=load_governance(self.settings),
+            registry=load_registry(self.settings),
+            fs=FilesystemTools(self.settings.root),
+            browser=browser,
+            on_step=lambda rec: self._emit({"event": "step", **rec}),
+            structured_output=supports_structured_output(self.provider or self.settings.provider),
+        )
+        coordinator = build_coordinator(ctx)
 
-    # ── One stage: delegate -> QA loop -> approval ─────────────────────────────
-    def _run_stage(self, stage: Stage, customer: str, slug: str, dna_text: str) -> StageResult:
-        self._emit("stage.start", stage=stage.key, agent=stage.agent)
-        spec = _director_spec() if stage.agent == DIRECTOR else load_agent(self.settings, stage.agent)
-        specialist = Specialist(
-            spec,
-            provider=self.provider,
-            sandbox=self._sandbox(),
-            governance=self.governance,
-            dna_text=dna_text,
-            web_backend=self.web_backend,
-            loop=self.loop_factory(),
-            max_steps=self.settings.max_steps,
-            max_tokens=16000,
-            stream=self.settings.stream,
+        session_service = InMemorySessionService()
+        memory_service = FileBackedMemoryService(self.settings.memory_db)
+        runner = Runner(
+            app_name=self.settings.app_name,
+            agent=coordinator,
+            session_service=session_service,
+            memory_service=memory_service,
+        )
+        user_id = f"customer:{customer}"
+        session = await session_service.create_session(
+            app_name=self.settings.app_name, user_id=user_id, state=seed
         )
 
-        deliverable = deliverable_path(self.settings, slug, stage)
-        rel = deliverable.relative_to(self.settings.root)
-        task = stage.task.format(
-            goal_path=f"campaigns/{slug}/goal.md",
-            dna_path=f"customers/{customer}/dna.md",
-            prereq_path=(f"campaigns/{slug}/{stage.prerequisite}" if stage.prerequisite else ""),
-            deliverable_path=str(rel),
-        )
-
-        loop_result = specialist.start(task)
-        usage = loop_result.usage
-        verdict: Optional[ReviewVerdict] = None
-        qa_iterations = 0
-
-        # QA self-critique: read deliverable, review against rubric, revise, repeat.
-        while True:
-            text = deliverable.read_text(encoding="utf-8") if deliverable.is_file() else None
-            if text is None:
-                if qa_iterations >= self.settings.max_qa_iterations:
-                    raise PipelineError(
-                        f"Stage '{stage.key}' did not save its deliverable to {rel} "
-                        f"after {qa_iterations} attempts."
-                    )
-                qa_iterations += 1
-                self._emit("stage.save_retry", stage=stage.key, attempt=qa_iterations)
-                loop_result = specialist.resume(
-                    loop_result.history,
-                    f"You have not saved your deliverable. Save it now to {rel} using the "
-                    f"write_file tool, then stop.",
-                )
-                usage = usage + loop_result.usage
-                continue
-
-            verdict = self.reviewer.review(stage.key, text)
-            self._emit(
-                "stage.review",
-                stage=stage.key,
-                passed=verdict.passed,
-                discrepancies=len(verdict.discrepancies),
-                iteration=qa_iterations,
+        # Live accumulator: starts from the seed, updated from each event's
+        # state_delta, and checkpointed after every stage so a crash loses nothing.
+        acc: dict = dict(seed)
+        try:
+            await self._drive(runner, user_id, session.id, slug, acc)
+            session = await session_service.get_session(
+                app_name=self.settings.app_name, user_id=user_id, session_id=session.id
             )
-            if verdict.passed or qa_iterations >= self.settings.max_qa_iterations:
-                break
-            qa_iterations += 1
-            loop_result = specialist.resume(loop_result.history, verdict.as_revision_instruction())
-            usage = usage + loop_result.usage
+            await memory_service.add_session_to_memory(session)
+            acc.update(dict(session.state or {}))
+        finally:
+            save_checkpoint(self.settings, slug, acc)  # persist even on failure
+            await browser.close()
 
-        approved = self.approval(stage.key, deliverable, verdict)
-        if not approved:
-            raise GuardrailError(
-                f"Stage '{stage.key}' was not approved: QA discrepancies remain unresolved "
-                f"after {qa_iterations} revision(s).",
-                discrepancies=verdict.discrepancies if verdict else [],
-            )
-
-        result = StageResult(
-            stage=stage.key,
-            deliverable_path=str(rel),
-            usage=usage,
-            qa_iterations=qa_iterations,
-            verdict=verdict,
-            approved=approved,
+        result = CampaignResult(
+            customer=customer,
+            slug=slug,
+            deliverables={k: acc[k] for k in DELIVERABLE_KEYS if k in acc},
+            steps=acc.get("steps", []),
+            violations=acc.get("violations", []),
+            notes=acc.get("notes", []),
         )
-        self._emit("stage.done", stage=stage.key, deliverable=str(rel), qa_iterations=qa_iterations)
+        self._emit({"event": "campaign.done", "slug": slug, "stages": list(result.deliverables)})
         return result
 
-    # ── Helpers ────────────────────────────────────────────────────────────────
-    def _sandbox(self):
-        from .tools import FilesystemSandbox
+    def run_campaign_sync(
+        self, customer: str, slug: Optional[str] = None, *, resume: bool = True, fresh: bool = False
+    ) -> CampaignResult:
+        """Synchronous wrapper around `run_campaign` (for the CLI)."""
+        return asyncio.run(self.run_campaign(customer, slug, resume=resume, fresh=fresh))
 
-        return FilesystemSandbox(self.settings.root, write_prefixes=["campaigns"])
+    # ── Run loop: transient-retry wrapper around the approval-aware drive ───────
+    async def _drive(
+        self, runner: Runner, user_id: str, session_id: str, slug: str, acc: dict
+    ) -> None:
+        """Drive the coordinator, auto-retrying transient model errors.
 
-    def _emit(self, event: str, **data) -> None:
+        Each retry re-enters the run on the SAME in-process session, whose state
+        already holds the completed stages — so the resume skip-guards jump past
+        them and only the failed stage re-runs. A non-transient error is re-raised
+        after the partial state has been checkpointed by the caller's `finally`.
+        """
+        for attempt in range(self.max_transient_retries + 1):
+            try:
+                await self._drive_once(runner, user_id, session_id, slug, acc)
+                return
+            except BaseException as exc:  # noqa: BLE001 - classify, then re-raise non-transient
+                if not _is_transient(exc) or attempt == self.max_transient_retries:
+                    raise
+                delay = self.transient_backoff * (2**attempt)
+                self._emit(
+                    {
+                        "event": "transient_retry",
+                        "slug": slug,
+                        "attempt": attempt + 1,
+                        "delay_s": delay,
+                        "error": str(exc)[:200],
+                    }
+                )
+                await asyncio.sleep(delay)
+
+    async def _drive_once(
+        self, runner: Runner, user_id: str, session_id: str, slug: str, acc: dict
+    ) -> None:
+        """Run the coordinator once, pausing/resuming for human-approval requests.
+
+        ADK ends a turn when it hits an unfulfilled long-running tool call (our
+        approval tool). We detect that pending call, resolve the human decision, and
+        resume via a function response — looping until the run completes. Along the
+        way we fold each event's `state_delta` into `acc` and checkpoint after every
+        completed stage.
+        """
+        new_message: types.Content | None = types.Content(
+            role="user",
+            parts=[types.Part(text="Begin the campaign. Follow the pipeline stage by stage.")],
+        )
+        while True:
+            pending = None
+            async for event in runner.run_async(
+                user_id=user_id, session_id=session_id, new_message=new_message
+            ):
+                self._emit_event(event)
+                self._absorb_state(event, slug, acc)
+                long_running = event.long_running_tool_ids or set()
+                for fc in event.get_function_calls() or []:
+                    if fc.name == APPROVAL_TOOL_NAME and fc.id in long_running:
+                        pending = fc
+            if pending is None:
+                return
+            decision = await self._resolve_approval(dict(pending.args or {}))
+            new_message = types.Content(
+                role="user",
+                parts=[
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            id=pending.id, name=pending.name, response=decision
+                        )
+                    )
+                ],
+            )
+
+    def _absorb_state(self, event: Any, slug: str, acc: dict) -> None:
+        """Fold an event's state delta into `acc`; checkpoint when a stage finishes."""
+        actions = getattr(event, "actions", None)
+        delta = getattr(actions, "state_delta", None) if actions else None
+        if not delta:
+            return
+        newly_done = any(k in DELIVERABLE_KEYS and k not in acc for k in delta)
+        acc.update(delta)
+        if newly_done:
+            save_checkpoint(self.settings, slug, acc)
+
+    async def _resolve_approval(self, payload: dict) -> dict:
+        """Get the human decision for a pending approval (or auto-approve)."""
+        self._emit({"event": "approval.requested", **payload})
+        if self.approval_handler is None:
+            decision = {"status": "approved", "comment": "auto-approved (no handler configured)"}
+        else:
+            result = self.approval_handler(payload)
+            decision = await result if asyncio.iscoroutine(result) else result
+        self._emit({"event": "approval.resolved", **decision})
+        return decision
+
+    # ── Event plumbing ──────────────────────────────────────────────────────────
+    def _emit(self, data: dict) -> None:
+        """Forward a structured progress event to the sink, if any."""
         if self.on_event:
-            self.on_event({"event": event, **data})
+            self.on_event(data)
+
+    def _emit_event(self, event: Any) -> None:
+        """Translate a raw ADK Event into a compact progress dict for the sink."""
+        if not self.on_event:
+            return
+        text = ""
+        content = getattr(event, "content", None)
+        for part in getattr(content, "parts", []) or []:
+            if getattr(part, "text", None):
+                text += part.text
+        calls = [fc.name for fc in (event.get_function_calls() or [])]
+        self.on_event(
+            {
+                "event": "agent_event",
+                "author": getattr(event, "author", None),
+                "text_preview": text[:200],
+                "tool_calls": calls,
+            }
+        )

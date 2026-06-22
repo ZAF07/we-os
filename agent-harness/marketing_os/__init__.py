@@ -1,40 +1,32 @@
-"""Marketing OS — provider-agnostic agent harness.
+"""Marketing OS — an ADK-native, coordinator-led multi-agent marketing system.
 
-Reproduces the governance encoded in the repo's `.claude/` configuration
-(Customer DNA gate, mandatory decision pipeline, five specialist agents, and a
-per-stage self-critique loop) over direct LLM API access.
+Reproduces the governance of the repo's `.claude/` configuration (Customer DNA
+gate, mandatory pipeline, professional guardrails) on Google ADK, with a
+coordinator that runs a 9-stage specialist pipeline, real tools (file + Playwright
+web browsing), two-tier guardrails, configurable human checks, and persistent
+cross-task memory.
 
 Public surface:
 
     from marketing_os import load_settings, MarketingDirector
 
-    settings = load_settings()
-    director = MarketingDirector(settings)
-    director.run_campaign("coast-coffee")
+    director = MarketingDirector(load_settings())
+    await director.run_campaign("coast-coffee")
 """
 
 from __future__ import annotations
 
 from .config import ProviderConfig, Settings, load_settings
 from .errors import (
+    ApprovalRequired,
     ConfigError,
     GateError,
     GuardrailError,
     MarketingOSError,
-    PipelineError,
-    ProviderError,
+    ModelError,
     ToolError,
 )
-from .types import (
-    CompletionResult,
-    Discrepancy,
-    Message,
-    ReviewVerdict,
-    StageResult,
-    ToolCall,
-    ToolResult,
-    Usage,
-)
+from .schemas import STAGE_SCHEMAS, DecisionEnvelope
 
 __all__ = [
     "Settings",
@@ -43,22 +35,17 @@ __all__ = [
     "MarketingOSError",
     "ConfigError",
     "GateError",
-    "PipelineError",
     "GuardrailError",
+    "ApprovalRequired",
     "ToolError",
-    "ProviderError",
-    "Message",
-    "ToolCall",
-    "ToolResult",
-    "Usage",
-    "CompletionResult",
-    "Discrepancy",
-    "ReviewVerdict",
-    "StageResult",
+    "ModelError",
+    "DecisionEnvelope",
+    "STAGE_SCHEMAS",
 ]
 
-# Lazily re-exported to avoid importing optional provider SDKs at package import.
+
 def __getattr__(name: str):  # pragma: no cover - thin lazy shim
+    """Lazily expose the orchestrator without importing ADK at package import."""
     if name == "MarketingDirector":
         from .orchestrator import MarketingDirector
 
