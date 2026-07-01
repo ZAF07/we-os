@@ -12,12 +12,10 @@ gate → mandatory pipeline → specialist agent + QA self-critique per stage.
 
 ```bash
 cd agent-harness
-. .venv/bin/activate
-pip install -e '.[openai]'                 # DeepSeek (primary) + OpenAI adapters
-export DEEPSEEK_API_KEY=...                # primary provider key
-export DEEPSEEK_MODEL=deepseek-v4-pro      # confirm the exact id for your account
-export DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-uvicorn marketing_os.api.app:app --reload  # serves on http://127.0.0.1:8000
+uv sync                                    # install into .venv
+export DEEPSEEK_API_KEY=...                 # primary provider key
+export DEEPSEEK_MODEL=deepseek-chat         # confirm the exact id for your account
+uv run uvicorn marketing_os.entrypoints.api.app:app --reload  # http://127.0.0.1:8000
 ```
 
 Provider is config-only: set `MARKETING_OS_PROVIDER=anthropic` (+ `ANTHROPIC_API_KEY`)
@@ -73,17 +71,18 @@ curl -X POST localhost:8000/campaigns/coast-spring/run -H 'content-type: applica
   -d '{"customer":"coast-coffee"}'            # add "stage":"research" to run one stage
 ```
 ```json
-{ "slug":"coast-spring","customer":"coast-coffee",
+{ "customer":"coast-coffee","slug":"coast-spring",
   "stages":[
     { "stage":"research","deliverable_path":"campaigns/coast-spring/research.md",
-      "qa_iterations":1,"approved":true,
-      "verdict":{"passed":true,"summary":"…","discrepancies":[]},
-      "usage":{"input_tokens":12000,"output_tokens":3000} }
+      "qa_iterations":1,"save_retries":0,"approved":true,
+      "verdict":{"passed":true,"summary":"…","discrepancies":[]} }
     /* … one per stage … */ ],
-  "usage":{"input_tokens":80000,"output_tokens":21000} }
+  "usage":{"input_tokens":80000,"output_tokens":21000,
+           "cache_read_input_tokens":0,"cache_creation_input_tokens":0} }
 ```
 **Errors:** `409` = gate failed (fix DNA/goal); `422` = pipeline/guardrail block
 (e.g. a stage's QA discrepancies stayed unresolved past the iteration budget).
+Token usage is aggregated for the whole run via LangChain's usage callback.
 
 ### `GET /campaigns/{slug}/stream?customer=<name>[&stage=<key>]`  — SSE progress
 **Why**: the pipeline is long-running; stream stage/QA events to a UI instead of
@@ -112,16 +111,17 @@ Fetch file contents with your own static file serving (writes land under
 
 **Why**: for tests, batch jobs, or wrapping in a different transport.
 ```python
-from marketing_os import load_settings, MarketingDirector
+from marketing_os import load_settings
+from marketing_os.graph.runner import run_campaign
 
-director = MarketingDirector(load_settings())          # provider from env
-result = director.run_campaign("coast-coffee", "coast-spring")   # or only_stage="research"
+settings = load_settings()                                  # provider from env
+result = run_campaign(settings, "coast-coffee", "coast-spring")  # or stage="research"
 for s in result.stages:
     print(s.stage, s.deliverable_path, "QA:", s.qa_iterations, "ok:", s.approved)
 ```
-Inject behavior via constructor kwargs (see `TODO.md` for the seams):
-`provider=…`, `approval=…`, `hooks=…`, `loop_factory=…`, `web_backend=…`,
-`on_event=…`.
+For a compiled graph you can stream or resume yourself, use
+`build_campaign_graph(settings, model=…, reviewer=…, web_backend=…, checkpointer=…)`.
+The `model` and `reviewer` kwargs make the graph fully injectable for tests.
 
 ---
 
@@ -135,3 +135,6 @@ Inject behavior via constructor kwargs (see `TODO.md` for the seams):
   reviewer+revision passes. `usage` is returned per stage and per campaign.
 - **Idempotence**: re-running a stage overwrites its deliverable; a stage refuses
   to start until its prerequisite deliverable exists (`422`).
+- **Resumability**: runs are checkpointed by `thread_id` (the slug). The default
+  `MemorySaver` is in-process only — install the `postgres` extra and pass a
+  `PostgresSaver` to `build_campaign_graph` for resume across workers/restarts.

@@ -1,0 +1,16 @@
+"""Specialist loading and construction."""
+
+from __future__ import annotations
+
+from .loader import AgentSpec, load_agent, load_agent_file, load_all_agents
+from .specialist import DIRECTOR_BODY, build_specialist, compose_system
+
+__all__ = [
+    "AgentSpec",
+    "load_agent",
+    "load_agent_file",
+    "load_all_agents",
+    "build_specialist",
+    "compose_system",
+    "DIRECTOR_BODY",
+]

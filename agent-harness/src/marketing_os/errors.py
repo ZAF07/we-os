@@ -1,0 +1,67 @@
+"""Exception hierarchy for the Marketing OS harness.
+
+Every failure mode the pipeline can hit has a typed exception so callers (CLI,
+API, tests) can distinguish a governance block from a provider outage from a
+tool sandbox violation.
+"""
+
+from __future__ import annotations
+
+
+class MarketingOSError(Exception):
+    """Base class for every error raised by the harness."""
+
+
+class ConfigError(MarketingOSError):
+    """Settings are missing or invalid (e.g. no API key for the active provider)."""
+
+
+class GateError(MarketingOSError):
+    """Stage 0 gate failed: Customer DNA or campaign goal is missing/incomplete.
+
+    Carries the structured list of offending fields so the caller can tell the
+    operator exactly what to fix.
+    """
+
+    def __init__(self, message: str, missing: list[str] | None = None) -> None:
+        """Initialise the error.
+
+        Args:
+            message: The human-readable message.
+            missing: The offending DNA or goal fields, if known.
+        """
+        super().__init__(message)
+        self.missing: list[str] = missing or []
+
+
+class PipelineError(MarketingOSError):
+    """A stage was started out of order or its prerequisite deliverable is absent."""
+
+
+class GuardrailError(MarketingOSError):
+    """A deliverable failed QA review within the allowed self-critique budget.
+
+    Carries the unresolved discrepancies so the caller can report them.
+    """
+
+    def __init__(self, message: str, discrepancies: list | None = None) -> None:
+        """Initialise the error.
+
+        Args:
+            message: The human-readable message.
+            discrepancies: The unresolved QA discrepancies, if known.
+        """
+        super().__init__(message)
+        self.discrepancies = discrepancies or []
+
+
+class ToolError(MarketingOSError):
+    """A tool could not run (bad arguments, sandbox violation, backend failure).
+
+    Tool errors are usually returned to the model as an error tool-result rather
+    than raised — this is for the cases the harness itself must reject.
+    """
+
+
+class ProviderError(MarketingOSError):
+    """An LLM provider adapter failed in a way the SDK's own retries did not cover."""
