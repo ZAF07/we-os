@@ -64,7 +64,7 @@ class LLMReviewer:
         )
         messages = [SystemMessage(_REVIEWER_SYSTEM), HumanMessage(user)]
         try:
-            verdict = self._model.invoke(messages)
+            verdict = self._model.invoke(messages, config={"run_name": f"review:{stage_key}"})
         except Exception:
             return self._format_failure()
         if not isinstance(verdict, ReviewVerdict):

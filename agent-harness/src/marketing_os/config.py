@@ -17,9 +17,18 @@ from marketing_os.errors import ConfigError
 
 _CLAUDE_DIR_NAME = ".claude"
 
+
 class Role(StrEnum):
+    """A model role whose per-role overrides the settings may resolve.
+
+    Attributes:
+        REVIEWER: The QA judge role, which may use a cheaper model.
+        DEFAULT: The default specialist role.
+    """
+
     REVIEWER = "reviewer"
     DEFAULT = "default"
+
 
 def _discover_root() -> Path:
     """Locate the Marketing OS repository root.
@@ -93,6 +102,11 @@ class Settings:
         max_qa_iterations: The revision budget for the per-stage QA loop.
         stream: Whether the CLI streams progress events.
         enable_web: Whether web-search tools are wired for agents that declare them.
+        log_level: The console logging level (``DEBUG`` | ``INFO`` | ``WARNING`` | …).
+        run_logs: Whether to write a per-run JSONL trace under ``logs/``.
+        reviewer_thinking: Whether the QA reviewer runs in thinking mode. Off by
+            default because DeepSeek V4 thinking mode rejects the forced
+            ``tool_choice`` that structured output uses.
     """
 
     provider: str = field(
@@ -107,6 +121,13 @@ class Settings:
     )
     stream: bool = field(default_factory=lambda: os.environ.get("MARKETING_OS_STREAM", "1") != "0")
     enable_web: bool = field(default_factory=lambda: os.environ.get("MARKETING_OS_WEB", "0") == "1")
+    log_level: str = field(default_factory=lambda: os.environ.get("MARKETING_OS_LOG_LEVEL", "INFO"))
+    run_logs: bool = field(
+        default_factory=lambda: os.environ.get("MARKETING_OS_RUN_LOGS", "1") != "0"
+    )
+    reviewer_thinking: bool = field(
+        default_factory=lambda: os.environ.get("MARKETING_OS_REVIEWER_THINKING", "0") != "0"
+    )
 
     @property
     def claude_dir(self) -> Path:
@@ -148,6 +169,11 @@ class Settings:
         """Return the directory holding the per-stage review rubrics."""
         return self.root / "guardrails"
 
+    @property
+    def logs_dir(self) -> Path:
+        """Return the directory where per-run JSONL traces are written."""
+        return self.root / "logs"
+
     def provider_config(
         self, name: str | None = None, *, role: str | None = None
     ) -> ProviderConfig:
@@ -177,7 +203,7 @@ class Settings:
             model = role_model or os.environ.get(spec["model_env"], spec["reviewer_model_default"])
         else:
             model = os.environ.get(spec["model_env"], spec["model_default"])
-        
+
         if not model:
             raise ConfigError(
                 f"No model configured for provider '{name}'. Set {spec['model_env']}."

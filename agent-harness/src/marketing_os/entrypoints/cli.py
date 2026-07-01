@@ -16,6 +16,7 @@ import argparse
 import sys
 from typing import Any
 
+from marketing_os.adapters.observability import configure_logging, configure_tracing
 from marketing_os.config import load_settings
 from marketing_os.errors import GateError, MarketingOSError
 from marketing_os.governance import check_gate
@@ -50,12 +51,15 @@ def _render_event(event: dict[str, Any]) -> None:
     if name == "stage.start":
         print(f"\n── Stage: {event['stage']} (agent: {event['agent']}) " + "─" * 20)
     elif name == "stage.review":
-        status = "PASS" if event["passed"] else f"{event['discrepancies']} issue(s)"
+        count = len(event.get("discrepancies", []))
+        status = "PASS" if event["passed"] else f"{count} issue(s): {event.get('summary', '')}"
         print(f"  [QA iter {event['iteration']}] {status}")
     elif name == "stage.save_retry":
         print(f"  [save retry {event['attempt']}] asking agent to write its deliverable")
     elif name == "stage.done":
         print(f"  ✓ wrote {event['deliverable']} (QA iterations: {event['qa_iterations']})")
+    elif name == "stage.failed":
+        print(f"  ✗ stage failed ({event.get('reason', '?')}): {event.get('summary', '')}")
     elif name == "stage.blocked":
         print(f"  ✗ blocked: prerequisite '{event['prerequisite']}' missing")
 
@@ -121,6 +125,8 @@ def _cmd_new_campaign(args: argparse.Namespace) -> int:
             f"(QA iters {stage_result.qa_iterations})"
         )
     print(f"Tokens — in: {result.usage.input_tokens}, out: {result.usage.output_tokens}")
+    if result.run_log:
+        print(f"Run log: {result.run_log}")
     return 0
 
 
@@ -162,6 +168,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        settings = load_settings()
+        configure_logging(settings)
+        configure_tracing(settings)
+    except MarketingOSError as exc:
+        print(f"\nConfig error: {exc}", file=sys.stderr)
+        return 1
+    try:
         exit_code: int = args.func(args)
         return exit_code
     except GateError as exc:
@@ -169,6 +182,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except MarketingOSError as exc:
         print(f"\nError: {exc}", file=sys.stderr)
+        for discrepancy in getattr(exc, "detail", {}).get("discrepancies", []):
+            print(
+                f"  - [{discrepancy.get('rubric_point')}] {discrepancy.get('problem')}",
+                file=sys.stderr,
+            )
+        run_log = getattr(exc, "run_log", None)
+        if run_log:
+            print(f"Run log: {run_log}", file=sys.stderr)
         return 1
 
 

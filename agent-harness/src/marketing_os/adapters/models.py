@@ -24,6 +24,7 @@ def get_model(
     *,
     role: str | None = None,
     max_tokens: int = _DEFAULT_MAX_TOKENS,
+    thinking: bool | None = None,
 ) -> BaseChatModel:
     """Build a LangChain chat model for the active provider.
 
@@ -32,6 +33,9 @@ def get_model(
         role: An optional role (for example ``"reviewer"``) whose per-role model
             override is honoured when resolving the model.
         max_tokens: The per-turn output-token ceiling for the model.
+        thinking: For DeepSeek, whether to run in thinking mode. ``False`` disables
+            it (required for structured output, which forces a ``tool_choice`` that
+            DeepSeek V4 thinking mode rejects). ``None`` keeps the provider default.
 
     Returns:
         A configured LangChain ``BaseChatModel`` ready to invoke or bind tools to.
@@ -42,16 +46,20 @@ def get_model(
     config = settings.provider_config(role=role)
     provider = settings.provider
     if provider == "deepseek":
-        return _build_deepseek(config, max_tokens)
+        return _build_deepseek(config, max_tokens, thinking)
     return _build_via_init_chat_model(provider, config, max_tokens)
 
 
-def _build_deepseek(config: ProviderConfig, max_tokens: int) -> BaseChatModel:
+def _build_deepseek(
+    config: ProviderConfig, max_tokens: int, thinking: bool | None
+) -> BaseChatModel:
     """Build the primary ``ChatDeepSeek`` model from resolved connection details.
 
     Args:
         config: The resolved provider connection details.
         max_tokens: The per-turn output-token ceiling.
+        thinking: Whether to run in thinking mode; ``False`` disables it via
+            ``extra_body``, ``None`` keeps the DeepSeek default.
 
     Returns:
         A configured ``ChatDeepSeek`` instance.
@@ -64,6 +72,8 @@ def _build_deepseek(config: ProviderConfig, max_tokens: int) -> BaseChatModel:
         kwargs["api_key"] = config.api_key
     if config.base_url:
         kwargs["api_base"] = config.base_url
+    if thinking is False:
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     return ChatDeepSeek(**kwargs)
 
 

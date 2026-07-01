@@ -15,7 +15,7 @@ class _StructuredStub:
     def __init__(self, result: Any) -> None:
         self._result = result
 
-    def invoke(self, messages: Any) -> ReviewVerdict:
+    def invoke(self, messages: Any, config: Any = None) -> ReviewVerdict:
         if isinstance(self._result, Exception):
             raise self._result
         return self._result

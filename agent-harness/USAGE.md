@@ -80,8 +80,17 @@ curl -X POST localhost:8000/campaigns/coast-spring/run -H 'content-type: applica
   "usage":{"input_tokens":80000,"output_tokens":21000,
            "cache_read_input_tokens":0,"cache_creation_input_tokens":0} }
 ```
-**Errors:** `409` = gate failed (fix DNA/goal); `422` = pipeline/guardrail block
-(e.g. a stage's QA discrepancies stayed unresolved past the iteration budget).
+**Errors:** `409` = gate failed (fix DNA/goal); `422` = pipeline/guardrail block.
+The error body is **structured** so you see the reason, not just a message:
+```json
+{ "message": "Stage 'research' failed QA and could not be reconciled.",
+  "type": "guardrail", "stage": "research",
+  "summary": "Research names no competitors and cites no framework.",
+  "discrepancies": [ {"rubric_point":"competitor research","problem":"…","fix":"…"} ],
+  "run_log": "logs/coast-spring/20260701T132732Z-f950801e.jsonl" }
+```
+The rejected deliverable is still written under `campaigns/<slug>/`; the full
+event-by-event trace is at `run_log` (also fetchable via the `runs` endpoints).
 Token usage is aggregated for the whole run via LangChain's usage callback.
 
 ### `GET /campaigns/{slug}/stream?customer=<name>[&stage=<key>]`  — SSE progress
@@ -90,13 +99,14 @@ blocking. Server-Sent Events, one JSON object per `data:` line:
 ```
 data: {"event":"gate.passed","customer":"coast-coffee","slug":"coast-spring"}
 data: {"event":"stage.start","stage":"research","agent":"market-research"}
-data: {"event":"stage.review","stage":"research","passed":false,"discrepancies":2,"iteration":0}
-data: {"event":"stage.review","stage":"research","passed":true,"discrepancies":0,"iteration":1}
+data: {"event":"stage.review","stage":"research","passed":false,"iteration":0,"summary":"…","discrepancies":[{"rubric_point":"competitor research","problem":"…","fix":"…"}]}
 data: {"event":"stage.done","stage":"research","deliverable":"campaigns/coast-spring/research.md","qa_iterations":1}
-data: {"event":"campaign.done","stages":[ … same shape as /run … ]}
+data: {"event":"campaign.done","results":[ … ],"run_log":"logs/coast-spring/<run-id>.jsonl"}
 ```
-Event types: `gate.start|gate.passed`, `stage.start`, `stage.save_retry`,
-`stage.review`, `stage.done`, `campaign.done`, `error`.
+Event types: `gate.start|gate.passed|gate.failed`, `stage.start`,
+`stage.save_retry`, `stage.review`, `stage.done`, `stage.failed`, `stage.blocked`,
+`campaign.done`, `error`. The same events are logged to the server console and
+appended to the run's `logs/<slug>/<run-id>.jsonl` trace.
 
 ### `GET /campaigns/{slug}/deliverables`
 ```json

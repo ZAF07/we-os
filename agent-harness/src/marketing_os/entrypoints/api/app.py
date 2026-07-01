@@ -16,18 +16,37 @@ from __future__ import annotations
 import json
 import shutil
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from marketing_os.adapters.observability import configure_logging, configure_tracing
 from marketing_os.config import Settings, load_settings
 from marketing_os.errors import GateError, MarketingOSError
 from marketing_os.governance import check_gate
 from marketing_os.graph.runner import astream_campaign, run_campaign
 
-app = FastAPI(title="Marketing OS", version="0.2.0")
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Configure logging and LangSmith tracing for the service lifetime.
+
+    Args:
+        _: The FastAPI application (unused).
+
+    Yields:
+        Control for the duration of the application's lifespan.
+    """
+    settings = get_settings()
+    configure_logging(settings)
+    configure_tracing(settings)
+    yield
+
+
+app = FastAPI(title="Marketing OS", version="0.2.0", lifespan=_lifespan)
 
 
 @lru_cache(maxsize=1)
@@ -167,10 +186,66 @@ def run(slug: str, body: RunCampaign) -> dict[str, object]:
     try:
         result = run_campaign(settings, body.customer, slug, stage=body.stage)
     except GateError as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, _error_detail(exc)) from exc
     except MarketingOSError as exc:
-        raise HTTPException(422, str(exc)) from exc
+        raise HTTPException(422, _error_detail(exc)) from exc
     return result.model_dump()
+
+
+def _error_detail(exc: MarketingOSError) -> dict[str, object]:
+    """Build the structured error body for a failed run.
+
+    Args:
+        exc: The raised harness error, which may carry a ``detail`` payload with
+            the stage, discrepancies, and run-log path.
+
+    Returns:
+        The structured detail dict returned to the client.
+    """
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, dict):
+        return detail
+    return {"message": str(exc)}
+
+
+@app.get("/campaigns/{slug}/runs")
+def list_runs(slug: str) -> dict[str, object]:
+    """List the run-log traces recorded for a campaign.
+
+    Args:
+        slug: The campaign slug.
+
+    Returns:
+        The campaign slug and the available run ids (newest first).
+    """
+    settings = get_settings()
+    runs_dir = settings.logs_dir / slug
+    if not runs_dir.is_dir():
+        return {"slug": slug, "runs": []}
+    runs = sorted((f.stem for f in runs_dir.glob("*.jsonl")), reverse=True)
+    return {"slug": slug, "runs": runs}
+
+
+@app.get("/campaigns/{slug}/runs/{run_id}")
+def get_run(slug: str, run_id: str) -> dict[str, object]:
+    """Return the parsed JSONL trace for one run.
+
+    Args:
+        slug: The campaign slug.
+        run_id: The run id (trace filename without extension).
+
+    Returns:
+        The campaign slug, run id, and the list of trace events.
+
+    Raises:
+        HTTPException: 404 if the trace does not exist.
+    """
+    settings = get_settings()
+    path = settings.logs_dir / slug / f"{run_id}.jsonl"
+    if not path.is_file():
+        raise HTTPException(404, f"No run '{run_id}' for campaign '{slug}'")
+    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    return {"slug": slug, "run_id": run_id, "events": events}
 
 
 @app.get("/campaigns/{slug}/stream")

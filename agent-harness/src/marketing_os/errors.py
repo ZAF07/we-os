@@ -7,9 +7,20 @@ tool sandbox violation.
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class MarketingOSError(Exception):
-    """Base class for every error raised by the harness."""
+    """Base class for every error raised by the harness.
+
+    Attributes:
+        detail: An optional structured payload (stage, discrepancies, …) the API
+            returns to the client; populated by the runner for run failures.
+        run_log: An optional repo-relative path to the run's JSONL trace.
+    """
+
+    detail: dict[str, Any] | None = None
+    run_log: str | None = None
 
 
 class ConfigError(MarketingOSError):

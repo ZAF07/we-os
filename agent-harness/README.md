@@ -13,6 +13,28 @@ the QA rubrics, and `knowledge/**` is what the agents cite. Editing that markdow
 changes behavior with no code change. The harness writes only under
 `campaigns/<slug>/`.
 
+## For domain experts — where the knowledge lives
+
+**Why:** the LLM agents are steered entirely by markdown you write. These files are
+the single source of truth the harness loads at runtime — editing them changes what
+the agents do with **no code change**. This is how a human encodes professional
+judgment, guardrails, and customer truth into the system. Write them well and the
+output is sharp and grounded; leave them thin and the output is generic.
+
+**What to write, what it makes the agents do, and where:**
+
+| Surface | What to write | What it makes the agents do / not do | Where |
+| --- | --- | --- | --- |
+| **Customer DNA** | The customer's business truth — every Required field, no `<placeholders>`: who they are, what they sell, their customers, differentiation, competitors, voice, hard constraints. | Grounds every recommendation. The **pipeline will not start** until it is complete (Stage 0 gate); agents must cite it and may **not** invent what it omits. | `customers/<name>/dna.md` (copy from `templates/customer-dna.md`) |
+| **Campaign goal** | The objective, all three KPI tiers (business / marketing / creative), budget, timeframe, and any offer. | Sets what the campaign optimizes toward; every decision must tie back to it. The gate blocks the run until it is complete. | `campaigns/<slug>/goal.md` (copy from `templates/campaign-goal.md`) |
+| **QA rubrics (guardrails)** | Concrete, checkable acceptance criteria per stage — e.g. "names actual competitors and how they position", not "good research". | This is exactly what the QA reviewer grades each deliverable against. Sharp rubrics → the specialist iterates until it passes; a stage **will not advance** until it does (within `MARKETING_OS_MAX_QA`). The reviewer can only enforce what you write. | `guardrails/shared.md` (cross-cutting) + `guardrails/<stage>.md` |
+| **Governance rules** | The non-negotiable principles and the mandatory pipeline order. | Prepended to every agent's system prompt — the hard rules: strategy before content, no stage bypasses an upstream one, the DNA gate. | `.claude/rules/*.md` |
+| **Agent role definitions** | Each specialist's remit, guardrails, and its granted tools (frontmatter `tools:`). | Define what each specialist does and must **not** do (e.g. research outputs findings only, never strategy), and what it may read / write / search. | `.claude/agents/<name>.md` |
+| **Knowledge base** | Your expert frameworks and playbooks, by discipline (positioning models, channel playbooks, research methods). | Agents cite these to ground work in real frameworks instead of generic knowledge. Read-only to agents. | `knowledge/<discipline>/*.md` |
+
+Start with the Customer DNA and the campaign goal (the gate needs both), then sharpen
+the `guardrails/` rubrics to your professional bar — those two levers move quality the most.
+
 ## Install (UV)
 
 ```bash
@@ -37,6 +59,10 @@ OpenAI are swappable through `init_chat_model`.
 | `MARKETING_OS_REVIEWER_MODEL`                               | —                                 | optional cheaper model for the QA judge |
 | `MARKETING_OS_MAX_STEPS`                                    | `20`                              | tool-use steps per specialist           |
 | `MARKETING_OS_MAX_QA`                                       | `3`                               | self-critique iterations per stage      |
+| `MARKETING_OS_REVIEWER_THINKING`                          | `0`                               | keep the QA reviewer in thinking mode (off: DeepSeek V4 needs non-thinking for structured output) |
+| `MARKETING_OS_LOG_LEVEL`                                   | `INFO`                            | console log level (`DEBUG` for detail)  |
+| `MARKETING_OS_RUN_LOGS`                                    | `1`                               | write a per-run JSONL trace to `logs/`  |
+| `LANGSMITH_TRACING` / `LANGCHAIN_API_KEY`                  | —                                 | enable LangSmith deep tracing (opt-in)  |
 
 ## CLI
 
@@ -61,6 +87,28 @@ uv run uvicorn marketing_os.entrypoints.api.app:app --reload
 - `POST /campaigns/{slug}/run` `{customer, stage?}` — run the pipeline/one stage
 - `GET  /campaigns/{slug}/deliverables` — list written deliverables
 - `GET  /campaigns/{slug}/stream?customer=&stage=` — SSE progress (native `astream`)
+- `GET  /campaigns/{slug}/runs` — list past run-log traces
+- `GET  /campaigns/{slug}/runs/{run_id}` — fetch one run's parsed trace
+
+## Observability
+
+Every run is observable three ways, all driven off the graph's semantic events:
+
+- **Live console logs.** Each stage transition and QA verdict is logged (stdlib
+  `logging`) as it happens — for `/run` and `/stream` alike. Set
+  `MARKETING_OS_LOG_LEVEL=DEBUG` for more detail. A failing QA review logs the
+  reviewer summary and each violated rubric point, so you see *why* live.
+- **Persistent per-run trace.** Every run writes `logs/<slug>/<run-id>.jsonl` — one
+  line per event plus a final `run.summary` (outcome, per-stage results, usage).
+  Inspect a finished or failed run afterwards, or fetch it via the `runs` endpoints.
+  Toggle with `MARKETING_OS_RUN_LOGS=0`.
+- **LangSmith (deep traces).** Set `LANGSMITH_TRACING=true` and `LANGCHAIN_API_KEY`
+  to trace every prompt, tool call, and model response under project `marketing-os`;
+  runs and stages appear as named spans (`specialist:research`, `review:research`).
+
+On a QA failure the `/run` response now carries the structured reason
+(`stage`, `summary`, `discrepancies`, `run_log`) instead of a bare message, and the
+rejected deliverable is still on disk under `campaigns/<slug>/` for inspection.
 
 ## Library
 

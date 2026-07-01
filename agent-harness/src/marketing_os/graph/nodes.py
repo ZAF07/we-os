@@ -23,6 +23,7 @@ from langchain_core.runnables import Runnable
 from langgraph.config import get_stream_writer
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
+from marketing_os.adapters.observability import get_logger
 from marketing_os.config import Settings
 from marketing_os.governance import load_governance
 from marketing_os.governance.gate import check_gate
@@ -30,6 +31,8 @@ from marketing_os.governance.pipeline import Stage, deliverable_path, prerequisi
 from marketing_os.graph.state import CampaignState
 from marketing_os.ports import Reviewer
 from marketing_os.schemas import StageResult
+
+_LOGGER = get_logger("marketing_os.graph")
 
 _USAGE_KEYS = (
     "input_tokens",
@@ -69,11 +72,33 @@ def _emit(event: str, **data: Any) -> None:
         event: The event name, for example ``"stage.review"``.
         **data: Additional fields describing the event.
     """
+    _LOGGER.info("%s %s", event, _format_event(data))
     try:
         writer = get_stream_writer()
     except RuntimeError:
         return
     writer({"event": event, **data})
+
+
+def _format_event(data: dict[str, Any]) -> str:
+    """Render an event payload as a compact, readable log fragment.
+
+    Args:
+        data: The event fields.
+
+    Returns:
+        A ``key=value`` string; discrepancy lists are summarised by rubric point.
+    """
+    parts: list[str] = []
+    for key, value in data.items():
+        if key == "discrepancies" and isinstance(value, list):
+            points = "; ".join(
+                str(item.get("rubric_point", "?")) for item in value if isinstance(item, dict)
+            )
+            parts.append(f"discrepancies=[{points}]")
+        else:
+            parts.append(f"{key}={value}")
+    return " ".join(parts)
 
 
 def _usage_delta(callback: Any) -> dict[str, int]:
@@ -225,7 +250,10 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> C
         with get_usage_metadata_callback() as callback:
             result = agent.invoke(
                 {"messages": inbound},
-                config={"recursion_limit": recursion_limit},
+                config={
+                    "recursion_limit": recursion_limit,
+                    "run_name": f"specialist:{stage.key}",
+                },
             )
         produced = result["messages"][len(inbound) :]
         return {"messages": produced, "usage": _usage_delta(callback)}
@@ -265,12 +293,14 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
         with get_usage_metadata_callback() as callback:
             verdict = reviewer.review(stage.key, text)
         qa_iterations = state.get("qa_iterations", 0)
+        discrepancies = [d.model_dump() for d in verdict.discrepancies]
         _emit(
             "stage.review",
             stage=stage.key,
             passed=verdict.passed,
-            discrepancies=len(verdict.discrepancies),
             iteration=qa_iterations,
+            summary=verdict.summary,
+            discrepancies=discrepancies,
         )
         usage = _usage_delta(callback)
 
@@ -301,7 +331,13 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
                 verdict=verdict,
                 approved=False,
             )
-            _emit("stage.failed", stage=stage.key, discrepancies=len(verdict.discrepancies))
+            _emit(
+                "stage.failed",
+                stage=stage.key,
+                reason="qa",
+                summary=verdict.summary,
+                discrepancies=discrepancies,
+            )
             return {
                 "verdict": verdict.model_dump(),
                 "results": [result.model_dump()],
@@ -309,7 +345,8 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
                 "error": {
                     "type": "guardrail",
                     "stage": stage.key,
-                    "discrepancies": [d.model_dump() for d in verdict.discrepancies],
+                    "summary": verdict.summary,
+                    "discrepancies": discrepancies,
                 },
                 "halt": True,
                 "route": "fail",

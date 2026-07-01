@@ -160,7 +160,9 @@ def build_campaign_graph(
     """
     governance = load_governance(settings)
     model = model or get_model(settings)
-    reviewer = reviewer or LLMReviewer(get_model(settings, role=Role.REVIEWER), settings)
+    reviewer = reviewer or LLMReviewer(
+        get_model(settings, role=Role.REVIEWER, thinking=settings.reviewer_thinking), settings
+    )
     builder = StateGraph(CampaignState)
     builder.add_node("gate", make_gate_node(settings))
     builder.add_edge(START, "gate")
@@ -203,7 +205,9 @@ def build_single_stage_graph(
     stage = PIPELINE_BY_KEY[stage_key]
     governance = load_governance(settings)
     model = model or get_model(settings)
-    reviewer = reviewer or LLMReviewer(get_model(settings, role=Role.REVIEWER), settings)
+    reviewer = reviewer or LLMReviewer(
+        get_model(settings, role=Role.REVIEWER, thinking=settings.reviewer_thinking), settings
+    )
     builder = StateGraph(CampaignState)
     builder.add_node("gate", make_gate_node(settings))
     builder.add_edge(START, "gate")

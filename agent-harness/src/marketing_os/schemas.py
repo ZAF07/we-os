@@ -107,9 +107,11 @@ class CampaignResult(BaseModel):
         slug: The campaign slug.
         stages: The per-stage results in pipeline order.
         usage: The aggregated token usage across every model call.
+        run_log: The repo-relative path of the run's JSONL trace, if written.
     """
 
     customer: str
     slug: str
     stages: list[StageResult] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)
+    run_log: str | None = None
