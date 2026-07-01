@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ...errors import ToolError
+from marketing_os.errors import ToolError
 
 _MAX_GREP_MATCHES = 200
 _MAX_READ_BYTES = 400_000

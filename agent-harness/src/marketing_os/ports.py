@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from .schemas import ReviewVerdict
+from marketing_os.schemas import ReviewVerdict
 
 
 @runtime_checkable

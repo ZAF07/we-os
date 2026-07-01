@@ -8,8 +8,8 @@ returned so the reviewer always has a bar to check against.
 
 from __future__ import annotations
 
-from ..config import Settings
-from .rules import load_operating_principles
+from marketing_os.config import Settings
+from marketing_os.governance.rules import load_operating_principles
 
 _FALLBACK_RUBRIC = (
     "- Strategy before content. Revenue before engagement.\n"

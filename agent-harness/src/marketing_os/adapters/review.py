@@ -12,9 +12,9 @@ from __future__ import annotations
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ..config import Settings
-from ..governance.rubric import load_rubric
-from ..schemas import Discrepancy, ReviewVerdict
+from marketing_os.config import Settings
+from marketing_os.governance.rubric import load_rubric
+from marketing_os.schemas import Discrepancy, ReviewVerdict
 
 _REVIEWER_SYSTEM = """\
 You are a senior marketing strategist and creative director performing QA. You

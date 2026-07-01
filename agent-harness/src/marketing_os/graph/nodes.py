@@ -15,8 +15,7 @@ functions so the branching logic lives in one place.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import HumanMessage, RemoveMessage
@@ -24,13 +23,13 @@ from langchain_core.runnables import Runnable
 from langgraph.config import get_stream_writer
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
-from ..config import Settings
-from ..governance import load_governance
-from ..governance.gate import check_gate
-from ..governance.pipeline import Stage, deliverable_path, prerequisite_met
-from ..ports import Reviewer
-from ..schemas import StageResult
-from .state import CampaignState
+from marketing_os.config import Settings
+from marketing_os.governance import load_governance
+from marketing_os.governance.gate import check_gate
+from marketing_os.governance.pipeline import Stage, deliverable_path, prerequisite_met
+from marketing_os.graph.state import CampaignState
+from marketing_os.ports import Reviewer
+from marketing_os.schemas import StageResult
 
 _USAGE_KEYS = (
     "input_tokens",
@@ -38,6 +37,26 @@ _USAGE_KEYS = (
     "cache_read_input_tokens",
     "cache_creation_input_tokens",
 )
+
+
+class CampaignNode(Protocol):
+    """A graph node mapping the campaign state to a partial state update.
+
+    The single parameter is named ``state`` (rather than using a positional-only
+    ``Callable[[CampaignState], ...]`` alias) so the node satisfies LangGraph's
+    node protocol, which requires a keyword-addressable ``state`` parameter.
+    """
+
+    def __call__(self, state: CampaignState) -> dict[str, Any]:
+        """Run the node.
+
+        Args:
+            state: The current campaign state.
+
+        Returns:
+            The partial state update produced by the node.
+        """
+        ...
 
 
 def _emit(event: str, **data: Any) -> None:
@@ -77,7 +96,7 @@ def _usage_delta(callback: Any) -> dict[str, int]:
     return total
 
 
-def make_gate_node(settings: Settings) -> Callable[[CampaignState], dict[str, Any]]:
+def make_gate_node(settings: Settings) -> CampaignNode:
     """Build the Stage 0 gate node.
 
     Args:
@@ -121,7 +140,7 @@ def make_gate_node(settings: Settings) -> Callable[[CampaignState], dict[str, An
     return gate_node
 
 
-def make_enter_node(settings: Settings, stage: Stage) -> Callable[[CampaignState], dict[str, Any]]:
+def make_enter_node(settings: Settings, stage: Stage) -> CampaignNode:
     """Build a stage's entry node.
 
     Args:
@@ -180,9 +199,7 @@ def make_enter_node(settings: Settings, stage: Stage) -> Callable[[CampaignState
     return enter_node
 
 
-def make_specialist_node(
-    settings: Settings, stage: Stage, agent: Runnable
-) -> Callable[[CampaignState], dict[str, Any]]:
+def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> CampaignNode:
     """Build a stage's specialist node.
 
     Args:
@@ -216,9 +233,7 @@ def make_specialist_node(
     return specialist_node
 
 
-def make_review_node(
-    settings: Settings, stage: Stage, reviewer: Reviewer
-) -> Callable[[CampaignState], dict[str, Any]]:
+def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> CampaignNode:
     """Build a stage's QA review node.
 
     Args:

@@ -16,8 +16,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..config import Settings
-from ..errors import GateError
+from marketing_os.config import Settings
+from marketing_os.errors import GateError
 
 _FIELD_RE = re.compile(r"^\s*-\s*\*\*(.+?):\*\*\s*(.*)$")
 _PLACEHOLDER_RE = re.compile(r"^<[^>]*>$")

@@ -13,8 +13,8 @@ from pathlib import Path
 
 import yaml
 
-from ..config import Settings
-from ..errors import ConfigError
+from marketing_os.config import Settings
+from marketing_os.errors import ConfigError
 
 
 @dataclass

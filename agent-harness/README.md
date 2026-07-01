@@ -27,16 +27,16 @@ OpenAI are swappable through `init_chat_model`.
 
 ## Configure (environment)
 
-| Var | Default | Notes |
-|---|---|---|
-| `MARKETING_OS_PROVIDER` | `deepseek` | `deepseek` \| `anthropic` \| `openai` |
-| `MARKETING_OS_ROOT` | auto-discovered | repo dir containing `.claude/` |
-| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL` | — / `deepseek-chat` / SDK default | confirm the model id for your account |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `claude-opus-4-8` | Anthropic provider |
-| `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | — / *(required)* / — | OpenAI provider |
-| `MARKETING_OS_REVIEWER_MODEL` | — | optional cheaper model for the QA judge |
-| `MARKETING_OS_MAX_STEPS` | `20` | tool-use steps per specialist |
-| `MARKETING_OS_MAX_QA` | `3` | self-critique iterations per stage |
+| Var                                                         | Default                           | Notes                                   |
+| ----------------------------------------------------------- | --------------------------------- | --------------------------------------- |
+| `MARKETING_OS_PROVIDER`                                     | `deepseek`                        | `deepseek` \| `anthropic` \| `openai`   |
+| `MARKETING_OS_ROOT`                                         | auto-discovered                   | repo dir containing `.claude/`          |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL` | — / `deepseek-chat` / SDK default | confirm the model id for your account   |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL`                     | — / `claude-opus-4-8`             | Anthropic provider                      |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL`       | — / _(required)_ / —              | OpenAI provider                         |
+| `MARKETING_OS_REVIEWER_MODEL`                               | —                                 | optional cheaper model for the QA judge |
+| `MARKETING_OS_MAX_STEPS`                                    | `20`                              | tool-use steps per specialist           |
+| `MARKETING_OS_MAX_QA`                                       | `3`                               | self-critique iterations per stage      |
 
 ## CLI
 
@@ -121,5 +121,6 @@ save-retry, budget exhaustion, prerequisite halt, and a full six-stage advance.
 
 ```bash
 export DEEPSEEK_API_KEY=...
+export MARKETING_OS_REVIEWER_MODEL=...
 uv run marketing-os new-campaign coast-coffee --slug coast-coffee-test --stage research
 ```

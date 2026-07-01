@@ -15,16 +15,15 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from ..adapters.models import get_model
-from ..adapters.review import LLMReviewer
-from ..adapters.tools import FilesystemSandbox, WebSearchTool, build_tools
-from ..agents.loader import AgentSpec, load_agent
-from ..agents.specialist import DIRECTOR_BODY, build_specialist
-from ..config import Settings
-from ..governance import load_governance
-from ..governance.pipeline import DIRECTOR, PIPELINE, PIPELINE_BY_KEY, Stage
-from ..ports import Reviewer
-from .nodes import (
+from marketing_os.adapters.models import get_model
+from marketing_os.adapters.review import LLMReviewer
+from marketing_os.adapters.tools import FilesystemSandbox, WebSearchTool, build_tools
+from marketing_os.agents.loader import AgentSpec, load_agent
+from marketing_os.agents.specialist import DIRECTOR_BODY, build_specialist
+from marketing_os.config import Role, Settings
+from marketing_os.governance import load_governance
+from marketing_os.governance.pipeline import DIRECTOR, PIPELINE, PIPELINE_BY_KEY, Stage
+from marketing_os.graph.nodes import (
     make_enter_node,
     make_gate_node,
     make_review_node,
@@ -32,7 +31,8 @@ from .nodes import (
     route_after_enter,
     route_after_review,
 )
-from .state import CampaignState
+from marketing_os.graph.state import CampaignState
+from marketing_os.ports import Reviewer
 
 
 def _director_spec() -> AgentSpec:
@@ -160,7 +160,7 @@ def build_campaign_graph(
     """
     governance = load_governance(settings)
     model = model or get_model(settings)
-    reviewer = reviewer or LLMReviewer(get_model(settings, role="reviewer"), settings)
+    reviewer = reviewer or LLMReviewer(get_model(settings, role=Role.REVIEWER), settings)
     builder = StateGraph(CampaignState)
     builder.add_node("gate", make_gate_node(settings))
     builder.add_edge(START, "gate")
@@ -203,7 +203,7 @@ def build_single_stage_graph(
     stage = PIPELINE_BY_KEY[stage_key]
     governance = load_governance(settings)
     model = model or get_model(settings)
-    reviewer = reviewer or LLMReviewer(get_model(settings, role="reviewer"), settings)
+    reviewer = reviewer or LLMReviewer(get_model(settings, role=Role.REVIEWER), settings)
     builder = StateGraph(CampaignState)
     builder.add_node("gate", make_gate_node(settings))
     builder.add_edge(START, "gate")

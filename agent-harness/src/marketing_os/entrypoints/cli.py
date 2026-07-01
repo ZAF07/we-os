@@ -16,10 +16,10 @@ import argparse
 import sys
 from typing import Any
 
-from ..config import load_settings
-from ..errors import GateError, MarketingOSError
-from ..governance import check_gate
-from ..governance.gate import GateReport
+from marketing_os.config import load_settings
+from marketing_os.errors import GateError, MarketingOSError
+from marketing_os.governance import check_gate
+from marketing_os.governance.gate import GateReport
 
 
 def _print_gate(report: GateReport) -> bool:
@@ -84,7 +84,7 @@ def _cmd_agents(args: argparse.Namespace) -> int:
     Returns:
         The process exit code.
     """
-    from ..agents import load_all_agents
+    from marketing_os.agents import load_all_agents
 
     settings = load_settings()
     for name, spec in load_all_agents(settings).items():
@@ -110,7 +110,7 @@ def _cmd_new_campaign(args: argparse.Namespace) -> int:
     if not _print_gate(report):
         return 1
 
-    from ..graph.runner import run_campaign
+    from marketing_os.graph.runner import run_campaign
 
     result = run_campaign(settings, args.name, slug, stage=args.stage, on_event=_render_event)
     print("\n" + "=" * 60)

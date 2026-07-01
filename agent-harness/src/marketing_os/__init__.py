@@ -21,8 +21,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .config import ProviderConfig, Settings, load_settings
-from .errors import (
+from marketing_os.config import ProviderConfig, Settings, load_settings
+from marketing_os.errors import (
     ConfigError,
     GateError,
     GuardrailError,
@@ -31,7 +31,7 @@ from .errors import (
     ProviderError,
     ToolError,
 )
-from .schemas import (
+from marketing_os.schemas import (
     CampaignResult,
     Discrepancy,
     ReviewVerdict,
@@ -40,7 +40,7 @@ from .schemas import (
 )
 
 if TYPE_CHECKING:
-    from .graph.graph import build_campaign_graph, build_single_stage_graph
+    from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
 
 __all__ = [
     "Settings",
@@ -76,7 +76,7 @@ def __getattr__(name: str) -> Any:
         AttributeError: If the attribute is not a known lazy export.
     """
     if name in {"build_campaign_graph", "build_single_stage_graph"}:
-        from .graph import graph as _graph_module
+        from marketing_os.graph import graph as _graph_module
 
         return getattr(_graph_module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

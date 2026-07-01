@@ -22,10 +22,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ...config import Settings, load_settings
-from ...errors import GateError, MarketingOSError
-from ...governance import check_gate
-from ...graph.runner import astream_campaign, run_campaign
+from marketing_os.config import Settings, load_settings
+from marketing_os.errors import GateError, MarketingOSError
+from marketing_os.governance import check_gate
+from marketing_os.graph.runner import astream_campaign, run_campaign
 
 app = FastAPI(title="Marketing OS", version="0.2.0")
 

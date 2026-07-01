@@ -11,9 +11,10 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
+from langchain_deepseek import ChatDeepSeek
 
-from ..config import ProviderConfig, Settings
-from ..errors import ProviderError
+from marketing_os.config import ProviderConfig, Settings
+from marketing_os.errors import ProviderError
 
 _DEFAULT_MAX_TOKENS = 16000
 
@@ -58,13 +59,6 @@ def _build_deepseek(config: ProviderConfig, max_tokens: int) -> BaseChatModel:
     Raises:
         ProviderError: If ``langchain-deepseek`` is not installed.
     """
-    try:
-        from langchain_deepseek import ChatDeepSeek
-    except ImportError as exc:
-        raise ProviderError(
-            "The DeepSeek provider requires 'langchain-deepseek'. "
-            "Install it with: uv add langchain-deepseek"
-        ) from exc
     kwargs: dict[str, Any] = {"model": config.model, "max_tokens": max_tokens}
     if config.api_key:
         kwargs["api_key"] = config.api_key

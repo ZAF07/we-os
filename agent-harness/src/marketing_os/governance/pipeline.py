@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config import Settings
+from marketing_os.config import Settings
 
 # Sentinel for stages the Marketing Director (orchestrator) owns directly,
 # rather than delegating to a specialist subagent.

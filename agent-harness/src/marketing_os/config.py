@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 
-from .errors import ConfigError
+from marketing_os.errors import ConfigError
 
 _CLAUDE_DIR_NAME = ".claude"
 
+class Role(StrEnum):
+    REVIEWER = "reviewer"
+    DEFAULT = "default"
 
 def _discover_root() -> Path:
     """Locate the Marketing OS repository root.
@@ -55,10 +59,11 @@ class ProviderConfig:
 _PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "deepseek": {
         "model_env": "DEEPSEEK_MODEL",
-        "model_default": "deepseek-chat",
+        "reviewer_model_default": "deepseek-v4-flash",
+        "model_default": "deepseek-v4-pro",
         "key_env": "DEEPSEEK_API_KEY",
         "base_url_env": "DEEPSEEK_BASE_URL",
-        "base_url_default": "",
+        "base_url_default": "https://api.deepseek.com",
     },
     "anthropic": {
         "model_env": "ANTHROPIC_MODEL",
@@ -166,8 +171,13 @@ class Settings:
         spec = _PROVIDER_DEFAULTS.get(name)
         if spec is None:
             raise ConfigError(f"Unknown provider '{name}'. Known: {', '.join(_PROVIDER_DEFAULTS)}.")
-        role_model = os.environ.get(f"MARKETING_OS_{role.upper()}_MODEL") if role else None
-        model = role_model or os.environ.get(spec["model_env"], spec["model_default"])
+
+        if role == Role.REVIEWER:
+            role_model = os.environ.get(f"MARKETING_OS_{role.upper()}_MODEL") if role else None
+            model = role_model or os.environ.get(spec["model_env"], spec["reviewer_model_default"])
+        else:
+            model = os.environ.get(spec["model_env"], spec["model_default"])
+        
         if not model:
             raise ConfigError(
                 f"No model configured for provider '{name}'. Set {spec['model_env']}."

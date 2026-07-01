@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .websearch import WebSearchTool
+from marketing_os.adapters.tools.websearch import WebSearchTool
 
 
 class PlaywrightWebSearch(WebSearchTool):

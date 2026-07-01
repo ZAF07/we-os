@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from langchain_core.tools import BaseTool
 
-from .filesystem import filesystem_tools
-from .sandbox import FilesystemSandbox
-from .websearch import NoopWebSearch, WebSearchTool, web_tools
+from marketing_os.adapters.tools.filesystem import filesystem_tools
+from marketing_os.adapters.tools.sandbox import FilesystemSandbox
+from marketing_os.adapters.tools.websearch import NoopWebSearch, WebSearchTool, web_tools
 
 __all__ = [
     "FilesystemSandbox",

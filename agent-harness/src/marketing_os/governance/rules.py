@@ -8,7 +8,7 @@ system prompt — the same content the Claude Code session loads each turn.
 
 from __future__ import annotations
 
-from ..config import Settings
+from marketing_os.config import Settings
 
 # Stable order so the cached prompt prefix doesn't churn between runs.
 _PREFERRED_ORDER = [

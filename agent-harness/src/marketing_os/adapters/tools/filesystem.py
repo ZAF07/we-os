@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from langchain_core.tools import BaseTool, tool
 
-from .sandbox import FilesystemSandbox
+from marketing_os.adapters.tools.sandbox import FilesystemSandbox
 
 
 def filesystem_tools(sandbox: FilesystemSandbox, *, include_write: bool) -> dict[str, BaseTool]:

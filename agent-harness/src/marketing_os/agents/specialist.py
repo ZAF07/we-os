@@ -13,7 +13,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
-from .loader import AgentSpec
+from marketing_os.agents.loader import AgentSpec
 
 DIRECTOR_BODY = """\
 You are the **Marketing Director** in the Marketing OS specialist hierarchy — the
