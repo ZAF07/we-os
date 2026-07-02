@@ -67,7 +67,7 @@ In this version `knowledge/` is **read-only** to agents. A planned future capabi
 - **Verify, don't assume.** Run the relevant command and report the real result.
 - **Ask when genuinely blocked** on a decision only I can make; otherwise pick the
   sensible default, state it, and proceed.
-- **Don't commit or push** unless I ask.
+- **Don't push** unless I ask.
 
 ---
 
