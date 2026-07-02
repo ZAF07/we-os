@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
 
 from marketing_os.config import Settings
-from marketing_os.schemas import ReviewVerdict
+from marketing_os.schemas import Discrepancy, ReviewVerdict
 
 Handler = Callable[[list[BaseMessage], int], AIMessage]
+
+PLACEHOLDER_DNA = "# Customer DNA — Acme\n\n## Business\n- **Business name:** <name>\n"
+
+PASS_VERDICT = ReviewVerdict(passed=True, summary="ok")
+FAIL_VERDICT = ReviewVerdict(
+    passed=False,
+    summary="needs work",
+    discrepancies=[Discrepancy(rubric_point="x", problem="p", fix="f")],
+)
 
 
 class ProgrammableChatModel(BaseChatModel):
@@ -272,3 +282,98 @@ def settings(repo: Path) -> Settings:
     built = Settings(root=repo)
     built.validate_root()
     return built
+
+
+_PIPELINE_AGENTS = {
+    "brand-strategy": "You are the Brand Strategy Agent.",
+    "creative-director": "You are the Creative Director Agent.",
+    "creative-asset-prompt": "You are the Creative Asset Prompt Agent.",
+    "performance-marketing": "You are the Performance Marketing Agent.",
+}
+
+
+def write_all_agent_specs(settings: Settings) -> None:
+    """Write the downstream specialist specs so a full pipeline run can build.
+
+    The ``repo`` fixture ships only ``market-research.md``; the remaining stages
+    need their agent markdown present before the campaign graph can be assembled.
+
+    Args:
+        settings: The harness settings locating the agents directory.
+    """
+    for name, body in _PIPELINE_AGENTS.items():
+        path = settings.agents_dir / f"{name}.md"
+        path.write_text(
+            f"---\nname: {name}\ndescription: {name}\ntools: Read, Grep, Glob, Write\n---\n{body}",
+            encoding="utf-8",
+        )
+
+
+def deliverable_from(messages: list[BaseMessage]) -> str:
+    """Extract the ``campaigns/*.md`` deliverable path named in the seeded task.
+
+    Args:
+        messages: The conversation so far.
+
+    Returns:
+        The last ``campaigns/<slug>/<name>.md`` path found in the messages.
+    """
+    text = "\n".join(str(m.content) for m in messages)
+    matches = re.findall(r"campaigns/[\w-]+/[\w-]+\.md", text)
+    assert matches, "no deliverable path in task"
+    return matches[-1]
+
+
+def writing_handler(messages: list[BaseMessage], index: int) -> AIMessage:
+    """Write the deliverable named in the task, then stop once the tool has run.
+
+    Args:
+        messages: The conversation so far.
+        index: The model-call index (unused).
+
+    Returns:
+        A ``write_file`` tool call, or a plain completion after the write.
+    """
+    if isinstance(messages[-1], ToolMessage):
+        return AIMessage(content="Saved. Done.")
+    path = deliverable_from(messages)
+    return write_call(path, f"# Deliverable\n\nContent for {path}.")
+
+
+def install_scripted_graph(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    handler: Handler = writing_handler,
+    verdicts: list[ReviewVerdict] | None = None,
+) -> None:
+    """Patch the runner's graph builders to inject a scripted model and reviewer.
+
+    The CLI and API entrypoints build the graph internally through the runner, so
+    they never expose a model seam. This wraps :func:`build_campaign_graph` and
+    :func:`build_single_stage_graph` as the runner imports them, defaulting the
+    ``model`` and ``reviewer`` arguments to hermetic fakes so no network is used.
+
+    Args:
+        monkeypatch: The pytest monkeypatch fixture.
+        handler: The scripted chat-model handler.
+        verdicts: The reviewer verdict script; defaults to a single pass.
+    """
+    from marketing_os.graph import graph as graph_mod
+    from marketing_os.graph import runner as runner_mod
+
+    script = list(verdicts) if verdicts else [PASS_VERDICT]
+    real_campaign = graph_mod.build_campaign_graph
+    real_single = graph_mod.build_single_stage_graph
+
+    def campaign(settings: Settings, **kwargs: Any) -> Any:
+        kwargs.setdefault("model", ProgrammableChatModel(handler=handler))
+        kwargs.setdefault("reviewer", FakeReviewer(list(script)))
+        return real_campaign(settings, **kwargs)
+
+    def single(settings: Settings, stage_key: str, **kwargs: Any) -> Any:
+        kwargs.setdefault("model", ProgrammableChatModel(handler=handler))
+        kwargs.setdefault("reviewer", FakeReviewer(list(script)))
+        return real_single(settings, stage_key, **kwargs)
+
+    monkeypatch.setattr(runner_mod, "build_campaign_graph", campaign)
+    monkeypatch.setattr(runner_mod, "build_single_stage_graph", single)
