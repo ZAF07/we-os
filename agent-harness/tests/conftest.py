@@ -90,6 +90,22 @@ def write_call(path: str, content: str, call_id: str = "call_write") -> AIMessag
     )
 
 
+def read_call(path: str, call_id: str = "call_read") -> AIMessage:
+    """Build an assistant message that calls the ``read_file`` tool.
+
+    Args:
+        path: The path to read.
+        call_id: The tool-call id.
+
+    Returns:
+        An ``AIMessage`` carrying a single ``read_file`` tool call.
+    """
+    return AIMessage(
+        content="",
+        tool_calls=[{"name": "read_file", "args": {"path": path}, "id": call_id}],
+    )
+
+
 class FakeReviewer:
     """A reviewer that returns a scripted sequence of verdicts.
 

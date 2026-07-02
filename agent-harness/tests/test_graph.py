@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import re
 
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
-from conftest import FakeReviewer, ProgrammableChatModel, write_call
+from conftest import FakeReviewer, ProgrammableChatModel, read_call, write_call
 from marketing_os.config import Settings
 from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
 from marketing_os.schemas import Discrepancy, ReviewVerdict
@@ -68,7 +68,7 @@ def _refusing_then_writing_handler(messages: list[BaseMessage], index: int) -> A
     if isinstance(messages[-1], ToolMessage):
         return AIMessage(content="Saved. Done.")
     text = "\n".join(str(m.content) for m in messages)
-    if "have not saved" in text:
+    if "did NOT save" in text:
         return write_call(_deliverable_from(messages), "# Deliverable\n\nSaved late.")
     return AIMessage(content="All done (but I forgot to save).")
 
@@ -144,6 +144,95 @@ def test_qa_revise_loop_until_pass(settings: Settings) -> None:
     assert state["results"][0]["approved"] is True
     assert state["results"][0]["qa_iterations"] == 1
     assert len(reviewer.calls) == 2
+
+
+def test_revise_resets_conversation_no_transcript_accumulation(settings: Settings) -> None:
+    human_counts: list[int] = []
+
+    def recording_handler(messages: list[BaseMessage], index: int) -> AIMessage:
+        human_counts.append(sum(1 for m in messages if isinstance(m, HumanMessage)))
+        if isinstance(messages[-1], ToolMessage):
+            return AIMessage(content="Saved. Done.")
+        path = _deliverable_from(messages)
+        return write_call(path, "# Deliverable\n\nContent.")
+
+    reviewer = FakeReviewer([_FAIL, _PASS])
+    graph = build_single_stage_graph(
+        settings,
+        "research",
+        model=ProgrammableChatModel(handler=recording_handler),
+        reviewer=reviewer,
+    )
+    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("reset"))
+    assert state["error"] is None
+    assert state["results"][0]["qa_iterations"] == 1
+    assert human_counts and max(human_counts) == 1
+
+
+def test_bad_path_tool_error_is_recoverable_not_fatal(settings: Settings) -> None:
+    def handler(messages: list[BaseMessage], index: int) -> AIMessage:
+        last = messages[-1]
+        if isinstance(last, ToolMessage):
+            if last.status == "error":
+                seed_only = [m for m in messages if isinstance(m, HumanMessage)]
+                return write_call(_deliverable_from(seed_only), "# Deliverable\n\nRecovered.")
+            return AIMessage(content="Saved. Done.")
+        return read_call("campaigns/acme/does-not-exist.md")
+
+    reviewer = FakeReviewer([_PASS])
+    graph = build_single_stage_graph(
+        settings, "research", model=ProgrammableChatModel(handler=handler), reviewer=reviewer
+    )
+    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("recover"))
+    assert state["error"] is None
+    assert state["results"][0]["approved"] is True
+    assert (settings.campaigns_dir / "acme" / "research.md").is_file()
+
+
+def test_revision_inlines_draft_and_requires_no_read(settings: Settings) -> None:
+    seeds: list[str] = []
+
+    def handler(messages: list[BaseMessage], index: int) -> AIMessage:
+        last = messages[-1]
+        if isinstance(last, HumanMessage):
+            seeds.append(str(last.content))
+        if isinstance(last, ToolMessage):
+            return AIMessage(content="Saved. Done.")
+        return write_call(_deliverable_from(messages), f"# Deliverable\n\nContent v{len(seeds)}.")
+
+    reviewer = FakeReviewer([_FAIL, _PASS])
+    graph = build_single_stage_graph(
+        settings, "research", model=ProgrammableChatModel(handler=handler), reviewer=reviewer
+    )
+    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("inline"))
+    assert state["error"] is None
+    assert state["results"][0]["qa_iterations"] == 1
+    revision_seeds = [s for s in seeds if "# Revision" in s]
+    assert revision_seeds, "no revision seed was produced"
+    assert "## Previous draft" in revision_seeds[0]
+    assert "Content v1" in revision_seeds[0]
+    assert "read_file" not in revision_seeds[0]
+
+
+def test_seeds_anchor_the_campaign_slug(settings: Settings) -> None:
+    seeds: list[str] = []
+
+    def handler(messages: list[BaseMessage], index: int) -> AIMessage:
+        last = messages[-1]
+        if isinstance(last, HumanMessage):
+            seeds.append(str(last.content))
+        if isinstance(last, ToolMessage):
+            return AIMessage(content="Saved. Done.")
+        return write_call(_deliverable_from(messages), "# Deliverable\n\nContent.")
+
+    reviewer = FakeReviewer([_PASS])
+    graph = build_single_stage_graph(
+        settings, "research", model=ProgrammableChatModel(handler=handler), reviewer=reviewer
+    )
+    graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("anchor"))
+    assert seeds
+    assert "This campaign's slug is `acme`" in seeds[0]
+    assert "campaigns/acme/" in seeds[0]
 
 
 def test_qa_budget_exhausted_fails(settings: Settings) -> None:

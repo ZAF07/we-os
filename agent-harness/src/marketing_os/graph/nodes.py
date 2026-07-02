@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from langchain_core.callbacks import get_usage_metadata_callback
-from langchain_core.messages import HumanMessage, RemoveMessage
+from langchain_core.messages import BaseMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import Runnable
 from langgraph.config import get_stream_writer
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
@@ -121,6 +121,80 @@ def _usage_delta(callback: Any) -> dict[str, int]:
     return total
 
 
+def _compose_seed(dna_text: str, body: str) -> str:
+    """Compose a specialist seed message from the DNA and a task/instruction body.
+
+    Args:
+        dna_text: The Customer DNA to ground the work in.
+        body: The task or revision instructions.
+
+    Returns:
+        The seed message text.
+    """
+    return (
+        "# Customer DNA (ground every recommendation in this; never invent "
+        f"what it omits)\n\n{dna_text}\n\n{body}"
+    )
+
+
+def _fresh_conversation(dna_text: str, body: str) -> list[BaseMessage]:
+    """Build a reset conversation seeded with a single clean human turn.
+
+    Resetting the messages before each specialist attempt keeps every attempt a
+    short, single-turn conversation, so a multi-round tool-call history is never
+    re-sent to the model (which DeepSeek V4 thinking mode rejects).
+
+    Args:
+        dna_text: The Customer DNA to ground the work in.
+        body: The task or revision instructions.
+
+    Returns:
+        A ``RemoveMessage``-then-``HumanMessage`` list that clears prior turns and
+        seeds the new one.
+    """
+    return [RemoveMessage(id=REMOVE_ALL_MESSAGES), HumanMessage(_compose_seed(dna_text, body))]
+
+
+def _path_anchor(slug: str) -> str:
+    """Build a prominent reminder of the campaign slug and its path prefix.
+
+    Prepended to every specialist seed so the exact slug the model must type in
+    tool-call paths is stated redundantly and hard to corrupt, rather than
+    appearing only once inside a single deliverable path.
+
+    Args:
+        slug: The campaign slug.
+
+    Returns:
+        A short markdown block naming the slug and the path prefix to use.
+    """
+    return (
+        f"# Campaign\n\nThis campaign's slug is `{slug}`. Every file you read or write "
+        f"lives under `campaigns/{slug}/`. Use this exact slug, character for character, "
+        "in every tool-call path — never alter, abbreviate, or guess it."
+    )
+
+
+def _stage_task(settings: Settings, slug: str, customer: str, stage: Stage) -> str:
+    """Format the task brief for a stage with its repo paths filled in.
+
+    Args:
+        settings: The harness settings.
+        slug: The campaign slug.
+        customer: The customer name.
+        stage: The pipeline stage.
+
+    Returns:
+        The formatted task brief.
+    """
+    return stage.task.format(
+        goal_path=f"campaigns/{slug}/goal.md",
+        dna_path=f"customers/{customer}/dna.md",
+        prereq_path=(f"campaigns/{slug}/{stage.prerequisite}" if stage.prerequisite else ""),
+        deliverable_path=str(deliverable_path(settings, slug, stage).relative_to(settings.root)),
+    )
+
+
 def make_gate_node(settings: Settings) -> CampaignNode:
     """Build the Stage 0 gate node.
 
@@ -200,20 +274,10 @@ def make_enter_node(settings: Settings, stage: Stage) -> CampaignNode:
                 "route": "end",
             }
         _emit("stage.start", stage=stage.key, agent=stage.agent)
-        task = stage.task.format(
-            goal_path=f"campaigns/{slug}/goal.md",
-            dna_path=f"customers/{customer}/dna.md",
-            prereq_path=(f"campaigns/{slug}/{stage.prerequisite}" if stage.prerequisite else ""),
-            deliverable_path=str(
-                deliverable_path(settings, slug, stage).relative_to(settings.root)
-            ),
-        )
-        seed = (
-            "# Customer DNA (ground every recommendation in this; never invent "
-            f"what it omits)\n\n{state['dna_text']}\n\n# Your task\n\n{task}"
-        )
+        task = _stage_task(settings, slug, customer, stage)
+        task_body = f"{_path_anchor(slug)}\n\n# Your task\n\n{task}"
         return {
-            "messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), HumanMessage(seed)],
+            "messages": _fresh_conversation(state["dna_text"], task_body),
             "qa_iterations": 0,
             "save_retries": 0,
             "verdict": None,
@@ -284,10 +348,11 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
             A state update carrying the routing decision and, depending on the
             outcome, a revision message, a recorded stage result, or an error.
         """
-        path = deliverable_path(settings, state["slug"], stage)
+        slug = state["slug"]
+        path = deliverable_path(settings, slug, stage)
         rel = path.relative_to(settings.root)
         if not path.is_file():
-            return _handle_missing_deliverable(state, stage, str(rel), budget)
+            return _handle_missing_deliverable(settings, state, stage, str(rel), budget)
 
         text = path.read_text(encoding="utf-8")
         with get_usage_metadata_callback() as callback:
@@ -352,8 +417,15 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
                 "route": "fail",
             }
 
+        revise_body = (
+            f"{_path_anchor(slug)}\n\n# Revision\n\nYour previous draft is "
+            f"reproduced below. Resolve every issue listed, then save the revised "
+            f"deliverable to `{rel}` with the write_file tool.\n\n"
+            f"## Previous draft\n\n{text}\n\n"
+            f"## Required changes\n\n{verdict.as_revision_instruction()}"
+        )
         return {
-            "messages": [HumanMessage(verdict.as_revision_instruction())],
+            "messages": _fresh_conversation(state["dna_text"], revise_body),
             "verdict": verdict.model_dump(),
             "qa_iterations": qa_iterations + 1,
             "usage": usage,
@@ -364,11 +436,15 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
 
 
 def _handle_missing_deliverable(
-    state: CampaignState, stage: Stage, rel: str, budget: int
+    settings: Settings, state: CampaignState, stage: Stage, rel: str, budget: int
 ) -> dict[str, Any]:
     """Force a save-retry, or fail the stage once the retry budget is spent.
 
+    The retry re-seeds a fresh conversation with the full task and an explicit
+    save instruction rather than appending to the prior transcript.
+
     Args:
+        settings: The harness settings (to rebuild the task brief).
         state: The campaign state after the specialist ran.
         stage: The stage whose deliverable is missing.
         rel: The repo-relative deliverable path the specialist must write.
@@ -386,13 +462,14 @@ def _handle_missing_deliverable(
             "route": "fail",
         }
     _emit("stage.save_retry", stage=stage.key, attempt=save_retries + 1)
+    slug = state["slug"]
+    task = _stage_task(settings, slug, state["customer"], stage)
+    save_body = (
+        f"{_path_anchor(slug)}\n\n# Your task\n\n{task}\n\n# Important\n\nYou did NOT save "
+        f"your deliverable. You MUST call the write_file tool to save it to {rel}, then stop."
+    )
     return {
-        "messages": [
-            HumanMessage(
-                "You have not saved your deliverable. Save it now to "
-                f"{rel} using the write_file tool, then stop."
-            )
-        ],
+        "messages": _fresh_conversation(state["dna_text"], save_body),
         "save_retries": save_retries + 1,
         "route": "revise",
     }

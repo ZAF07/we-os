@@ -46,6 +46,7 @@ In this version `knowledge/` is **read-only** to agents. A planned future capabi
 ## Coding standards
 
 - Type-annotate all public functions; `mypy` must pass on `src/`.
+- Ues absolute path imports instead of relative
 - Use UV for package and virtual env management
 - Keep functions focused; prefer pure functions and dependency injection over globals.
 - Function and variable names MUST be clear and describes what they do or hold.
@@ -78,3 +79,19 @@ A task is done when:
 2. `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`, and `uv run pytest` all pass.
 3. New behavior has tests.
 4. You've reported what you changed and any caveats plainly.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked as local markdown files under `.scratch/<feature>/`; external PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Uses the five canonical triage roles with default strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), recorded as a `Status:` line in each issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

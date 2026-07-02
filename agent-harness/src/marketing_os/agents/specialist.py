@@ -14,6 +14,7 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
 from marketing_os.agents.loader import AgentSpec
+from marketing_os.agents.middleware import recover_tool_errors
 
 DIRECTOR_BODY = """\
 You are the **Marketing Director** in the Marketing OS specialist hierarchy — the
@@ -81,4 +82,5 @@ def build_specialist(
         model,
         tools,
         system_prompt=compose_system(governance, spec.body),
+        middleware=[recover_tool_errors],
     )
