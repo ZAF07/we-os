@@ -16,18 +16,29 @@ Playwright is imported lazily inside :meth:`_new_page` so the module (and the
 offline test suite) loads without the extra installed. The browser and Playwright
 driver are launched lazily on first page and reused across calls; :meth:`close`
 tears them down.
+
+Playwright's sync API is bound to the thread that starts it, so every page
+operation is routed to a single dedicated worker thread. Callers (for example
+LangGraph tool executors, which use a fresh short-lived thread per tool batch)
+may therefore invoke :meth:`search`, :meth:`fetch`, and :meth:`close` from any
+thread.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
+import threading
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, TypeVar
 from urllib.parse import parse_qs, quote_plus, urlparse
 
 from marketing_os.adapters.tools.websearch import WebSearchTool
 
 _FETCH_MAX_CHARS = 8_000
 _WHITESPACE = re.compile(r"[ \t\f\v]+")
+
+_T = TypeVar("_T")
 
 
 def _decode_result_href(href: str) -> str:
@@ -120,6 +131,31 @@ class PlaywrightWebSearch(WebSearchTool):
         self.timeout_ms = timeout_ms
         self._playwright: Any = None
         self._browser: Any = None
+        self._executor: ThreadPoolExecutor | None = None
+        self._executor_lock = threading.Lock()
+
+    def _run_on_worker(self, fn: Callable[..., _T], *args: Any) -> _T:
+        """Run a callable on the backend's dedicated Playwright thread.
+
+        The worker is a single-thread executor created lazily on first use, so
+        every Playwright object lives and is used on one long-lived thread —
+        the sync API raises ``greenlet.error`` when touched from any other
+        thread, including the short-lived executor threads tool nodes run on.
+
+        Args:
+            fn: The callable to run on the worker thread.
+            *args: Positional arguments for ``fn``.
+
+        Returns:
+            Whatever ``fn`` returns.
+        """
+        with self._executor_lock:
+            if self._executor is None:
+                self._executor = ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="playwright-web"
+                )
+            executor = self._executor
+        return executor.submit(fn, *args).result()
 
     def _new_page(self) -> Any:
         """Launch Playwright lazily and return a new page.
@@ -141,6 +177,21 @@ class PlaywrightWebSearch(WebSearchTool):
 
     def search(self, query: str, max_results: int = 5) -> str:
         """Run a search and return a readable, source-attributed result list.
+
+        Safe to call from any thread; the browser work runs on the backend's
+        dedicated Playwright thread.
+
+        Args:
+            query: The search query.
+            max_results: The maximum number of results to return.
+
+        Returns:
+            A readable, source-attributed result string.
+        """
+        return self._run_on_worker(self._search_on_worker, query, max_results)
+
+    def _search_on_worker(self, query: str, max_results: int) -> str:
+        """Drive the browser for :meth:`search` on the Playwright thread.
 
         Args:
             query: The search query.
@@ -174,6 +225,20 @@ class PlaywrightWebSearch(WebSearchTool):
     def fetch(self, url: str) -> str:
         """Fetch a URL and return its readable text content.
 
+        Safe to call from any thread; the browser work runs on the backend's
+        dedicated Playwright thread.
+
+        Args:
+            url: The URL to fetch.
+
+        Returns:
+            The trimmed readable text of the page.
+        """
+        return self._run_on_worker(self._fetch_on_worker, url)
+
+    def _fetch_on_worker(self, url: str) -> str:
+        """Drive the browser for :meth:`fetch` on the Playwright thread.
+
         Args:
             url: The URL to fetch.
 
@@ -189,7 +254,23 @@ class PlaywrightWebSearch(WebSearchTool):
         return _trim_text(text)
 
     def close(self) -> None:
-        """Stop the browser and Playwright driver if they were launched."""
+        """Stop the browser, the Playwright driver, and the worker thread.
+
+        Safe to call from any thread and a no-op when the backend was never
+        used.
+        """
+        with self._executor_lock:
+            executor = self._executor
+            self._executor = None
+        if executor is None:
+            return
+        try:
+            executor.submit(self._close_on_worker).result()
+        finally:
+            executor.shutdown(wait=True)
+
+    def _close_on_worker(self) -> None:
+        """Tear down the browser and driver on the Playwright thread."""
         if self._browser is not None:
             self._browser.close()
             self._browser = None
