@@ -40,6 +40,15 @@ class WebSearchTool(ABC):
             The readable text content of the page.
         """
 
+    def close(self) -> None:
+        """Release any resources the backend holds.
+
+        The default is a no-op for stateless backends; backends that launch
+        external processes (for example a browser) override this to tear them
+        down.
+        """
+        return None
+
 
 class NoopWebSearch(WebSearchTool):
     """Default backend with no live web access, returning an honest message."""

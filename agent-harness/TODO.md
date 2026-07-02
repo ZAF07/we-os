@@ -9,7 +9,7 @@ What ships working today, and what *you* fill in to make it production-complete.
 | Chat models (DeepSeek/Anthropic/OpenAI) | working via `adapters/models.py` | confirm the DeepSeek model id; add keys |
 | Specialist agents (`create_agent`) | working | nothing required |
 | Tools — filesystem | working, write-scoped to `campaigns/**` | nothing required |
-| Tools — web search | **stub only** | implement Playwright `search`/`fetch` |
+| Tools — web search | working (Playwright), gated on `MARKETING_OS_WEB=1` | install the extra + `playwright install chromium` |
 | Gate · pipeline · nodes · graph · QA reviewer | working | nothing required |
 | Guardrail rubrics (`guardrails/*.md`) | starter rubrics | sharpen to your professional bar |
 | Persistence | `MemorySaver` (in-process) | wire `PostgresSaver` for production |
@@ -28,14 +28,19 @@ are clean.
   they differ). To swap providers entirely, set `MARKETING_OS_PROVIDER=anthropic`
   (or `openai`) and the matching key — resolved through `init_chat_model`.
 
-### 1b. Implement web search (the Playwright stub)
-- **What**: `adapters/tools/websearch_playwright.py` — `_new_page()`,
-  `search()`, `fetch()` raise `NotImplementedError`.
+### 1b. Enable web search (the Playwright backend)
+- **What**: `adapters/tools/websearch_playwright.py` — `PlaywrightWebSearch`
+  now implements `_new_page()`, `search()`, and `fetch()` against
+  `playwright.sync_api` (DuckDuckGo HTML endpoint, redirect-unwrapped links).
 - **Why**: `market-research` and `performance-marketing` declare `WebSearch`/
-  `WebFetch`; without a backend they get `NoopWebSearch` and reason from DNA only.
-- **How**: `uv add --optional playwright playwright && uv run playwright install
-  chromium`, fill the three methods with `playwright.sync_api`, then pass an
-  instance as `web_backend=` to `build_campaign_graph` / `run_campaign`.
+  `WebFetch`; without a live backend they get `NoopWebSearch` and reason from DNA
+  only. The backend is off by default so the offline suite needs no browser.
+- **How**: install the extra — `uv add --optional playwright playwright && uv run
+  playwright install chromium` — then set `MARKETING_OS_WEB=1`. The runner wires a
+  `PlaywrightWebSearch` via the `web_backend=` injection point automatically
+  (`_default_web_backend` in `graph/runner.py`); pass an explicit `web_backend=`
+  to `run_campaign` / `build_campaign_graph` to override. Playwright is imported
+  lazily and the browser launches on first tool call, so the gate stays cheap.
 
 ## 2. Extension points
 

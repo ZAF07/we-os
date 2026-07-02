@@ -1,6 +1,6 @@
 # Implement the Playwright web search backend
 
-Status: ready-for-agent
+Status: completed
 
 `PlaywrightWebSearch` is a stub — `_new_page()`, `search()`, and `fetch()` all raise `NotImplementedError` on purpose. Until it is implemented, agents that declare `WebSearch`/`WebFetch` (market-research, performance-marketing) fall back to `NoopWebSearch` and reason from Customer DNA only, so no live market data reaches research or performance planning.
 

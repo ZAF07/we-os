@@ -44,6 +44,10 @@ _Avoid_: check, test, lint.
 The central, citable store of expert frameworks by discipline (`knowledge/<discipline>/`). Read-only to agents in this version; agents cite which framework they applied. Currently stubs awaiting domain content.
 _Avoid_: docs, references, wiki.
 
+**Web Backend**:
+The pluggable live-web capability (`WebSearchTool` port) granting the specialists that declare it — market-research and performance-marketing — `web_search`/`web_fetch` tools. Two adapters exist: the default **NoopWebSearch**, which returns an honest "web search is not configured" message so runs stay grounded in the Customer DNA, and **PlaywrightWebSearch**, a browser-driven backend. The live backend is off by default and wired only when `MARKETING_OS_WEB=1` (see [ADR-0001](docs/adr/0001-ports-and-adapters-architecture.md)).
+_Avoid_: search tool, web tool, scraper.
+
 **KPI tiers**:
 The three levels every campaign must define, which ladder up to each other — **Business KPI** (revenue, leads, bookings, retention), **Marketing KPI** (CTR, CPC, CPM, conversion rate), **Creative KPI** (hook rate, watch time, engagement rate).
 _Avoid_: metrics, goals (unqualified).
