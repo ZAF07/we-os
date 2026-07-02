@@ -67,6 +67,36 @@ def _select_graph(
     return build_campaign_graph(settings, web_backend=web_backend, checkpointer=checkpointer)
 
 
+def _resolve_web_backend(
+    settings: Settings, web_backend: WebSearchTool | None
+) -> tuple[WebSearchTool | None, bool]:
+    """Resolve the web backend for a run and whether the runner owns its lifecycle.
+
+    A caller-supplied ``web_backend`` is used as-is and never closed by the runner
+    (the caller owns it). Otherwise the backend is gated on ``settings.enable_web``
+    (``MARKETING_OS_WEB=1``): when web access is enabled a
+    :class:`PlaywrightWebSearch` is created and owned by the runner (closed when the
+    run ends); when disabled the result is ``None`` so ``build_tools`` falls back to
+    :class:`NoopWebSearch`. The Playwright driver is launched lazily on first tool
+    call, so an owned-but-unused backend stays cheap.
+
+    Args:
+        settings: The harness settings.
+        web_backend: A caller-supplied backend, or ``None`` to resolve the default.
+
+    Returns:
+        A ``(backend, owns_backend)`` pair. ``owns_backend`` is ``True`` only when
+        the runner created the backend and is responsible for closing it.
+    """
+    if web_backend is not None:
+        return web_backend, False
+    if not settings.enable_web:
+        return None, False
+    from marketing_os.adapters.tools.websearch_playwright import PlaywrightWebSearch
+
+    return PlaywrightWebSearch(), True
+
+
 def _raise_on_error(state: CampaignState, run_log: str | None) -> None:
     """Translate a halting state error into the typed exception hierarchy.
 
@@ -243,7 +273,8 @@ def run_campaign(
         PipelineError: If a prerequisite was missing or a deliverable never saved.
         GuardrailError: If a deliverable failed QA within the revision budget.
     """
-    graph = _select_graph(settings, stage, web_backend=web_backend, checkpointer=checkpointer)
+    backend, owns_backend = _resolve_web_backend(settings, web_backend)
+    graph = _select_graph(settings, stage, web_backend=backend, checkpointer=checkpointer)
     config = _config(customer, slug, stage)
     inbound = {"customer": customer, "slug": slug}
     run_id = new_run_id()
@@ -265,6 +296,8 @@ def run_campaign(
     finally:
         if trace is not None:
             trace.close()
+        if owns_backend and backend is not None:
+            backend.close()
     _raise_on_error(state, run_log)
     return _to_result(customer, slug, state, run_log)
 
@@ -295,7 +328,8 @@ async def astream_campaign(
     Yields:
         Event dictionaries with an ``event`` key and event-specific fields.
     """
-    graph = _select_graph(settings, stage, web_backend=web_backend, checkpointer=checkpointer)
+    backend, owns_backend = _resolve_web_backend(settings, web_backend)
+    graph = _select_graph(settings, stage, web_backend=backend, checkpointer=checkpointer)
     config = _config(customer, slug, stage)
     run_id = new_run_id()
     trace = _open_trace(settings, slug, run_id)
@@ -319,6 +353,8 @@ async def astream_campaign(
     finally:
         if trace is not None:
             trace.close()
+        if owns_backend and backend is not None:
+            backend.close()
     error = final.get("error")
     if error:
         yield {"event": "error", "error": error, "run_log": run_log}

@@ -68,7 +68,7 @@ no_implicit_optional = true
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["langgraph.*", "langchain_deepseek.*"]
+module = ["langgraph.*", "langchain_deepseek.*", "playwright.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
