@@ -1,6 +1,6 @@
 # Confirm the DeepSeek provider connection and model IDs
 
-Status: needs-info
+Status: completed
 
 The default provider is DeepSeek with model IDs `deepseek-v4-pro` (specialist) and `deepseek-v4-flash` (reviewer). These defaults need per-account confirmation — the exact model ID available on the operator's DeepSeek account may differ, and no live provider call is exercised in tests.
 
@@ -18,3 +18,8 @@ The default provider is DeepSeek with model IDs `deepseek-v4-pro` (specialist) a
 
 - `agent-harness/src/marketing_os/config.py` (`_PROVIDER_DEFAULTS`).
 - `agent-harness/TODO.md` §1a; `docs/adr/0004-provider-agnostic-llm-with-deepseek-default.md`.
+
+## Completion
+
+- Completed: 2026-07-02
+- Commit: N/A (human approved)

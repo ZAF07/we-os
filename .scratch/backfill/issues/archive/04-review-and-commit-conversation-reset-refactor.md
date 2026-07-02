@@ -1,6 +1,6 @@
 # Review and commit the conversation-reset refactor
 
-Status: ready-for-human
+Status: completed
 
 There is staged, uncommitted work in `graph/nodes.py` and `tests/test_graph.py` that changes each specialist attempt to start from a **fresh conversation** (fresh DNA + full task context) instead of appending corrections to an accumulating transcript. The motivation is that DeepSeek V4 thinking mode rejects multi-turn histories. It needs review and a commit decision.
 
@@ -14,3 +14,8 @@ There is staged, uncommitted work in `graph/nodes.py` and `tests/test_graph.py` 
 
 - `git status`: modified `agent-harness/src/marketing_os/graph/nodes.py`, `agent-harness/tests/test_graph.py`.
 - Relates to commit `863f255` (the DeepSeek structured-output fix) and ADR-0004.
+
+## Completion
+
+- Completed: 2026-07-02
+- Commit: N/A (human approved)
