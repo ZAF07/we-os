@@ -8,13 +8,31 @@ of the task message, so the agent can be built once and reused across a run.
 
 from __future__ import annotations
 
-from langchain.agents import create_agent
+from typing import NotRequired
+
+from langchain.agents import AgentState, create_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
 from marketing_os.agents.loader import AgentSpec
 from marketing_os.agents.middleware import recover_tool_errors
+
+
+class SpecialistState(AgentState):
+    """Specialist agent state extended with the live campaign slug.
+
+    The slug is injected into the ``write_file`` tool (via ``InjectedState``) so a
+    write can be scoped to ``campaigns/<slug>/`` at call time, rejecting a
+    mis-slugged path the model hallucinated. It is threaded in by the specialist
+    node when it invokes the agent.
+
+    Attributes:
+        slug: The campaign slug for the active run.
+    """
+
+    slug: NotRequired[str]
+
 
 DIRECTOR_BODY = """\
 You are the **Marketing Director** in the Marketing OS specialist hierarchy — the
@@ -82,5 +100,6 @@ def build_specialist(
         model,
         tools,
         system_prompt=compose_system(governance, spec.body),
+        state_schema=SpecialistState,
         middleware=[recover_tool_errors],
     )

@@ -9,7 +9,10 @@ recoverable error message rather than crashing the run.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from langchain_core.tools import BaseTool, tool
+from langgraph.prebuilt import InjectedState
 
 from marketing_os.adapters.tools.sandbox import FilesystemSandbox
 
@@ -64,17 +67,23 @@ def filesystem_tools(sandbox: FilesystemSandbox, *, include_write: bool) -> dict
         return sandbox.grep(pattern, path)
 
     @tool(parse_docstring=True)
-    def write_file(path: str, content: str) -> str:
+    def write_file(
+        path: str,
+        content: str,
+        slug: Annotated[str, InjectedState("slug")],
+    ) -> str:
         """Write a UTF-8 text file under ``campaigns/`` to save a deliverable.
 
         Args:
-            path: Path under ``campaigns/``, relative to the repository root.
+            path: Path under ``campaigns/<slug>/``, relative to the repository root.
             content: The full text to write.
+            slug: The live run slug, injected from graph state and hidden from the
+                model; scopes the write to ``campaigns/<slug>/``.
 
         Returns:
             A short confirmation message.
         """
-        return sandbox.write(path, content)
+        return sandbox.write(path, content, slug=slug)
 
     tools: dict[str, BaseTool] = {"Read": read_file, "Glob": glob, "Grep": grep}
     if include_write:

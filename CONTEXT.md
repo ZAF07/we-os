@@ -12,6 +12,10 @@ _Avoid_: profile, brief, persona.
 The per-campaign business objective and success metrics (`campaigns/<slug>/goal.md`). The DNA is shared across campaigns; the goal is specific to one.
 _Avoid_: objective doc, spec.
 
+**Campaign Slug**:
+The identifier for a single campaign run. It names the campaign's directory (`campaigns/<slug>/`), so every input and deliverable for that campaign lives under it, and it identifies the run for resumption. A specialist must use the run's slug verbatim; a write under any other slug is rejected as off-slug (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
+_Avoid_: id, name, key, thread.
+
 **Marketing Director**:
 The orchestrator (the `/new-campaign` skill / main session). Runs the DNA gate, sets the business goal and campaign strategy, and delegates to specialists in mandatory order. Never produces research, strategy, creative, or assets itself.
 _Avoid_: coordinator, manager, supervisor.
@@ -65,7 +69,7 @@ Each stage requires the prior stage's deliverable to exist; no stage bypasses an
 - **Strategy before content** — creative assets are never generated before an approved strategy exists.
 - **Upstream prerequisite** — a stage may not begin until the prior stage's deliverable exists.
 - **QA budget** — each deliverable must pass its guardrail rubric within `MARKETING_OS_MAX_QA` revision rounds (default 3), or the run halts.
-- **Write scope** — agents read anywhere under the repo but write only under `campaigns/**` (see [ADR-0005](docs/adr/0005-code-enforced-filesystem-sandbox.md)).
+- **Write scope** — agents read anywhere under the repo but write only under `campaigns/**` (see [ADR-0005](docs/adr/0005-code-enforced-filesystem-sandbox.md)); within a run a specialist's writes are further scoped to its own campaign's directory `campaigns/<slug>/`, and an off-slug write is rejected (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
 
 ## Repo map
 

@@ -18,11 +18,12 @@ This bit in production: on the second `campaign-strategy` run (after a QA redo),
 
 - An LLM path slip is now survivable: the model retries against the error message rather than crashing the run. ADR-0005's "recoverable, not a crash" claim is finally true in code.
 - The redo loop cannot fail on a mis-typed *read* path — there is no read to mistype.
-- **Known limitation (deliberately deferred):** a mis-slugged `write_file` still succeeds silently, because the sandbox allows any path under `campaigns/**` and the tools are built once at graph-build time, not bound to the run's slug. The review node then reads the correct-but-stale deliverable. Slug anchoring plus the existing save-retry mitigate this; a full guard (reject writes whose slug ≠ the run slug) needs per-run tool binding and is left as a follow-up.
+- **Off-slug writes are now guarded (follow-up closed).** A mis-slugged `write_file` previously succeeded silently, because the sandbox allowed any path under `campaigns/**` and the tools are built once at graph-build time, not bound to the run's slug — the review node then read the correct-but-stale deliverable. `write_file` now takes an `InjectedState("slug")` parameter (hidden from the model) so it reads the live run slug at call time, and `FilesystemSandbox.write` scopes the write to `campaigns/<slug>/`, raising a `ToolError` (naming both the offending slug and the run slug, and instructing verbatim use) when the path is off-slug. The error flows through `recover_tool_errors` as a recoverable tool-result, so the specialist self-corrects and the review node reads the fresh deliverable. Slug anchoring and the save-retry remain as complementary mitigations.
 
 ## Evidence
 
 - `agent-harness/src/marketing_os/agents/middleware.py` (`recover_tool_errors`); wired in `agents/specialist.py::build_specialist`.
 - `agent-harness/src/marketing_os/graph/nodes.py` (`_path_anchor`, inlined-draft `revise_body`, anchored enter/save-retry seeds).
-- `agent-harness/tests/test_graph.py` (`test_bad_path_tool_error_is_recoverable_not_fatal`, `test_revision_inlines_draft_and_requires_no_read`, `test_seeds_anchor_the_campaign_slug`).
+- `agent-harness/tests/test_graph.py` (`test_bad_path_tool_error_is_recoverable_not_fatal`, `test_off_slug_write_rejected_then_recovered`, `test_revision_inlines_draft_and_requires_no_read`, `test_seeds_anchor_the_campaign_slug`); `agent-harness/tests/test_sandbox.py` (slug-scoped write).
+- Off-slug guard: `agent-harness/src/marketing_os/adapters/tools/filesystem.py` (`write_file`'s `InjectedState("slug")`), `adapters/tools/sandbox.py` (`FilesystemSandbox.write` slug scope), `agents/specialist.py` (`SpecialistState`), `graph/nodes.py` (specialist node threads `slug` into the agent state).
 - Root cause: `langgraph/prebuilt/tool_node.py::_default_handle_tool_errors`; `langchain/agents/factory.py` builds its `ToolNode` without overriding `handle_tool_errors`.

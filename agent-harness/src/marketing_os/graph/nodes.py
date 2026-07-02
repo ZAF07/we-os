@@ -304,8 +304,11 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> C
     def specialist_node(state: CampaignState) -> dict[str, Any]:
         """Run the specialist agent over the current stage conversation.
 
+        The run ``slug`` is passed into the agent state so the ``write_file`` tool
+        can scope writes to ``campaigns/<slug>/`` at call time.
+
         Args:
-            state: The campaign state carrying the specialist ``messages``.
+            state: The campaign state carrying the specialist ``messages`` and slug.
 
         Returns:
             A state update with the specialist's new messages and token usage.
@@ -313,7 +316,7 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> C
         inbound = list(state["messages"])
         with get_usage_metadata_callback() as callback:
             result = agent.invoke(
-                {"messages": inbound},
+                {"messages": inbound, "slug": state["slug"]},
                 config={
                     "recursion_limit": recursion_limit,
                     "run_name": f"specialist:{stage.key}",

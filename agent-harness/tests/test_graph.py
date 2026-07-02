@@ -189,6 +189,34 @@ def test_bad_path_tool_error_is_recoverable_not_fatal(settings: Settings) -> Non
     assert (settings.campaigns_dir / "acme" / "research.md").is_file()
 
 
+def test_off_slug_write_rejected_then_recovered(settings: Settings) -> None:
+    errors: list[str] = []
+
+    def handler(messages: list[BaseMessage], index: int) -> AIMessage:
+        last = messages[-1]
+        if isinstance(last, ToolMessage):
+            if last.status == "error":
+                errors.append(str(last.content))
+                seed_only = [m for m in messages if isinstance(m, HumanMessage)]
+                return write_call(_deliverable_from(seed_only), "# Deliverable\n\nRecovered.")
+            return AIMessage(content="Saved. Done.")
+        return write_call("campaigns/acme-typo/research.md", "# Deliverable\n\nWrong slug.")
+
+    reviewer = FakeReviewer([_PASS])
+    graph = build_single_stage_graph(
+        settings, "research", model=ProgrammableChatModel(handler=handler), reviewer=reviewer
+    )
+    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("offslug"))
+    assert state["error"] is None
+    assert state["results"][0]["approved"] is True
+    assert (settings.campaigns_dir / "acme" / "research.md").is_file()
+    assert not (settings.campaigns_dir / "acme-typo").exists()
+    assert errors, "off-slug write was not rejected"
+    assert "acme-typo" in errors[0]
+    assert "this run's slug is 'acme'" in errors[0]
+    assert "verbatim" in errors[0]
+
+
 def test_revision_inlines_draft_and_requires_no_read(settings: Settings) -> None:
     seeds: list[str] = []
 
