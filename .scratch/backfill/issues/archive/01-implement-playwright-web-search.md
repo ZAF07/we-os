@@ -14,3 +14,8 @@ Status: completed
 
 - `agent-harness/src/marketing_os/adapters/tools/websearch_playwright.py:56,71,85` (the three `NotImplementedError`s).
 - `agent-harness/TODO.md` §1b; `agent-harness/pyproject.toml` (`playwright>=1.44` extra).
+
+## Completion
+
+- Completed: 2026-07-02
+- Commit: `6a93752e091a96fc49d0eaa61c4d7bec7d61d6c9`
