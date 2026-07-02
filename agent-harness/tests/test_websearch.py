@@ -7,6 +7,9 @@ Playwright or Chromium installed. Pure helpers are tested directly.
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from marketing_os.adapters.tools import NoopWebSearch, PlaywrightWebSearch, build_tools
@@ -160,6 +163,48 @@ def test_fetch_returns_trimmed_body_text(monkeypatch: pytest.MonkeyPatch) -> Non
     assert out == "Hello world\n\nagain"
     assert page.visited == ["https://example.com"]
     assert page.closed is True
+
+
+def test_search_confines_playwright_work_to_one_dedicated_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calls from short-lived tool threads must all reach Playwright on one thread.
+
+    LangGraph's ToolNode runs each tool batch on a fresh executor thread that
+    exits afterwards; Playwright's sync API is bound to the thread that started
+    it, so touching it from a second thread raises ``greenlet.error``. The
+    backend must therefore route every page operation to a single dedicated
+    worker thread, regardless of which thread invokes the tool.
+    """
+    page_thread_idents: list[int] = []
+
+    def fake_new_page() -> _FakePage:
+        page_thread_idents.append(threading.get_ident())
+        return _FakePage(blocks=[_result_block("Hit", "https://hit.test", "s")])
+
+    backend = PlaywrightWebSearch()
+    monkeypatch.setattr(backend, "_new_page", fake_new_page)
+
+    barrier = threading.Barrier(2)
+
+    def search_and_report_caller_thread() -> int:
+        barrier.wait()
+        backend.search("q")
+        return threading.get_ident()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(search_and_report_caller_thread) for _ in range(2)]
+        caller_idents = [future.result() for future in futures]
+    backend.close()
+
+    assert caller_idents[0] != caller_idents[1]
+    assert page_thread_idents[0] == page_thread_idents[1]
+    assert page_thread_idents[0] not in caller_idents
+
+
+def test_close_is_a_noop_when_backend_never_used() -> None:
+    backend = PlaywrightWebSearch()
+    backend.close()
 
 
 def test_resolve_web_backend_gates_on_enable_web(settings: Settings) -> None:
