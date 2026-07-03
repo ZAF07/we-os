@@ -1,767 +1,621 @@
 # Asset Generation Prompts — Coast Coffee Launch
 
-> **Date:** 2025-07-16  
-> **Grounded in:** Customer DNA (`customers/coast-coffee/dna.md`), Creative Brief (`campaigns/coast-coffee-test-three/creative-brief.md`)  
 > **Agent:** Creative Asset Prompt Agent  
-> **Status:** Complete — ready for asset production
+> **Date:** 2025-07-16  
+> **Source:** Creative Brief (`campaigns/coast-coffee-test-three/creative-brief.md`)  
+> **Grounding:** Customer DNA (`customers/coast-coffee/dna.md`)  
+> **Status:** Complete — ready for production (designer, photographer, or AI-generation tools)
 
 ---
 
-## How to use these prompts
+## Design System Reference (carried into every prompt)
 
-Each prompt below is a self-contained generation instruction for a specific asset. Every prompt traces to a numbered requirement in the approved creative brief (referenced as "Brief §"). Execute exactly — do not add concepts, messaging, or positioning beyond what the brief specifies. All visual direction is grounded in the Customer DNA's differentiators (3-tier system, Asian origins, vacuum-sealed freshness).
-
-**Format key:**
-- **Video prompts** — for AI video generation tools or as detailed shooting/edit briefs for human creators
-- **Static/image prompts** — for AI image generation (Midjourney-style) or as photography briefs
-- **Carousel prompts** — slide-by-slide instructions for design/copy assembly
-
-**Critical ground rules (from Brief §6):**
-- No vague superlatives ("premium," "artisanal," "best"). Replace with specific claims.
-- Every asset that shows beans must include an origin label, tier indicator, or vacuum-seal bag — something unmistakably Coast Coffee.
-- No hard-sell language ("BUY NOW," countdown timers, fake urgency).
-- One message per asset. One hook. One CTA.
-- No stock coffee footage. Every frame must be Coast Coffee's actual process, beans, origins.
+| Element | Spec |
+|---------|------|
+| **Tier 1 — Amber** | #D4A054 (warm gold). Labels, accents, text overlays. |
+| **Tier 2 — Jade** | #5B8C5A (muted green). Labels, accents, text overlays. |
+| **Tier 3 — Indigo** | #3D4F7A (deep blue). Labels, accents, text overlays. |
+| **Typography** | Clean geometric sans-serif (Inter, DM Sans, or equivalent). Headlines: Bold 700. Body: Regular 400. Numbers always bold. |
+| **"≥6 WEEKS FRESH" stamp** | A badge/stamp graphic — quality-mark style. Consistent on all product imagery. |
+| **Logo placement** | Discreet, lower-right corner of video frames; bottom of static images. |
 
 ---
 
-## 1. PAID VIDEO — Theme A Master: Freshness Process (Variant A1 — Process-forward)
-
-**Brief reference:** §2.1, §5.1, §8 item 1  
-**Format:** 9:16 vertical, 15 seconds  
-**Primary segments:** A (Safe Brewer), D (Convenience Seeker)
-
-### Generation prompt
-
-```
-Create a 15-second vertical video (9:16, 1080×1920) for a Meta Reels/Stories ad. The subject is a specialty-coffee brand's freshness process.
-
-SEQUENCE (timings are approximate; prioritise visual clarity over strict adherence):
-
-0:00–0:03 — OPENING SHOT
-Close-up of freshly roasted coffee beans pouring from a roaster into a metal resting tray. Warm, natural light from one side — morning kitchen feel, not studio-lit. The beans are medium-roast and catch the light slightly. Text overlay fades in at 00:01, bottom-third, white sans-serif on a soft dark overlay bar: "Most beans start going stale the day they're roasted."
-
-0:03–0:05 — RESTING
-Wider shot of the resting tray with beans spread evenly. A subtle time-lapse or a simple cut with a text card centred on screen: "We rest ours 48 hours." The text card should feel clean and factual, not dramatic. Warm amber/copper tones.
-
-0:05–0:10 — HERO SHOT: THE VACUUM-SEALER
-This is the most important sequence. Medium-close shot of a vacuum-sealing machine on a clean counter/workspace surface. A filled coffee bag (brown kraft bag with a simple COAST COFFEE stamp/logo visible on the front) is placed into the machine. The vacuum cycle activates — air is visibly drawn out, the bag compresses around the beans, the seal bar comes down. Real, un-staged motion. Natural light preferred. No music-sync drama — let the machine's mechanical action carry the visual interest. 
-
-Text overlay appears at 00:06, lower-third: "Vacuum-sealed. Not just bagged."
-
-0:10–0:13 — THE RESULT
-Close-up: the sealed bag is lifted out and placed on a wooden surface. A date stamp is visible on the bag — "Roasted: [date]. Fresh for 6+ weeks." The bag label includes a visible tier indicator. Second shot: a pour-over dripper (V60 or similar) with freshly ground coffee, steam rising as hot water hits the grounds. Warm, inviting, morning-light feel.
-
-0:13–0:15 — END CARD
-Clean product shot: all three Coast Coffee bags side by side, tier indicators (1/2/3) clearly visible. Bag design: kraft brown, clean label with origin name and tier number. Centred below the trio: "Discover Your Tier" in the brand typeface. Below that, smaller: "Three bags. Guaranteed fresh." No "BUY NOW" — soft CTA only. Brand logo mark present but not dominant.
-
-AUDIO DIRECTION:
-- Natural ambient sounds throughout (beans pouring, vacuum sealer motor, water pouring). No voiceover.
-- Background: a warm, understated instrumental — acoustic guitar or soft piano — not coffee-shop-jazz cliché. Think: thoughtful, calm, modern.
-- The vacuum-sealer sound is the audio hook at 0:05 — let it cut through clearly.
-
-COLOUR GRADE:
-Warm, natural, slightly desaturated (no over-saturation of "coffee brown"). Morning light feel. White balance slightly warm. Consistent across all shots. The bag colours and tier indicators should remain readable.
-
-TEXT OVERLAY STYLE:
-White sans-serif (Inter or similar), clean, with a subtle dark semi-transparent bar behind for readability. No drop shadows, no animated text fly-ins. Simple fade in/out. The date stamp on the bag is the hero typographic element — let it be visible and real.
-
-DO NOT INCLUDE:
-- Stock footage of any kind
-- "BUY NOW" or countdown timers
-- Words like "premium," "artisanal," "best"
-- Over-polished, studio-lit, sterile coffee imagery
-- Music that sounds like a café playlist
-```
+## P0 — CANNOT LAUNCH WITHOUT
 
 ---
 
-## 2. PAID VIDEO — Theme B Master: Asian Origin Story (Variant B1 — Discovery-forward)
+### A1: Hero Video — Freshness Hook (Variant A, Primary)
 
-**Brief reference:** §2.2, §5.1, §8 item 4  
-**Format:** 9:16 vertical, 18–20 seconds  
-**Primary segments:** B (Flavour Explorer), C (Identity Brewer)
+**Brief reference:** §3.3 (full scene direction), §3.4 (Variant A), §6.2 (Meta Ads specs)
 
-### Generation prompt
+**Format:** 9:16 vertical video, 1080×1920px, 25–30 sec, H.264, AAC audio, ≤30 fps, captions burned in.
 
-```
-Create an 18–20-second vertical video (9:16, 1080×1920) for a Meta Reels/Stories ad. The subject is the origin journey of Asian specialty coffee — from landscape to cup.
+**Full generation prompt:**
+
+A 30-second vertical video (9:16, 1080×1920px) for a Singapore specialty coffee brand's Meta Ads launch campaign. The video follows a "proof, not promise" principle — every claim is shown, not stated. The creative concept is "The Proof Is in the Seal." Brand voice: warm, specific, confident, curious, accessible (The Curator archetype). No lifestyle fluff. Clean, tactile, product-and-process-forward.
+
+SCENE 1 — HOOK (0:00–0:03):
+Macro close-up, slow-motion of a vacuum-sealing machine engaging over a filled coffee bag. The bag visibly compresses as air is sucked out. A satisfying crisp mechanical hiss on the audio — ASMR-quality. Natural side-light hitting the bag's texture. Warm amber tones. Text overlay appearing in bold sans-serif: "FRESH BEANS BY MAIL?" — large, centered, the question mark lingering.
+
+SCENE 2 — TRUST BUILD: DEGASSING (0:03–0:08):
+Cut to an overhead flat-lay shot of freshly roasted coffee beans spread in a single layer across a wide tray. Natural window light. Warm, rich tones. The beans are dark and textured. A hand gently stirs them. Text overlay in bold: "48-HOUR REST" then below it in smaller type: "DEGASSED." VO (warm, knowledgeable, unpretentious): "We rest every batch 48 hours after roasting — that's degassing. The CO₂ escapes so the flavour settles."
+
+SCENE 3 — TRUST BUILD: SEAL (0:08–0:15):
+Cut to a clean product shot: a single vacuum-sealed Coast Coffee bag held up against a neutral background. The vacuum seal is visibly tight — the bag wraps around the beans. A prominent stamp/badge reads "≥6 WEEKS FRESH." Then cut to hands placing the sealed bag into a delivery box, taping it shut. Natural, un-staged motion. Text overlay in bold: "≥6 WEEKS FRESHNESS GUARANTEED." VO: "Then vacuum-sealed. You get six weeks of freshness — guaranteed. From our roaster to your door."
+
+SCENE 4 — CURATION EXPLAIN (0:15–0:19):
+Cut to a product flat-lay: three colour-coded bags side by side, arranged left to right. Bag 1: amber/gold (#D4A054). Bag 2: jade green (#5B8C5A). Bag 3: indigo blue (#3D4F7A). Labels visible, each marked with its tier. Clean composition, well-lit. Text overlay: "3 TIERS. ZERO GUESSWORK." VO: "Three flavour tiers. Zero guesswork."
+
+SCENE 5 — TIER MONTAGE (0:19–0:22):
+Quick montage of three tight close-ups, ~1 second each. Shot 1: Tier 1 beans pouring — warm, chocolate-toned beans, amber-accented background. Shot 2: Tier 2 beans — brighter, fruitier-looking beans, jade-accented background. Shot 3: Tier 3 beans — darker, more varied beans, indigo-accented background. Each shot colour-graded to match its tier. Text overlay sliding left to right: "SAFE → COMPLEX → ADVENTUROUS." VO: "Tier 1: balanced and familiar. Tier 2: complex and floral. Tier 3: exciting and unknown."
+
+SCENE 6 — ASIAN ORIGINS (0:22–0:25):
+Clean, minimal vector map of Asia on a dark navy background. Gold dots appear one by one on: Yunnan (China), northern Thailand, Sumatra (Indonesia), and Malaysia. Subtle animation — dots pulse gently as they appear. Not cluttered. Text overlay: "ASIAN ORIGINS. TESTED & TIERED." VO: "Beans from across Asia — origins most roasters don't stock. Tested before they earn their tier."
+
+SCENE 7 — OFFER + CTA (0:25–0:30):
+Warm, inviting flat-lay: all three tier bags together in a beautiful arrangement. Amber, jade, indigo contrast clearly. The "≥6 WEEKS FRESH" stamp visible on at least one bag. Text overlay stacking: "THE FLAVOUR TRIO" / "~SGD 50" / "LINK IN BIO →". VO: "Try all three. The Flavour Trio. Around fifty dollars. Link in bio." End frame: Coast Coffee logo, lower-right.
+
+SOUND DESIGN: Vacuum-seal hiss prominent in Scene 1. Soft, minimal instrumental bed (no vocals) from Scene 2 onward — warm, textural, not distracting. VO clear and forward in the mix. All text overlays burned in (not auto-captions) — large, bold, readable without sound.
+
+COLOUR GRADE: Warm throughout. Natural light aesthetic. Tier scenes subtly tinted to their colour codes. The Asian origins map scene shifts to a cooler navy to create contrast.
+
+LOGO: Discreet, lower-right corner, appearing from Scene 3 onward.
+
+---
+
+### A2: Hero Video — Curation Hook (Variant B, A/B Test)
+
+**Brief reference:** §3.4 (Variant B hook), §3.3 (full scene direction, scenes 3–7 identical to A1), §6.2
+
+**Format:** 9:16 vertical video, 1080×1920px, 25–30 sec, H.264, AAC audio, ≤30 fps, captions burned in.
+
+**Note to producer:** Scenes 3–7 (0:03–0:30) are identical to A1. Only the opening hook (0:00–0:03) changes. Produce the full video as a standalone asset, but the body can be the same edit as A1 with a different opening 3 seconds spliced in.
+
+**Full generation prompt:**
+
+A 30-second vertical video (9:16, 1080×1920px) for a Singapore specialty coffee brand's Meta Ads campaign. Identical in structure, sound design, colour grade, logo placement, and scenes 3–7 to the primary hero video (A1, Freshness Hook). Only the opening 3 seconds differ.
+
+SCENE 1 — HOOK: CURATION (0:00–0:03):
+Product shot: three colour-coded coffee bags slide into frame from left, center, and right, landing in a clean row. Bag 1: amber/gold (#D4A054). Bag 2: jade green (#5B8C5A). Bag 3: indigo blue (#3D4F7A). The slide-in motion is smooth and satisfying — each bag lands with a subtle settle. Clean neutral background. Text overlay appearing as the bags land: "MEET YOUR NEW COFFEE COMPASS." Then below it: "THREE TIERS. ZERO GUESSWORK." The bags are the hero — well-lit, labels visible, tier colours distinct.
+
+SCENES 2–7 (0:03–0:30): Identical to A1 — the Trust Build (degassing tray → vacuum-sealed bag → boxing), Curation Explain (three bags side by side), Tier Montage (beans pouring per tier), Asian Origins (map animation), Offer + CTA (Flavour Trio flat-lay). Same VO, same text overlays, same sound design, same colour grade.
+
+SOUND DESIGN: No vacuum-seal hiss in this variant's hook. Instead, a soft whoosh or slide sound as the bags enter, then the instrumental bed begins — same as A1 from Scene 2 onward.
+
+COLOUR GRADE: Same as A1. Warm, natural light aesthetic.
+
+---
+
+### A11: Landing Page Hero Imagery
+
+**Brief reference:** §6.2 (Landing Page specs), §4.2 (theme expression), §6.4 (design system)
+
+**Format:** Hero banner ~1200×628px or full-width responsive. Product shots 1:1, 800×800px.
+
+---
+
+#### A11a: Landing Page Hero Banner
+
+**Prompt:**
+
+A wide-format hero banner image (~1200×628px, full-width on Shopify landing page) for a Singapore specialty coffee brand's campaign landing page.
+
+COMPOSITION: The three colour-coded tier bags (amber/gold Tier 1, jade green Tier 2, indigo blue Tier 3) arranged together on the right side of the frame. The bags are clean, well-lit, the vacuum-seal tightness visible, the "≥6 WEEKS FRESH" stamp prominent on at least one bag. Left side is clean negative space for headline text overlay.
+
+LIGHTING: Warm natural light. Soft shadows. The bags have a tactile, premium feel — you can almost feel the texture of the sealed bag.
+
+MOOD: Trustworthy, warm, curated. Not aspirational-lifestyle. Process-and-product-forward. The bags themselves are beautiful — no props, no coffee cups, no lifestyle staging.
+
+COLOUR: The three tier colours (amber #D4A054, jade #5B8C5A, indigo #3D4F7A) are the primary colour anchors against a neutral, light background (warm off-white or very light cream).
+
+HEADLINE OVERLAY (to be set in code, not burned into image — but the image must leave room): "Your coffee, curated. Your freshness, guaranteed."
+
+SUBHEAD (code): "Three flavour tiers. Vacuum-sealed after degassing. Delivered in Singapore."
+
+CTA BUTTON (code): "Shop the Flavour Trio — SGD 50"
+
+TECHNICAL: High-res, 1200×628px minimum, full-width responsive. Leave ~40% of the left side as negative space for overlaid text.
+
+---
+
+#### A11b: Landing Page — "How It Works" Icons/Images
+
+**Prompt (×3 step illustrations):**
+
+Three simple, clean step-illustration images (icons or minimal photography, 1:1 square, 400×400px each) for a "How It Works" section on a coffee brand landing page. Each image has an icon or simple visual with a short label beneath. Style: clean, minimal, warm. Consistent with the brand's geometric sans-serif typography and warm natural palette.
+
+Step 1 — "PICK YOUR TIER": A simple icon or clean product-montage of the three colour-coded bags (amber, jade, indigo) arranged as small thumbnails. Label beneath: "Pick your tier, or try all three."
+
+Step 2 — "WE DEGAS & SEAL": A clean icon or simple visual of a vacuum-sealed bag with the "≥6 WEEKS FRESH" stamp visible. Label beneath: "Degassed 48 hours. Vacuum-sealed. 6 weeks fresh."
+
+Step 3 — "FRESH TO YOUR DOOR": A clean icon or simple visual of a delivery box with the Coast Coffee logo. Label beneath: "Delivered in Singapore. Freshness guaranteed."
+
+---
+
+#### A11c: Landing Page — Freshness Proof Section Image
+
+**Prompt:**
+
+A clean, well-lit product photograph (1:1 square, 800×800px) for a "Freshness Proof" section on a coffee brand landing page. The image shows a single vacuum-sealed Coast Coffee bag held or placed against a neutral background. The vacuum seal is visibly tight — the bag material clings to the beans inside. The "≥6 WEEKS FRESH" stamp is prominent and legible. The bag's label is clean with the tier colour (amber, jade, or indigo — producer's choice, but the stamp must be the visual focus).
+
+LIGHTING: Natural side-light. The bag texture visible. Shadows soft but defined.
+
+MOOD: Honest, transparent, trustworthy. This image says: "We're showing you exactly what you get."
+
+TECHNICAL: 800×800px, high-res, 1:1 square. No text burned into the image — a caption will be placed beneath in code ("Degassed for 48 hours after roasting. Vacuum-sealed. Six weeks guaranteed.").
+
+---
+
+#### A11d: Landing Page — The Flavour Trio Product Shot
+
+**Prompt:**
+
+A beautiful product flat-lay photograph (1:1 square, 800×800px) of the Flavour Trio — all three Coast Coffee tier bags arranged together. Tier 1 (amber #D4A054), Tier 2 (jade #5B8C5A), Tier 3 (indigo #3D4F7A) side by side in a clean composition. The bags are the sole subject — no props, no cups, no lifestyle elements. The tier colour contrast is the visual hero. The "≥6 WEEKS FRESH" stamp visible on at least one bag.
+
+LIGHTING: Overhead natural light or soft studio light. Clean shadows. The bags should look premium, tactile, desirable.
+
+MOOD: "Here it is. This is what you get." Confident, clean, uncluttered.
+
+TECHNICAL: 800×800px, high-res, 1:1 square. No text burned in — price and description placed in code: "SGD 50" / "Includes: Tier 1 (Safe & Balanced), Tier 2 (Complex & Floral), Tier 3 (Exciting & Unknown)."
+
+---
+
+#### A11e: Landing Page — Trust Signal Badges
+
+**Prompt (×3 badge graphics):**
+
+Three small badge/icon graphics for a trust-signal row on a coffee brand landing page. Style: clean, minimal, geometric sans-serif typography. Consistent with the brand's tier colour system.
+
+Badge 1: "≥6-WEEK FRESHNESS" — a circular or shield-style badge. Warm amber accent.
+
+Badge 2: "FREE DELIVERY" — a circular or shield-style badge. Jade green accent.
+
+Badge 3: "SINGAPORE" — a circular or shield-style badge. Indigo accent.
+
+Each badge ~200×200px, PNG with transparency for placement on a white/light background.
+
+---
+
+## P1 — NEEDED BY WEEK 1–3
+
+---
+
+### A4: Process Reel — "What Happens After Roasting"
+
+**Brief reference:** §5.1 (Pillar 2 content), §6.1 asset inventory, §6.2 Instagram Organic specs
+
+**Format:** 9:16 vertical video (Reels), 1080×1920px, 15–20 sec, captions burned in.
+
+**Full generation prompt:**
+
+A 15–20 second vertical process reel (9:16, 1080×1920px) for Instagram organic — a condensed, high-satisfaction visual journey showing what happens after coffee beans are roasted. This is trust content, not a hard sell. No voiceover. Music-driven with minimal text overlays. Brand: Coast Coffee (Singapore specialty coffee, Asian origins, 3-tier curation, vacuum-sealed freshness).
+
+SEQUENCE (fast-cut rhythm, ~3–4 seconds per shot):
+
+Shot 1: Freshly roasted beans cooling in a wide tray. Overhead shot. Natural light. Steam still rising slightly from the warm beans. Text overlay: "ROASTED."
+
+Shot 2: Beans resting in the tray — a hand gently stirs them. Text overlay: "RESTED 48 HOURS." / smaller: "(DEGASSED)"
+
+Shot 3: Close-up of the vacuum-sealer engaging — the bag compressing, the air escaping, the hiss. Satisfying ASMR-quality moment. Text overlay: "VACUUM-SEALED."
+
+Shot 4: The finished sealed bag, held up. The "≥6 WEEKS FRESH" stamp prominent. Text overlay: "6 WEEKS FRESH."
+
+Shot 5: Hands placing the bag into a delivery box, taping it. Text overlay: "DELIVERED TO YOU."
+
+END FRAME: Coast Coffee logo, lower-right. Text: "Your coffee, curated. Your freshness, guaranteed."
+
+SOUND DESIGN: Instrumental track only — warm, rhythmic, satisfying. No vocals. The vacuum-seal hiss should be audible over the music in Shot 3. All text captions burned in.
+
+COLOUR GRADE: Warm, natural tones throughout. Consistent with the brand's visual world.
+
+---
+
+### A5: Tier Explainer Posts (×3)
+
+**Brief reference:** §5.1 (Pillar 1), §6.1, §6.2, §6.4, §9 voice guardrails
+
+**Format:** 1:1 square static image, 1080×1080px. One post per tier.
+
+---
+
+#### A5a: Tier 1 Explainer Post — "Safe & Balanced"
+
+**Prompt:**
+
+A 1:1 square static image (1080×1080px) for an Instagram feed post explaining Tier 1 of a 3-tier coffee curation system. Brand: Coast Coffee, Singapore.
+
+COMPOSITION: The Tier 1 bag (amber/gold #D4A054) positioned prominently, either flat-lay or standing. A small mound of the Tier 1 beans in front of or beside the bag — warm, chocolate-toned beans. The amber/gold tier colour is the dominant accent. "≥6 WEEKS FRESH" stamp visible on the bag.
+
+TEXT OVERLAY (minimal, clean sans-serif, on a subtle dark bar or directly on negative space):
+- "TIER 1"
+- "SAFE & BALANCED"
+- Small tagline: "Tastes like what you love, from an origin you haven't tried."
+
+LIGHTING: Natural, warm. The beans should look rich and inviting.
+
+MOOD: "This is your safe entry point. No surprises. Just good coffee." Warm, reassuring, unpretentious.
+
+CAPTION (not burned into image, but provided for the post): "Tier 1: Safe & Balanced. ☕️ These are beans that taste like what you already love — balanced, smooth, familiar. The only difference? They're from an origin you probably haven't tried yet. Brew method suggestion: pour-over or French press. Let the bean do the work. #specialtycoffeesg #homebaristasg #coffeetier #asiancoffee"
+
+---
+
+#### A5b: Tier 2 Explainer Post — "Complex & Floral"
+
+**Prompt:**
+
+A 1:1 square static image (1080×1080px) for an Instagram feed post explaining Tier 2 of a 3-tier coffee curation system. Brand: Coast Coffee, Singapore.
+
+COMPOSITION: The Tier 2 bag (jade green #5B8C5A) positioned prominently, either flat-lay or standing. A small mound of the Tier 2 beans in front of or beside the bag — brighter, fruitier-looking beans. The jade green tier colour is the dominant accent. "≥6 WEEKS FRESH" stamp visible on the bag.
+
+TEXT OVERLAY (minimal, clean sans-serif, on a subtle dark bar or directly on negative space):
+- "TIER 2"
+- "COMPLEX & FLORAL"
+- Small tagline: "The sweet spot. Interesting, but never intimidating."
+
+LIGHTING: Bright, slightly cooler than Tier 1 to complement the jade tones. Beans should look vibrant.
+
+MOOD: "You're ready to explore, but you don't want to get lost. This is where the best discoveries happen." Curious, inviting, confident.
+
+CAPTION (not burned into image, but provided for the post): "Tier 2: Complex & Floral. 🌿 This is the sweet spot. Beans with layered flavour — stonefruit sweetness, floral aromatics, tea-like body — interesting enough to pay attention to, balanced enough to brew every day. Brew method suggestion: pour-over to catch the nuances. #specialtycoffeesg #homebaristasg #coffeetier #asiancoffee #floralcoffee"
+
+---
+
+#### A5c: Tier 3 Explainer Post — "Exciting & Unknown"
+
+**Prompt:**
+
+A 1:1 square static image (1080×1080px) for an Instagram feed post explaining Tier 3 of a 3-tier coffee curation system. Brand: Coast Coffee, Singapore.
+
+COMPOSITION: The Tier 3 bag (indigo blue #3D4F7A) positioned prominently, either flat-lay or standing. A small mound of the Tier 3 beans in front of or beside the bag — darker, more varied, intriguing beans. The indigo tier colour is the dominant accent. "≥6 WEEKS FRESH" stamp visible on the bag.
+
+TEXT OVERLAY (minimal, clean sans-serif, on a subtle dark bar or directly on negative space):
+- "TIER 3"
+- "EXCITING & UNKNOWN"
+- Small tagline: "For when you want to be surprised."
+
+LIGHTING: Dramatic, slightly moodier. Deeper shadows. The indigo bag should feel rich and intriguing against the beans' dark tones.
+
+MOOD: "This one's for the adventurous brew. We found something unusual. You might love it." Intriguing, confident, never gatekeep-y. Curiosity-driven.
+
+CAPTION (not burned into image, but provided for the post): "Tier 3: Exciting & Unknown. 🌌 For the mornings you want something different. These are the beans that surprised us — unusual processing, unexpected flavour notes, origins that are hard to find. Not for everyone. That's the point. Brew method suggestion: try it as a pour-over first, then experiment. #specialtycoffeesg #homebaristasg #coffeetier #asiancoffee #adventurouscoffee"
+
+---
+
+### A10: "What You Get" Trio Flat-Lay
+
+**Brief reference:** §5.1 (Pillar 4), §6.1, §4.3 (visual motif: The Three Bags)
+
+**Format:** 1:1 square static image, 1080×1080px.
+
+**Prompt:**
+
+A 1:1 square static image (1080×1080px) for an Instagram feed post showing what a customer receives when they order the Flavour Trio. Brand: Coast Coffee, Singapore. This is Pillar 4 (Hygiene + Convenience) content — light touch, present the convenience promise, don't lead with it.
+
+COMPOSITION: A clean flat-lay. The three colour-coded tier bags (amber Tier 1, jade Tier 2, indigo Tier 3) arranged together, plus a delivery box (open or beside the bags) with the Coast Coffee logo or label visible. If a brew recipe card or tasting notes card is part of the unboxing experience, include it. The arrangement should feel like "this is what arrives at your door" — complete and considered.
+
+LIGHTING: Overhead natural light. Clean, soft shadows. The bags should look premium and fresh.
+
+MOOD: "Here's everything. No hidden surprises — except the good kind in Tier 3." Honest, warm, complete.
+
+TEXT OVERLAY (minimal, on negative space or a subtle bar):
+- "THE FLAVOUR TRIO"
+- "Delivered. Fresh for six weeks."
+
+CAPTION (not burned into image, but provided for the post): "This is what the Flavour Trio looks like when it lands. Three tiers. Three flavour worlds. Vacuum-sealed. Six weeks fresh. Delivered. ☕📦 #specialtycoffeesg #homebaristasg #coffeetier #sgcoffee #flavourtrio"
+
+---
+
+### A3: Carousel Ad — Tier Journey
+
+**Brief reference:** §5.1 (Pillar 1 carousel), §6.1, §6.2 (Meta Ads carousel specs), §4.3 (The Three Bags motif)
+
+**Format:** Carousel ad, 3–4 cards, 1:1 square, 1080×1080px per card.
+
+---
+
+#### A3 Card 1: Tier 1 — Safe & Balanced
+
+**Prompt:**
+
+Card 1 of a 3–4 card Instagram/Facebook carousel ad (1:1 square, 1080×1080px) for Coast Coffee's Flavour Trio campaign. This card introduces Tier 1.
+
+COMPOSITION: The amber/gold Tier 1 bag (#D4A054) as the dominant visual. A small scattering of warm, chocolate-toned beans. The "≥6 WEEKS FRESH" stamp visible. Clean product-forward composition. Generous negative space for text.
+
+TEXT OVERLAY (bold geometric sans-serif, centred or left-aligned on negative space):
+- "TIER 1" (large, amber accent)
+- "SAFE. BALANCED. FAMILIAR." (bold body)
+- Small tagline at bottom: "Tastes like what you love."
+
+MOOD: Reassuring. "Start here. You know this flavour world."
+
+COLOUR: Amber/gold dominant. Warm tones.
+
+---
+
+#### A3 Card 2: Tier 2 — Complex & Floral
+
+**Prompt:**
+
+Card 2 of a 3–4 card Instagram/Facebook carousel ad (1:1 square, 1080×1080px) for Coast Coffee's Flavour Trio campaign. This card introduces Tier 2.
+
+COMPOSITION: The jade green Tier 2 bag (#5B8C5A) as the dominant visual. A small scattering of bright, fruity beans. The "≥6 WEEKS FRESH" stamp visible. Clean product-forward composition. Generous negative space for text.
+
+TEXT OVERLAY (bold geometric sans-serif, centred or left-aligned on negative space):
+- "TIER 2" (large, jade accent)
+- "COMPLEX. FLORAL. THE SWEET SPOT." (bold body)
+- Small tagline at bottom: "Interesting, never intimidating."
+
+MOOD: Curious, inviting. "This is where the best coffees live."
+
+COLOUR: Jade green dominant. Bright, fresh tones.
+
+---
+
+#### A3 Card 3: Tier 3 — Exciting & Unknown
+
+**Prompt:**
+
+Card 3 of a 3–4 card Instagram/Facebook carousel ad (1:1 square, 1080×1080px) for Coast Coffee's Flavour Trio campaign. This card introduces Tier 3 and optionally touches on Asian origins.
+
+COMPOSITION: The indigo blue Tier 3 bag (#3D4F7A) as the dominant visual. A small scattering of dark, varied, intriguing beans. The "≥6 WEEKS FRESH" stamp visible. Clean product-forward composition. Generous negative space for text.
+
+TEXT OVERLAY (bold geometric sans-serif, centred or left-aligned on negative space):
+- "TIER 3" (large, indigo accent)
+- "EXCITING. UNKNOWN. ADVENTUROUS." (bold body)
+- Small tagline at bottom: "Beans from China, Thailand, Indonesia, Malaysia. Tested. Tiered. Delivered."
+
+MOOD: Intriguing. Adventurous but not risky — "tested and tiered" provides the safety net.
+
+COLOUR: Indigo dominant. Deep, rich tones.
+
+---
+
+#### A3 Card 4 (optional): The Flavour Trio — CTA
+
+**Prompt:**
+
+Card 4 of a 3–4 card Instagram/Facebook carousel ad (1:1 square, 1080×1080px) for Coast Coffee's Flavour Trio campaign. This is the CTA card — the offer.
+
+COMPOSITION: All three colour-coded tier bags (amber, jade, indigo) together in a beautiful flat-lay or grouped arrangement. The three colours are the visual hero — instantly recognisable after cards 1–3. The "≥6 WEEKS FRESH" stamp visible on at least one bag.
+
+TEXT OVERLAY (bold geometric sans-serif, centred):
+- "THE FLAVOUR TRIO" (large)
+- "ALL THREE TIERS. ~SGD 50." (bold, price prominent)
+- "SHOP NOW →" (CTA, with arrow)
+
+MOOD: "You've seen the tiers. Here's the obvious next step." Confident, clean, compelling.
+
+COLOUR: All three tier colours present and balanced. Warm, premium feel.
+
+---
+
+**Carousel ad copy (for Meta Ads primary text, ≤125 characters):**
+
+"Three flavour tiers. Vacuum-sealed. Six weeks fresh. The Flavour Trio — all three, delivered. ~SGD 50."
+
+**Headline:** "The Flavour Trio — try all three tiers."
+
+**CTA button:** "Shop Now"
+
+---
+
+## P2 — NEEDED BY WEEK 2–4
+
+---
+
+### A6: "Six Weeks" Proof Post
+
+**Brief reference:** §5.1 (Pillar 2), §6.1, §4.3 (visual motif: The Seal)
+
+**Format:** 1:1 square static image, 1080×1080px.
+
+**Prompt:**
+
+A 1:1 square static image (1080×1080px) for an Instagram feed post focused entirely on the freshness guarantee. Brand: Coast Coffee, Singapore. This post belongs to Pillar 2 — Trust + Freshness. The brief's instruction: "Not a promise. A guarantee. Here's what that means."
+
+COMPOSITION: A tight, clean product shot of a single Coast Coffee bag — vacuum-sealed, the seal visibly tight around the beans. The "≥6 WEEKS FRESH" stamp is the focal point — large, prominent, impossible to miss. The bag could be held against a neutral background, or photographed flat with the stamp facing up. The vacuum-seal texture (the bag material tight against the beans) should be crisp and tactile.
+
+LIGHTING: Side-light to highlight the texture of the sealed bag. Shadows that emphasize the tightness of the seal.
+
+MOOD: "This isn't marketing language. This is a physical thing you can see and touch." Specific, honest, unglamorous in the best way.
+
+TEXT OVERLAY (minimal, on negative space beside or below the bag):
+- "≥6 WEEKS FRESH" (large, in stamp style matching the bag stamp)
+- Below, smaller: "Not a promise. A guarantee."
+
+CAPTION (not burned into image, but provided for the post): "Six weeks. That's not a marketing claim — it's a physical reality. We degas every batch for 48 hours after roasting. Then we vacuum-seal every bag. The result: beans that stay fresh for six weeks from the day they're sealed. Here's what that looks like. #specialtycoffeesg #freshcoffee #vacuumsealed #sgcoffee"
+
+---
+
+### A7: Unboxing Reel
+
+**Brief reference:** §5.1 (Pillar 2), §6.1, §6.2 (Reels specs)
+
+**Format:** 9:16 vertical video (Reels), 1080×1920px, 10–15 sec, captions burned in.
+
+**Prompt:**
+
+A 10–15 second vertical unboxing reel (9:16, 1080×1920px) for Instagram organic. Brand: Coast Coffee, Singapore. First-person or over-shoulder perspective. The brief's instruction: "This is what the Flavour Trio looks like when it arrives."
 
 SEQUENCE:
 
-0:00–0:04 — OPENING: LANDSCAPE
-Wide, cinematic establishing shot of an Asian coffee-growing landscape. Priority order (use whichever genuine Coast Coffee origin footage/image is available): Yunnan mountain terraces, Doi Chang highlands (Thailand), or Kintamani volcanic slopes (Indonesia). The shot should feel like travel-content — natural light, depth of field, mist if authentic to the location. Not drone-stock-polished. Text overlay at 00:01, centred lower-third with a subtle dark bar: the region name, e.g., "Yunnan, China — 1,400m." 
+Shot 1 (0–3 sec): Hands opening a delivery box. The box flaps open. Inside, packaging material. Viewers see the top of bags peeking through.
 
-0:04–0:08 — ORIGIN DETAILS
-Quick cuts (each ~1.5–2s):
-- Close-up: coffee cherries on the branch, red-ripe, natural light through leaves.
-- Medium shot: processing station — washed process, raised drying beds with parchment coffee spread in rows. Workers' hands if available and authentic.
-- Macro close-up: roasted beans from this origin — light catches the bean surface texture, showing the roast level and bean quality.
-Each cut gets a subtle text label: "Washed process" / "Raised-bed dried" — educational, not promotional.
+Shot 2 (3–7 sec): Hands lifting the three colour-coded bags out of the box one by one — amber Tier 1, jade Tier 2, indigo Tier 3. Each bag revealed sequentially. The vacuum-seal tightness visible on each bag as it's lifted.
 
-0:08–0:12 — SECOND ORIGIN (repeat structure with a different origin)
-Another landscape establishing shot — different geography, different light quality. Text overlay: region name + elevation. Quick cuts: different processing method if visually distinct (e.g., natural process, honey process). The viewer should register that Coast Coffee sources from multiple distinct places.
+Shot 3 (7–12 sec): All three bags arranged together in front of the box. The hands step back. A moment to take it all in. The "≥6 WEEKS FRESH" stamp visible on at least one bag.
 
-0:12–0:16 — THE THREE ORIGINS MEET
-Three pour-over drippers side by side on a wooden surface, each labelled with its origin name on a small card. Three distinct cups or servers beneath them. Hot water being poured — steam visible. The visual communicates: three places, three coffees, one brand. Text overlay: "Three origins most roasters overlook."
+Shot 4 (12–15 sec): End frame — the three bags together. Text overlay: "THE FLAVOUR TRIO" / "Fresh. Delivered. Guaranteed." Coast Coffee logo lower-right.
 
-0:16–0:19 — THE INSIGHT
-Close-up on the three brewed cups, different colours/body visible in each. Text overlay, centred: "Yunnan gets called 'the next Colombia' by Q-graders who've cupped it blind." This is Variant B1's signature line — knowledgeable, insider, grounded in Brand Strategy §3.1.
+SOUND DESIGN: Satisfying unboxing sounds — box opening, paper rustle, bags being lifted. Optional: a warm instrumental track at low volume. No voiceover. Captions burned in.
 
-0:19–0:20 — END CARD
-Trio product shot: three Coast Coffee bags together, tier indicators visible, origin names readable on labels. The bag design should feel clean and modern — kraft brown with a simple illustrated map of Asia showing origin markers (small dot + label per origin). Centered: "Discover Your Tier." Below: "Asia's best, in one box." Brand logo present.
+COLOUR GRADE: Warm, natural, homey — like daylight in a kitchen. The three tier colours should pop against the neutral box and background.
 
-AUDIO DIRECTION:
-- Natural ambient: distant landscape sounds opening, then processing sounds, then pouring water.
-- Music: a cinematic, understated instrumental — strings or piano, world-music-adjacent but not cliché. Sense of journey and discovery. No heavy beats.
-- No voiceover. The visuals and text carry the narrative.
-
-COLOUR GRADE:
-Each origin gets a subtly distinct colour temperature:
-- Yunnan: cool mountain light, slightly blue-green undertones
-- Doi Chang: golden-hour warmth, amber tones
-- Kintamani: rich, volcanic — deeper greens and warm browns
-The transitions between origins should feel like chapters, not jarring cuts. Overall: cinematic but not over-graded — naturalism over polish.
-
-TEXT OVERLAY STYLE:
-Same system as Theme A: white sans-serif, subtle dark bar for readability, fade transitions only. Origin name text may be slightly larger — it's a key visual element. The Q-grader line at 0:16 is the emotional payload — give it enough screen time to be read comfortably.
-
-DO NOT INCLUDE:
-- Stock footage — especially not generic "coffee plantation" stock
-- Exoticising or colonial-gaze framing of Asian locations
-- "BUY NOW" / urgency language
-- Words like "exotic," "hidden gem," "undiscovered"
-- Generic world-map graphics that aren't Coast Coffee's specific origins
-```
+CAPTION (for the post): "This is what the Flavour Trio looks like when it arrives. 📦☕ Three tiers. Vacuum-sealed. Six weeks fresh. #specialtycoffeesg #unboxing #sgcoffee #flavourtrio"
 
 ---
 
-## 3. PAID VIDEO — Theme C Master: Tier Match (Variant C2 — Descriptive-forward)
+### A8: "Asia on the Map" Reel
 
-**Brief reference:** §2.3, §5.1, §8 item 2  
-**Format:** 9:16 vertical, 15 seconds  
-**Primary segments:** All four (broadest-audience theme)
+**Brief reference:** §5.1 (Pillar 3), §6.1, §6.2, §4.3 (visual motif: The Map Dot)
 
-### Generation prompt
+**Format:** 9:16 vertical video (Reels), 1080×1920px, 10–15 sec, captions burned in.
 
-```
-Create a 15-second vertical video (9:16, 1080×1920) for a Meta Reels/Stories ad. The concept is matching coffee tiers to personal preference — "Which coffee are you?"
+**Prompt:**
+
+A 10–15 second vertical reel (9:16, 1080×1920px) for Instagram organic — a music-driven, minimal-text visual piece showcasing the Asian origins Coast Coffee sources from. This is Pillar 3 (Differentiation + Story) content. The brief's instruction: "animated map dots appearing across Asia, then cut to beans from that origin. Music-driven, minimal text."
 
 SEQUENCE:
 
-0:00–0:03 — OPENING: THE THREE CUPS
-Wide establishing shot: three cups on a wooden surface, side by side, each visually distinct:
-- LEFT (Tier 1): A warm, classic white ceramic mug. Coffee inside is a clean medium-brown — chocolatey-looking. Steady, inviting.
-- CENTRE (Tier 2): A bright, colourful ceramic cup or glass server. Coffee is lighter, more translucent — tea-like at the edges. Floral, delicate.
-- RIGHT (Tier 3): A dark, textured matte black or handmade ceramic cup. Coffee is deeper, richer, more opaque. Intriguing.
-The three cups fill roughly the lower two-thirds of frame. Above them, centred, text overlay fades in: "Which coffee are you?" Clean white sans-serif.
+Shot 1 (0–5 sec): Clean, minimal vector map of Asia on a dark navy background. Gold dots pulse and appear sequentially: Yunnan, China → northern Thailand → Sumatra, Indonesia → Malaysia. Each dot appears with a subtle glow and a small text label of the region/country name. Elegant, not cluttered.
 
-0:03–0:06 — TIER 1 CLOSE-UP
-Close-up on the Tier 1 cup only. Hot water being poured from a gooseneck kettle into a V60 dripper above the cup. Steam rises. The pour is steady and controlled. Text overlay, bottom-third: "Tier 1: Your daily driver." Then a second line fades in: "Chocolatey. Balanced. Impossible to brew wrong."
+Shot 2 (5–8 sec): Quick cut to a close-up of coffee beans from one of these origins — rich, textured beans. Warm, natural light. No text except the origin name in small type.
 
-0:06–0:09 — TIER 2 CLOSE-UP
-Close-up on the Tier 2 cup/brew. A pour-over bloom shot — the coffee grounds bubbling and expanding as hot water hits. Lighter roast visible. Text overlay, bottom-third: "Tier 2: Complex. Floral." Second line: "For when you want to notice something new."
+Shot 3 (8–12 sec): Quick cut to a second origin's beans — visually distinct from the first (different bean size, colour, roast level). Origin name in small type.
 
-0:09–0:12 — TIER 3 CLOSE-UP
-Close-up on the Tier 3 cup/brew. Slow-motion pour — the coffee stream catches the light differently, deeper and richer. Text overlay, bottom-third: "Tier 3: Wild. Unexpected." Second line: "For Saturday mornings when you want your V60 to surprise you."
+Shot 4 (12–15 sec): Cut back to the map — all four gold dots now glowing steadily. Text overlay appearing: "ASIAN ORIGINS. TESTED & TIERED." End frame: Coast Coffee logo lower-right.
 
-0:12–0:14 — PULL-BACK
-Camera pulls back (or cuts to wide) showing all three cups together again, now brewed, steam rising from all three. Three distinct colours in the cups — the tier difference is visually obvious. Text overlay, centred: "One trio. All three tiers."
+SOUND DESIGN: Instrumental track — rhythmic, slightly cinematic, building curiosity. No voiceover. Captions burned in minimally.
 
-0:14–0:15 — END CARD
-Trio product shot: three Coast Coffee bags together, tier indicators (1/2/3) clearly visible. Below: "Discover Your Tier." Small text: "Find yours in one trio." Brand logo present. No "BUY NOW."
+COLOUR GRADE: The map scenes are navy + gold — clean, cool, graphic. The bean close-ups are warm and natural — creating contrast with the map. This shift from graphic to organic mirrors the brand's "discovery" narrative.
 
-AUDIO DIRECTION:
-- Pouring water sounds as the primary audio — close-mic'd, satisfying ASMR quality.
-- Music: warm, uplifting but understated instrumental. Modern. Not rushed. The pace should feel thoughtful, not frantic.
-- Each tier transition could have a subtle audio cue — a soft chime or tone shift — but keep it minimal.
+CAPTION (for the post): "Yunnan. Doi Chang. Gayo. Malaysia. ☕📍 Specialty coffee origins you won't find in most Singapore roasters' lineups. Every origin tested before it earns its tier. #asiancoffee #specialtycoffeesg #coffeeorigins #sgcoffee"
 
-COLOUR GRADE:
-- Overall: warm, natural, morning light.
-- Each tier segment should have a subtle colour identity:
-  - Tier 1: warm amber/gold tones
-  - Tier 2: brighter, slightly cooler, more clarity
-  - Tier 3: richer, deeper, more contrast
-The differences should feel natural, not heavily colour-graded.
+---
 
-TEXT OVERLAY STYLE:
-Same system: white sans-serif, subtle dark bar for readability. Tier numbers should be prominent — a slightly larger or bolder weight. The tier descriptions ("Chocolatey. Balanced." etc.) are the informational payload — ensure sufficient reading time.
+### A9: Origin Spotlight Posts (×2)
 
-DO NOT INCLUDE:
-- Stock footage
-- "BUY NOW" / urgency
-- Making Tier 1 feel like a compromise or "boring" option
-- Overly fast cuts — this is a considered purchase, not an energy-drink ad
-- "Premium," "artisanal," etc.
+**Brief reference:** §5.1 (Pillar 3), §6.1, §6.2
+
+**Format:** 1:1 square static image or carousel, 1080×1080px. One post per origin. Two posts minimum for Weeks 2–4.
+
+**Note:** The brief lists four origins (Yunnan China, Doi Chang Thailand, Gayo Indonesia, Malaysia) and schedules two spotlight posts in the first 4 weeks. The prompts below are templates — adapt the origin name, tasting notes, and visual description for each. If origin location photography is unavailable, use product/label shots.
+
+---
+
+#### A9a: Origin Spotlight — Template Prompt
+
+**Prompt:**
+
+A 1:1 square static image or 2-card carousel (1080×1080px) for an Instagram feed post spotlighting a single coffee origin. Brand: Coast Coffee, Singapore. Pillar 3 — Differentiation + Story.
+
+OPTION A (if location photography is available):
+
+COMPOSITION: A split or layered composition. The upper two-thirds: a beautiful landscape or producer photograph from the origin (e.g., coffee farms in Yunnan, Doi Chang hillsides, Gayo highlands, Malaysian coffee plots). The lower third: a product shot of the corresponding Coast Coffee tier bag with a small mound of the beans, or a clean label close-up showing the origin name. The tier colour (amber/jade/indigo depending on which tier this origin belongs to) ties the two halves together.
+
+OPTION B (if location photography is NOT available — fallback):
+
+COMPOSITION: A clean product-forward shot. The Coast Coffee bag for this origin, prominently displayed. A small mound of the beans beside it. The origin name clearly visible on the label. The tier colour (amber/jade/indigo) is the dominant accent. The composition uses texture and lighting to tell the story — beans as landscape.
+
+TEXT OVERLAY (minimal, on negative space):
+- Origin name: e.g., "YUNNAN, CHINA" (large)
+- Tier label: e.g., "TIER 2: COMPLEX & FLORAL" (in the tier colour)
+- Small tagline (adapt per origin, example): "Stonefruit sweetness. Black tea body. A origin making waves."
+
+LIGHTING: Natural. Warm. If location photo — golden hour, evocative. If product-only — clean studio or natural window light.
+
+MOOD: "This is where your coffee came from. Here's why it earned its tier." Curious, respectful, never exoticising. The Curator sharing a discovery.
+
+CAPTION (adapt per origin, example for Yunnan Tier 2): "Yunnan, China. 🇨🇳☕ Most people don't think 'coffee' when they think Yunnan. But this region has been quietly producing exceptional specialty beans — stonefruit sweetness, black tea body, clean floral finish. It earned Tier 2. Complex. Floral. The sweet spot. #asiancoffee #yunnancoffee #specialtycoffeesg #coffeeorigins"
+
+**Adapt for each origin:**
+
+| Origin | Tier (assumed) | Key tasting-descriptor angle |
+|--------|---------------|------------------------------|
+| Yunnan, China | Tier 2 (Jade) | Stonefruit sweetness, black tea body, "making waves" |
+| Doi Chang, Thailand | Tier 1 or 2 | Clean, balanced, chocolate-toned, "Thailand's coffee highlands" |
+| Gayo, Indonesia | Tier 1 or 3 | Earthy, full-bodied, classic Sumatran with clarity, "not your typical Sumatran" |
+| Malaysia | Tier 3 (Indigo) | Uncommon origin, intriguing, "a rare find — and it's exceptional" |
+
+*Note: exact tier assignments should be confirmed with Coast Coffee's actual bean lineup. The prompts above are templated — swap origin name, tier, and tasting notes.*
+
+---
+
+## P3 — NICE TO HAVE
+
+---
+
+### A12: Instagram Story Highlights Covers
+
+**Brief reference:** §6.1, §6.2 (Stories specs), §6.4 design system
+
+**Format:** 9:16 vertical, 1080×1920px cover frame. 4–5 covers.
+
+**Prompt (×4–5 highlight covers):**
+
+A set of Instagram Story Highlight cover icons for Coast Coffee's profile. Each cover is a 9:16 frame (1080×1920px) but designed so the core icon/typography is centred in a circle or clean shape — the visible part when displayed as a highlight bubble on the profile.
+
+STYLE: Clean, minimal. Geometric sans-serif typography. The brand's tier colour palette (amber #D4A054, jade #5B8C5A, indigo #3D4F7A) used as accents. Background: solid, subtle — off-white, warm cream, or a very soft tone that lets the icon pop.
+
+COVER 1 — "TIERS": A simple visual of three small circles or dots in amber, jade, and indigo, arranged horizontally. Label beneath: "TIERS." Purpose: Stories explaining the 3-tier system.
+
+COVER 2 — "FRESHNESS": A small vacuum-seal/stamp icon or a simple "6" in a circle. Label beneath: "FRESHNESS." Purpose: Stories about the degassing/vacuum-sealing process and the guarantee.
+
+COVER 3 — "ORIGINS": A small map-pin icon in gold, or Asia outline simplified. Label beneath: "ORIGINS." Purpose: Stories about the Asian-origin beans.
+
+COVER 4 — "DELIVERY": A small box or delivery icon. Label beneath: "DELIVERY" or "FAQ." Purpose: Delivery FAQs and what to expect.
+
+COVER 5 — "REVIEWS": A small star or heart icon. Label beneath: "REVIEWS." Purpose: Customer testimonials and influencer reposts (populate as content becomes available).
+
+TECHNICAL: 1080×1920px. The icon and label should be centred in the middle ~600×600px area to appear correctly when cropped to the circular highlight bubble on profile. Export as PNG.
+
+---
+
+## Cross-Asset Consistency Checklist
+
+Before finalising any asset, verify:
+
+- [ ] Tier colour codes match exactly: Amber #D4A054, Jade #5B8C5A, Indigo #3D4F7A
+- [ ] "≥6 WEEKS FRESH" stamp appears on all product imagery (where a bag is shown)
+- [ ] Logo is present but discreet — lower-right in video, bottom in statics
+- [ ] All text overlays use geometric sans-serif (Inter, DM Sans, or equivalent)
+- [ ] Numbers are always bold ("6 weeks," "3 tiers," "SGD 50")
+- [ ] Voice is The Curator: warm, specific, confident, curious, accessible
+- [ ] No empty coffee-speak: no "artisanal," "handcrafted," "farm-to-cup" without concrete evidence
+- [ ] Every claim is shown, not just stated (Proof, Not Promise principle)
+- [ ] Captions burned in on all video assets (viewers scroll with sound off)
+- [ ] Asian origins never framed as "exotic" — they are discoveries, not novelties
+- [ ] No disparaging of African/Latin American origins to elevate Asian ones
+
+---
+
+## Dependencies Flagged from Creative Brief §11
+
+| Dependency | Status | Action for asset producer |
+|-----------|--------|--------------------------|
+| **Trio offer price** (SGD 50–54) | Needs confirmation | All prompts use "~SGD 50." If confirmed price differs, update all CTA text overlays across A1, A2, A3, A10, A11. |
+| **Tier-to-origin mapping** | Assumed (see A9 table) | Confirm which origin goes to which tier before finalising A9 spotlight post copy. |
+| **Visual assets availability** | Depends on production | These prompts are written for original photography/videography. If Coast Coffee cannot produce the shoot requirements (§6.3), the prompts can be adapted for AI generation (Midjourney/DALL·E for statics, Runway/Pika for video) or stock — but the vacuum-seal process and colour-coded bags are unique to this brand and unlikely to exist in stock libraries. Flag to orchestrator. |
+| **Landing page exists** | Needs confirmation | A11 prompts assume a Shopify page. If no page exists, these imagery prompts still produce usable assets — but they need a destination before campaign launch. |
+| **Customer testimonials** | Not available | No testimonial assets are included above (the brief works around this). If testimonials become available by Week 4, request additional prompts for testimonial statics/video. |
+
+---
+
+## Priority Summary for Production
+
+```
+P0 — PRODUCE FIRST (cannot launch without):
+  ✅ A1: Hero video — Freshness Hook (Variant A)
+  ✅ A2: Hero video — Curation Hook (Variant B)
+  ✅ A11a-e: Landing page imagery (5 sub-assets)
+
+P1 — PRODUCE NEXT (needed by Week 1–3):
+  ✅ A4: Process reel
+  ✅ A5a-c: Tier explainer posts (×3)
+  ✅ A10: "What you get" trio flat-lay
+  ✅ A3 (Cards 1–4): Carousel ad
+
+P2 — PRODUCE BY WEEK 4:
+  ✅ A6: "Six weeks" proof post
+  ✅ A7: Unboxing reel
+  ✅ A8: "Asia on the map" reel
+  ✅ A9: Origin spotlight posts (×2 templates)
+
+P3 — NICE TO HAVE:
+  ✅ A12: Story highlights covers (×5)
 ```
 
 ---
 
-## 4. PAID VIDEO — Tonal Variants (All Themes)
-
-**Brief reference:** §2.1–§2.3 (tonal variant descriptions), §8 item 6
-
-### 4a. Theme A — Variant A2 (Curiosity-forward)
-
-**Format:** Same as Theme A master — 9:16 vertical, 15s
-
-```
-Same visual sequence and footage as Theme A master (Variant A1), with the following changes:
-
-TEXT OVERLAY CHANGES:
-- 0:01: Replace "Most beans start going stale the day they're roasted" → "What if your beans were still this fresh on day 30?"
-- 0:06: Replace "Vacuum-sealed. Not just bagged." → "This is why."
-- 0:13–0:15 END CARD: Replace "Three bags. Guaranteed fresh." → "Open it 4 weeks later. It still pops with aroma."
-
-PACING:
-- The 0:05–0:10 hero shot (vacuum-sealer) holds slightly longer — it's the visual answer to the curiosity question. Let the viewer connect "this is why" to the machine in action.
-
-All other specs (audio, colour grade, text style) identical to A1 master.
-```
-
-### 4b. Theme A — Variant A3 (Conversational)
-
-**Format:** Same as Theme A master — 9:16 vertical, 15s
-
-```
-Same visual sequence and footage as Theme A master (Variant A1), with the following changes:
-
-TEXT OVERLAY CHANGES:
-- 0:01: Replace opening text with: "Fresh beans by mail? We solved that."
-- 0:06: Replace middle text with: "48 hours rest. Then vacuum-sealed."
-- 0:13–0:15 END CARD: Replace end card subtext with: "Fresh for 6+ weeks. For real."
-
-TONE:
-- This variant reads as more conversational, Singapore-relatable. Slightly more informal but still specific — no superlatives.
-- Pace can be marginally quicker than A1 — the tone is "here's the answer" not "let us explain."
-
-All other specs (audio, colour grade, text style) identical to A1 master.
-```
-
-### 4c. Theme B — Variant B2 (Cinematic)
-
-**Format:** Same as Theme B master — 9:16 vertical, 18–20s
-
-```
-Same visual sequence and footage as Theme B master (Variant B1), with the following changes:
-
-TEXT CHANGES:
-- Minimise text overlays throughout. Let the landscapes carry the narrative.
-- 0:00–0:04: Keep only the region name + elevation text. Remove any other overlay.
-- 0:04–0:08: Keep only origin process text labels ("Washed process" etc.). No additional copy.
-- 0:16–0:19: Remove the Q-grader line entirely. Replace with a simple text card: "Three Asian origins. One trio."
-- END CARD: Same as B1.
-
-AUDIO:
-- Music takes a larger role here. The instrumental should be slightly more present, more emotionally driven. Cinematic strings or ambient electronic. The visuals and music together do the persuasive work — text is functional only.
-
-PACING:
-- Slightly slower cuts. Let each landscape shot breathe an extra half-second. This variant trades information density for emotional impact.
-
-All other specs (colour grade, visual sequence structure, end card) identical to B1 master.
-```
-
-### 4d. Theme B — Variant B3 (Challenge-forward)
-
-**Format:** Same as Theme B master — 9:16 vertical, 18–20s
-
-```
-Same visual sequence and footage as Theme B master (Variant B1), with the following changes:
-
-TEXT OVERLAY CHANGES:
-- 0:00–0:04: Replace opening overlay with: "You've tasted Ethiopian. You've tasted Colombian."
-- 0:08–0:12: Add overlay on the second origin: "But have you tasted Yunnan?"
-- 0:16–0:19: Replace Q-grader line with: "Three Asian origins. One trio. Find a new favourite."
-- END CARD: Same as B1.
-
-TONE:
-- Slightly provocative but in a curious, inviting way — not confrontational. Targets the Flavour Explorer's curiosity (Research §5, Segment B). The challenge is "here's something you haven't tried" not "you're missing out."
-
-All other specs (audio, colour grade, visual sequence structure, end card) identical to B1 master.
-```
-
-### 4e. Theme C — Variant C1 (Quiz-forward)
-
-**Format:** Same as Theme C master — 9:16 vertical, 15s
-
-```
-Same visual sequence and footage as Theme C master (Variant C2), with the following changes:
-
-TEXT OVERLAY CHANGES:
-- 0:00–0:03: Replace "Which coffee are you?" → "Which coffee are you? 👇"
-- Each tier segment (0:03–0:12): Replace descriptive text with short, quiz-style trait lines:
-  - Tier 1: "You reach for the same thing every morning. And it never lets you down."
-  - Tier 2: "You notice the difference between a Monday brew and a Saturday brew."
-  - Tier 3: "You chase the surprising cup. The one you can't predict."
-- 0:12–0:14: Replace "One trio. All three tiers." → "Which one are you? The trio answers that in three cups."
-- END CARD: Same as C2.
-
-PACING:
-- Slightly faster cuts through the tier reveals — quiz energy. The text should feel interactive and engaging.
-
-VISUAL ADDITION:
-- Consider a subtle animated "swipe" indicator or a poll-sticker-style graphic overlaid for the closing shot — make it feel native to Stories/Reels interactivity (but don't use actual poll stickers in paid ads — check platform ad policies).
-
-All other specs (audio, colour grade, end card) identical to C2 master.
-```
-
-### 4f. Theme C — Variant C3 (Aspirational-forward)
-
-**Format:** Same as Theme C master — 9:16 vertical, 15s
-
-```
-Same visual sequence and footage as Theme C master (Variant C2), with the following changes:
-
-TEXT OVERLAY CHANGES:
-- 0:00–0:03: Replace "Which coffee are you?" → "There's a tier for every brewer."
-- Each tier segment (0:03–0:12): Replace descriptive text:
-  - Tier 1: "The one you reach for every morning. No questions asked."
-  - Tier 2: "The one that makes you pause and say, 'That's different.'"
-  - Tier 3: "The one you haven't met yet. But you will."
-- 0:12–0:14: Replace with: "Three tiers. One you already know. One you'll love. One that'll surprise you."
-- END CARD: Replace subtext with: "Find the one you haven't met yet."
-
-TONE:
-- Mysterious, slightly aspirational. Less educational than C2, more emotional. Designed to intrigue the Identity Brewer (Segment C) and Flavour Explorer (Segment B).
-
-All other specs (audio, colour grade, visual sequence structure, end card) identical to C2 master.
-```
-
----
-
-## 5. PAID STATIC — Trio Product Images (3 Approaches)
-
-**Brief reference:** §5.2, §8 item 3  
-**Format:** 1:1 square, 1080×1080 px
-
-### 5a. Trio Product — Lifestyle Shot
-
-```
-Generate a 1:1 (1080×1080 px) product photograph for a Meta Feed ad.
-
-COMPOSITION:
-A lifestyle coffee scene on a wooden table or kitchen counter. Natural morning light from a window — soft shadows, warm tones. In frame:
-- Three Coast Coffee bags standing upright, side by side, labels facing camera. Tier indicators (1/2/3) clearly visible on each bag. Bag design: kraft brown paper, clean label with origin name, tier number, and a subtle Coast Coffee logo.
-- In front of the bags: a brewed cup of coffee (clean white ceramic mug or glass server), steam visible, placed slightly off-centre.
-- Beside the cup: a V60 dripper or similar pour-over cone, resting on a scale or server — recently used, authentic (a few coffee grounds visible in the dripper).
-- Optional: a small coffee-related object — a hand grinder, a spoon, or a small notebook — to add depth, but not clutter.
-
-LIGHTING:
-Natural window light from the left or right side. Not studio-flat. Soft shadows create depth. The steam from the cup should catch the light slightly. Warm white balance — not yellow, not clinical.
-
-BRANDING:
-- Coast Coffee logo visible on each bag's label.
-- No text overlay on the image itself — copy will be added in the ad platform.
-- The tier numbers (1/2/3) should be clearly readable even at Feed thumbnail size.
-
-DO NOT INCLUDE:
-- Over-styled, Pinterest-perfect flat-lays that look staged
-- Props that don't belong (laptops, phones, unrelated objects)
-- "Premium," "artisanal," or other text baked into the image
-- Stock elements
-
-STYLE REFERENCE:
-Think: a real morning brew scene in a Singapore home. Authentic, warm, not trying too hard. The bags are the hero — everything else supports them.
-```
-
-### 5b. Trio Product — Flat-lay
-
-```
-Generate a 1:1 (1080×1080 px) flat-lay product photograph for a Meta Feed ad.
-
-COMPOSITION:
-Overhead shot on a clean, textured surface — light wood or matte concrete, not stark white. Items arranged intentionally:
-- Three Coast Coffee bags, laid flat or at a slight angle, fanning out from the centre. Labels facing up, tier indicators (1/2/3) clearly visible. Bag design: kraft brown, clean label.
-- Scattered (sparingly, not messy): a few whole roasted coffee beans from each tier — beans should look slightly different in roast level and size, reflecting the three tiers. Each small cluster near its respective bag.
-- One small card or label near each bag with the tier description handwritten or cleanly typeset: "Tier 1 — Balanced" / "Tier 2 — Floral" / "Tier 3 — Wild"
-- A single pour-over dripper and scale in one corner — not dominant, just context.
-- Coast Coffee logo discreetly placed — perhaps on a small card or stamp in one corner.
-
-LIGHTING:
-Even, soft overhead light. No harsh shadows (it's a flat-lay). Slightly warm. The beans should catch some light to show texture.
-
-BRANDING:
-- Coast Coffee logo present but not dominant.
-- No promotional text baked in.
-- Tier numbers must be readable.
-
-DO NOT INCLUDE:
-- Overly symmetrical, catalogue-style product shots
-- Artificial vignetting or heavy filters
-- Stock elements
-```
-
-### 5c. Trio Product — Bag-only (Clean Product Shot)
-
-```
-Generate a 1:1 (1080×1080 px) clean product photograph for a Meta Feed ad — focused entirely on the three bags.
-
-COMPOSITION:
-Three Coast Coffee bags standing upright, side by side, labels facing directly at camera. Shot straight-on at bag height. Clean, minimal background — soft cream, warm grey, or light wood, slightly out of focus (shallow depth of field). The bags are the only subjects.
-
-BAG DESIGN (visible on each):
-- Kraft brown paper with a matte finish
-- A clean, modern label: origin name (e.g., "Yunnan, China"), tier number (clearly "1", "2", or "3"), tasting notes in small text, and a subtle Coast Coffee logo
-- Each bag should have subtle visual differentiation — different (real) origin names, different roast colour visible through a small window or descriptor
-- The date stamp area should be visible on at least one bag — "Roasted: [date]. Fresh for 6+ weeks."
-
-LIGHTING:
-Clean product lighting — one soft key light from front-left, a subtle fill from the right to prevent harsh shadows. The bags should look textured (kraft paper grain visible). Slightly warm white balance.
-
-BRANDING:
-- Logo on each bag label.
-- No text overlay on the image.
-- Ideally, the middle bag (Tier 2) is positioned slightly forward, with Tiers 1 and 3 slightly behind — creates depth without clutter.
-
-DO NOT INCLUDE:
-- Props, cups, beans, or any other elements
-- Glossy/reflective bag finish — must read as kraft/matte
-- Stock mockup styles
-```
-
----
-
-## 6. PAID STATIC — Theme C Carousel: Tier Match (4–5 Slides)
-
-**Brief reference:** §2.3, §5.2, §8 item 5  
-**Format:** 1:1 square, 1080×1080 px per slide, 5 slides
-
-### Slide-by-slide prompts
-
-```
-CAROUSEL — META FEED (INSTAGRAM + FACEBOOK)
-5 slides, each 1:1 (1080×1080 px)
-
-The carousel functions as a tier reveal: each slide introduces one tier, building to the trio reveal + CTA. The viewer swipes through to "discover their tier."
-
----
-
-SLIDE 1 — TITLE CARD: "Which coffee are you?"
-Composition: Three coffee cups on a wooden surface, side by side — same visual setup as Theme C video opening. Each cup distinct:
-- Left: warm white ceramic mug (Tier 1)
-- Centre: bright, colourful cup or glass (Tier 2)
-- Right: dark, textured matte black cup (Tier 3)
-Shot from slightly above — warm, natural light. Text centred above the cups: "Which coffee are you?" in clean sans-serif. Below the cups, small text: "Swipe to find your tier →" — this is the swipe prompt.
-Coast Coffee logo small in the bottom corner.
-No tier labels on this slide — the reveal starts on Slide 2.
-
----
-
-SLIDE 2 — TIER 1: "Your daily driver"
-Composition: Close-up of a single white ceramic mug, filled with freshly brewed coffee. Steam rising. The cup is on a wooden table, morning light. Warm, inviting, steady.
-Text overlay, top: "Tier 1"
-Text overlay, below the cup: "Your daily driver."
-Smaller text below that: "Chocolatey. Balanced. Impossible to brew wrong."
-The visual should feel like comfort and reliability — the cup you want to reach for.
-Coast Coffee logo small, bottom corner.
-
----
-
-SLIDE 3 — TIER 2: "Complex. Floral."
-Composition: Close-up of the Tier 2 brew — a glass server or colourful ceramic cup. The coffee is lighter, more translucent. A pour-over bloom shot (grounds expanding) works well here if available. Bright, clear light.
-Text overlay, top: "Tier 2"
-Text below: "Complex. Floral."
-Smaller text: "For when you want to notice something new."
-The visual should feel like discovery — brighter, more delicate than Slide 2.
-Coast Coffee logo small, bottom corner.
-
----
-
-SLIDE 4 — TIER 3: "Wild. Unexpected."
-Composition: Close-up of the Tier 3 brew — dark, textured cup, deeper coffee. A slow-motion pour shot or a dramatic close-up of the coffee surface, catching light differently. Richer, more contrast.
-Text overlay, top: "Tier 3"
-Text below: "Wild. Unexpected."
-Smaller text: "For Saturday mornings when you want your V60 to surprise you."
-The visual should feel intriguing — deeper shadows, more dramatic light than Slides 2 and 3.
-Coast Coffee logo small, bottom corner.
-
----
-
-SLIDE 5 — TRIO + CTA: "Find yours in one trio."
-Composition: The trio product shot — three Coast Coffee bags together, tier indicators (1/2/3) clearly visible. Clean product photography style — bags on a wooden surface, labels facing camera. Same bag design as all other assets.
-Text centred above the bags: "Discover Your Tier"
-Below the bags: "Three bags. All three tiers. Find yours."
-Smaller text: "Link in bio."
-Coast Coffee logo visible on the bags and perhaps small in a corner.
-This is the conversion slide — clear, clean, not pushy. The trio is the obvious next step.
-
----
-
-DESIGN SYSTEM (all slides):
-- Sans-serif typeface (Inter or similar), consistent weights across slides
-- Tier numbers in a slightly heavier weight than body text
-- Subtle dark overlay bar behind text only where needed for readability against busy images
-- Consistent warm colour temperature across all slides
-- Coast Coffee logo placement consistent (bottom corner, same size)
-- No hard-sell language, no "BUY NOW"
-- No stock imagery — every photo is Coast Coffee's actual product, cups, and process
-```
-
----
-
-## 7. SQUARE CUTDOWNS (1:1) — All Three Theme Masters
-
-**Brief reference:** §5.1, §8 item 7  
-**Format:** 1:1 square, 1080×1080 px, same duration as master
-
-### 7a. Theme A Square Cutdown
-
-```
-Create a 1:1 (1080×1080 px) square cutdown of the Theme A master video (Variant A1 — Freshness Process), same 15-second duration.
-
-ADAPTATION NOTES:
-- The original is 9:16 vertical. For 1:1, reframe key shots to centre the action.
-- Hero shot (vacuum-sealer): ensure the machine, bag, and hands remain fully in frame. Crop from sides if needed — keep the vacuum action centred.
-- End card: the trio product shot should fill the 1:1 frame comfortably. Adjust bag placement or crop so all three bags are visible without crowding edges.
-- Text overlays: reposition to remain within the 1:1 safe zone. Do not change copy.
-- All other specs (text, audio, colour grade) match the A1 master.
-
-This is a reframe cutdown for Meta Feed placement. Not a re-edit.
-```
-
-### 7b. Theme B Square Cutdown
-
-```
-Create a 1:1 (1080×1080 px) square cutdown of the Theme B master video (Variant B1 — Asian Origin Story), same 18–20s duration.
-
-ADAPTATION NOTES:
-- Landscape shots (origin establishing): these are typically wide compositions. For 1:1, centre the most important visual element (e.g., the mountain line, the processing beds) and accept some loss at the edges. Prioritise keeping the sense of place.
-- Close-up shots (cherries, beans, processing details) should reframe cleanly to 1:1 — these are tighter compositions that work well square.
-- Three-cup shot: ensure all three drippers/cups remain visible. May need to tighten the arrangement slightly.
-- End card: trio product shot reframed to fill 1:1.
-- Text overlays: reposition to 1:1 safe zone. Do not change copy.
-- All other specs match B1 master.
-
-This is a reframe cutdown. Not a re-edit.
-```
-
-### 7c. Theme C Square Cutdown
-
-```
-Create a 1:1 (1080×1080 px) square cutdown of the Theme C master video (Variant C2 — Tier Match), same 15-second duration.
-
-ADAPTATION NOTES:
-- Three-cup opening shot: this is the most important visual to protect. Ensure all three cups remain fully visible in the 1:1 frame. May require a slightly tighter arrangement or a modest reposition.
-- Individual tier close-ups: these are already tighter compositions — they reframe naturally to 1:1.
-- Pull-back shot (all three cups together): same concern as the opening — protect all three cups.
-- End card: trio product shot reframed to fill 1:1.
-- Text overlays: reposition to 1:1 safe zone. Do not change copy.
-- All other specs match C2 master.
-
-This is a reframe cutdown. Not a re-edit.
-```
-
----
-
-## 8. HORIZONTAL CUTDOWNS (16:9) — All Three Theme Masters
-
-**Brief reference:** §5.1, §8 item 8  
-**Format:** 16:9 horizontal, 1920×1080 px, same duration as master
-
-### 8a. Theme A Horizontal Cutdown
-
-```
-Create a 16:9 (1920×1080 px) horizontal cutdown of the Theme A master video (Variant A1 — Freshness Process), same 15-second duration.
-
-ADAPTATION NOTES:
-- The transition from 9:16 vertical to 16:9 horizontal is significant. Prioritise keeping the subject centred and the frame feeling composed, not cropped.
-- Hero shot (vacuum-sealer): the wider frame allows showing more of the workspace around the machine — lean into this. The horizontal format can make the process feel more cinematic and less phone-native.
-- Text overlays: these were designed for vertical and may need repositioning. For horizontal, centre or lower-third placement works well. Do not change copy.
-- End card: trio product shot in horizontal — bags side by side work naturally in 16:9. Consider a slightly wider composition that shows more of the surface/context around the bags.
-- All other specs (text copy, audio, colour grade) match A1 master.
-
-This is a reframe cutdown for Facebook Feed. Not a re-edit.
-```
-
-### 8b. Theme B Horizontal Cutdown
-
-```
-Create a 16:9 (1920×1080 px) horizontal cutdown of the Theme B master video (Variant B1 — Asian Origin Story), same 18–20s duration.
-
-ADAPTATION NOTES:
-- Landscape establishing shots (Yunnan, Doi Chang, Kintamani): these benefit enormously from 16:9 — the wider frame suits landscape cinematography. This is the format where Theme B will look its best. Let the landscapes fill the frame fully.
-- Process close-ups: centre the action. The wider frame gives breathing room.
-- Three-cup shot: in 16:9, the three cups side by side fill the frame naturally and elegantly. This shot should feel composed and deliberate.
-- Text overlays: reposition for 16:9. Origin names and elevation can sit comfortably in the lower-third. Do not change copy.
-- End card: trio in horizontal — bags side by side, with room for text on one side.
-
-This is a reframe cutdown. Not a re-edit.
-```
-
-### 8c. Theme C Horizontal Cutdown
-
-```
-Create a 16:9 (1920×1080 px) horizontal cutdown of the Theme C master video (Variant C2 — Tier Match), same 15-second duration.
-
-ADAPTATION NOTES:
-- Three-cup opening: the horizontal frame is ideal for three cups side by side. This shot should feel composed and spacious in 16:9.
-- Individual tier close-ups: centre the cup. The wider frame means more of the surrounding surface is visible — this can add context (brew setup, light, space).
-- Pull-back shot: again, three cups fill 16:9 beautifully.
-- Text overlays: reposition for 16:9 lower-third or centre as appropriate. Do not change copy.
-- End card: trio product shot in horizontal.
-
-This is a reframe cutdown. Not a re-edit.
-```
-
----
-
-## 9. ORGANIC — Week 1 Assets
-
-**Brief reference:** §4.1 (Week 1 row), §8 item 9
-
-### 9a. Brand Intro Reel
-
-**Format:** 9:16 vertical, 15 seconds  
-**Purpose:** Introduce Coast Coffee to the Instagram audience — who they are and what they do.
-
-```
-Create a 15-second vertical video (9:16, 1080×1920) for Instagram Reels. This is organic content — the brand's introduction to a new audience.
-
-SEQUENCE:
-
-0:00–0:03 — OPENING: THE BRAND NAME
-Close-up of a Coast Coffee bag being opened — the vacuum seal broken, the bag crinkling open. Satisfying sound of the seal breaking. Text overlay, centred: "Coast Coffee." Clean, simple, no animation flash.
-
-0:03–0:07 — WHO WE ARE
-Quick cuts (each ~1–1.5s):
-- Shot 1: Beans pouring from a bag into a grinder.
-- Shot 2: A pour-over being brewed — hot water from a gooseneck kettle, steam rising.
-- Shot 3: Three bags side by side, tier indicators visible.
-Text overlay across these shots, appearing in sequence:
-"We source specialty beans from across Asia."
-"We test everything ourselves."
-"We vacuum-seal after degassing — so they stay fresh for 6+ weeks."
-
-0:07–0:11 — THE TIER SYSTEM
-Three-cup shot (same setup as Theme C master). Text overlay:
-"3 tiers. From safe to adventurous."
-Each cup gets a one-word label appearing briefly: Tier 1 cup: "Balanced." Tier 2 cup: "Floral." Tier 3 cup: "Wild."
-
-0:11–0:14 — THE INVITATION
-Shot: the trio of bags, with a hand (founder's if available and comfortable) placing the third bag beside the other two — completing the set. Text overlay: "Discover Your Tier."
-
-0:14–0:15 — END CARD
-Clean product shot: three bags, logo visible. Text: "Coast Coffee. Link in bio." No "BUY NOW."
-
-AUDIO:
-- Natural sounds: seal breaking, beans pouring, water pouring.
-- Music: warm, understated instrumental — same tonal world as the paid ads but slightly more relaxed for organic.
-- No voiceover.
-
-COLOUR GRADE:
-Same warm, natural palette as all assets. Morning light feel. Consistent.
-
-DO NOT INCLUDE:
-- Stock footage
-- Hard-sell language
-- "Premium," "artisanal," "best"
-- Over-produced intro animations or logo reveals
-```
-
-### 9b. Tier Explainer Carousel
-
-**Format:** 1:1 square, 1080×1080 px per slide, 5 slides  
-**Purpose:** Educational cornerstone — explain the tier system so followers understand Coast Coffee's core differentiator.
-
-```
-CAROUSEL — INSTAGRAM ORGANIC
-5 slides, each 1:1 (1080×1080 px)
-
-This carousel explains the 3-tier system. It is educational and welcoming — the tone is "here's how we help you find the right coffee," not a sales pitch.
-
----
-
-SLIDE 1 — TITLE: "How we match coffee to your taste"
-Composition: A warm, inviting shot — three Coast Coffee bags on a wooden surface, tier indicators visible. Not the polished product shot — slightly more casual, organic-feeling. Maybe a hand reaching for one bag, or a cup nearby.
-Headline text, top: "How we match coffee to your taste"
-Subtitle, below: "Introducing the Coast Coffee 3-tier system."
-Small text at bottom: "Swipe to find your match →"
-Brand logo, small, bottom corner.
-
----
-
-SLIDE 2 — TIER 1: "For the daily ritual"
-Composition: Warm white ceramic mug on a wooden table, morning light, steam rising. Simple, reassuring. Maybe a hand wrapped around the mug — human, comforting.
-Headline: "Tier 1 — Your daily driver"
-Body text:
-"Chocolatey. Balanced. Roasted for reliability."
-"This is the one you reach for every morning — the brew that never lets you down."
-"Best for: black coffee drinkers, pourover beginners, anyone who wants a clean, satisfying cup without fuss."
-Tone note: This slide must not make Tier 1 sound boring. Frame it as the anchor — the dependable foundation. Many brewers drink Tier 1 every day and love it.
-
----
-
-SLIDE 3 — TIER 2: "For the curious palate"
-Composition: Glass server or colourful ceramic cup, lighter coffee visible, bright clear light. A pour-over in progress — the bloom expanding. More visual energy than Slide 2.
-Headline: "Tier 2 — Complex & floral"
-Body text:
-"Lighter roasts. Floral notes. More clarity in the cup."
-"This is where you notice the difference — the origin, the process, the nuance."
-"Best for: brewers who've tried a few single origins and want to go deeper. People who taste the difference between a Monday and a Saturday brew."
-
----
-
-SLIDE 4 — TIER 3: "For the adventurous brewer"
-Composition: Dark, textured cup, deeper coffee, dramatic light — a slow-motion pour or a close-up of the coffee surface. Intriguing, not intimidating.
-Headline: "Tier 3 — Wild & unexpected"
-Body text:
-"Unusual origins. Experimental processes. Flavours that surprise you."
-"This is the tier for Saturday mornings when you want your V60 to show you something new."
-"Best for: brewers who chase the surprising cup. People who treat coffee as a journey, not a routine."
-
----
-
-SLIDE 5 — THE TRIO: "Find your tier in one box"
-Composition: The trio product shot — three bags together, tier indicators visible. Clean but warm.
-Headline: "Discover Your Tier."
-Body text:
-"The trio gives you one bag from each tier. Brew all three. Find the one that fits."
-"No guesswork. No commitment to a single bag you might not love."
-Smaller text: "Link in bio to get the trio."
-Brand logo.
-
----
-
-DESIGN SYSTEM (all slides):
-- Consistent sans-serif typeface across all slides
-- Tier numbers prominently styled — slightly heavier weight, maybe with a subtle colour accent per tier (amber for T1, green-teal for T2, deep burgundy for T3)
-- Warm, natural light in all photography
-- Coast Coffee logo small and consistent position per slide
-- No stock imagery
-- No hard-sell language
-- Educational, welcoming tone throughout — knowledgeable not pretentious (Brand Strategy §3.1)
-```
-
----
-
-## 10. Summary — All Assets and Brief Traceability
-
-| # | Asset | Brief Ref | Format | Variant |
-|---|-------|-----------|--------|---------|
-| 1 | Theme A Master — Freshness Process | §2.1, §5.1, §8.1 | 9:16, 15s | A1 (Process-forward) |
-| 2 | Theme B Master — Asian Origin Story | §2.2, §5.1, §8.4 | 9:16, 18–20s | B1 (Discovery-forward) |
-| 3 | Theme C Master — Tier Match | §2.3, §5.1, §8.2 | 9:16, 15s | C2 (Descriptive-forward) |
-| 4a | Theme A Variant | §2.1, §8.6 | 9:16, 15s | A2 (Curiosity-forward) |
-| 4b | Theme A Variant | §2.1, §8.6 | 9:16, 15s | A3 (Conversational) |
-| 4c | Theme B Variant | §2.2, §8.6 | 9:16, 18–20s | B2 (Cinematic) |
-| 4d | Theme B Variant | §2.2, §8.6 | 9:16, 18–20s | B3 (Challenge-forward) |
-| 4e | Theme C Variant | §2.3, §8.6 | 9:16, 15s | C1 (Quiz-forward) |
-| 4f | Theme C Variant | §2.3, §8.6 | 9:16, 15s | C3 (Aspirational-forward) |
-| 5a | Trio Product Static — Lifestyle | §5.2, §8.3 | 1:1 static | — |
-| 5b | Trio Product Static — Flat-lay | §5.2, §8.3 | 1:1 static | — |
-| 5c | Trio Product Static — Bag-only | §5.2, §8.3 | 1:1 static | — |
-| 6 | Theme C Carousel — Tier Match | §5.2, §8.5 | 1:1, 5 slides | — |
-| 7a | Theme A Square Cutdown | §5.1, §8.7 | 1:1, 15s | A1 reframe |
-| 7b | Theme B Square Cutdown | §5.1, §8.7 | 1:1, 18–20s | B1 reframe |
-| 7c | Theme C Square Cutdown | §5.1, §8.7 | 1:1, 15s | C2 reframe |
-| 8a | Theme A Horizontal Cutdown | §5.1, §8.8 | 16:9, 15s | A1 reframe |
-| 8b | Theme B Horizontal Cutdown | §5.1, §8.8 | 16:9, 18–20s | B1 reframe |
-| 8c | Theme C Horizontal Cutdown | §5.1, §8.8 | 16:9, 15s | C2 reframe |
-| 9a | Brand Intro Reel (Organic Wk 1) | §4.1, §8.9 | 9:16, 15s | — |
-| 9b | Tier Explainer Carousel (Organic Wk 1) | §4.1, §8.9 | 1:1, 5 slides | — |
-
-**Total: 22 asset prompts**, all tracible to brief requirements and grounded in Customer DNA differentiators (3-tier system, Asian-origin focus, vacuum-sealed freshness guarantee).
-
----
-
-*End of asset prompts. Handoff to production — video editors, photographers, designers, or AI generation tools.*
+*End of asset prompts. Every prompt traces to a specific requirement in the creative brief (§3.3, §3.4, §4.2, §4.3, §5.1, §6.2, §6.3, §6.4) and is grounded in the Customer DNA at `customers/coast-coffee/dna.md`. No strategy, positioning, or messaging has been invented — only the brief's approved direction has been converted into executable generation prompts.*

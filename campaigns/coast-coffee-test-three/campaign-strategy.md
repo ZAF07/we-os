@@ -1,338 +1,211 @@
 # Campaign Strategy — Coast Coffee Launch
 
 > **Date:** 2025-07-16  
-> **Grounded in:** Customer DNA (`customers/coast-coffee/dna.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`), Brand Strategy (`campaigns/coast-coffee-test-three/brand-strategy.md`)  
 > **Agent:** Marketing Director  
-> **Status:** Complete — ready for Creative Director handoff
+> **Status:** Complete  
+> **Grounding:** Customer DNA (`customers/coast-coffee/dna.md`), Brand Strategy (`campaigns/coast-coffee-test-three/brand-strategy.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`).
 
 ---
 
-## 0. Strategic Summary
+## 1. Campaign Summary
 
-This is a **channel-disciplined, content-amplified launch campaign** to acquire 70 first-time customers in 8 weeks on SGD 1,000 total paid spend. The strategy concentrates paid budget on Meta (Instagram/Facebook) — the only platform where SGD 125/week can buy meaningful reach into Singapore home baristas — amplifies every paid impression with zero-budget organic content and community presence, and anchors conversion on the Flavour Trio discovery offer, which simultaneously converts the two largest customer segments and raises AOV. The campaign is structured for mid-course correction: Week 1–2 creative testing, Week 3–6 scaling, Week 7–8 closing.
-
-**The core logic:** 70 customers from SGD 1,000 means the paid budget alone cannot carry the load. The paid spend buys enough reach to acquire ~40 customers (at a realistic SGD 22–25 CPA); organic content and community participation must deliver the remaining ~25–30 at zero media cost. Every element of this strategy — channel selection, budget phasing, KPI tiers, segment routing — is designed to make that math work.
-
----
-
-## 1. Campaign Approach
-
-### 1.1 Four Design Principles
-
-| Principle | What It Means | Why (Grounded in DNA + Brand Strategy) |
-|-----------|--------------|----------------------------------------|
-| **Concentrate, don't fragment** | One primary paid channel (Meta). One conversion vehicle (the trio offer). One landing page. | SGD 125/week cannot drive meaningful reach across multiple platforms. Fragmentation kills small budgets — the brand becomes invisible everywhere rather than visible somewhere. Meta offers the best interest-based targeting for Singapore home baristas at the lowest CPM among visual platforms. |
-| **Content as the force multiplier** | SGD 1,000 can't buy enough impressions to reach 70 customers alone. Organic content — process videos, origin stories, tier explainers — extends reach at zero media cost and builds the trust that paid ads alone cannot close for a new brand. | The freshness process, origin landscapes, and 3-tier system are inherently visual and story-rich — ideal for Instagram Reels, carousels, and Stories. The Brand Strategy (§2.2) messaging architecture gives every piece of content a strategic job. |
-| **Retarget ruthlessly** | At a ≥3% conversion target, 97% of first-time visitors won't buy. Retargeting turns wasted traffic into second-chance conversions — the cheapest wins in the funnel. | The trust barrier (DNA: HIGH-severity objection — "Can I trust a new, small brand?") means many prospects need multiple exposures before converting. Retargeting provides those exposures without paying for new reach each time. |
-| **The trio offer IS the strategy** | Every paid ad points to the trio. The trio demonstrates the tier system, lowers risk for Safe Brewers, satisfies variety craving for Flavour Explorers, and raises AOV to SGD 50+. | Brand Strategy (§2.4): the trio converts the two largest segments (Safe Brewer ~35% + Flavour Explorer ~30% = ~65% of target). At SGD 50+ AOV, ~40 trio conversions contribute SGD 2,000+ in revenue against a SGD 1,000 budget — and deliver 40 of the 70 customers from a single SKU. |
-
-### 1.2 Why This Approach (and What It Rejects)
-
-| Considered | Decision | Rationale |
-|-----------|----------|-----------|
-| **Multi-channel paid (Meta + TikTok + Google + influencer)** | **Rejected.** Concentrate on Meta. | SGD 125/week split 3–4 ways buys zero frequency on every channel. Meta alone can deliver ~1,000–1,600 clicks over 8 weeks at Singapore interest-targeted CPC — enough for statistical relevance. |
-| **Influencer seeding (gifting bags to micro-influencers)** | **Deferred to post-campaign.** No paid influencer spend. Organic gifting to 2–3 genuine home-barista enthusiasts is acceptable if they would post anyway. | At SGD 0 paid influencer budget, there's no conflict. But paid influencer posts at even SGD 50–100/post consume budget that Meta uses more measurably. Once the brand has social proof, influencer becomes viable for Campaign #2. |
-| **Google Search as primary channel** | **Rejected as primary.** Small defensive campaign only. | No one searches for "Coast Coffee" yet. Generic terms like "specialty coffee Singapore" have CPCs that would burn the budget in days. Long-tail terms ("buy Asian coffee beans Singapore") have low volume — worth capturing but not betting on. |
-| **TikTok Ads** | **Rejected for paid.** Organic only. | TikTok's paid CPM in Singapore is competitive but the platform's content demands are higher — repurposed IG Reels underperform. Organic TikTok is zero-cost upside. |
-| **Email marketing** | **Not applicable yet.** No list exists. | First 70 customers become the seed list for Campaign #2. |
+| Element | Detail |
+|---------|--------|
+| **Campaign name** | Coast Coffee Launch |
+| **Slug** | `coast-coffee-test-three` |
+| **Primary objective** | Acquire 70 first-time customers in 8 weeks |
+| **Budget** | SGD 1,000 total paid spend |
+| **Timeline** | 8 weeks from launch |
+| **Core offer** | Introductory 3-bean Flavour Trio (one bag per tier) at ~SGD 50–54 — a low-risk discovery sampler that lets home baristas experience the curation system in a single purchase |
+| **Target segment** | Singapore home baristas who want curated, guaranteed-fresh Asian-origin beans matched to their flavour preference |
 
 ---
 
-## 2. Channels at a Glance
+## 2. Strategic Approach
 
-| Channel | Role | Paid Budget (SGD) | Expected Customer Contribution | KPI Focus |
-|---------|------|--------------------|-------------------------------|-----------|
-| **Meta Ads (IG + FB)** | Primary paid acquisition: prospecting + retargeting | 800 (80%) | 35–40 customers | Cost per purchase ≤ SGD 25, CTR ≥ 1.0%, Hook rate ≥ 25% |
-| **Instagram Organic** | Brand presence, trust-building, content engine | 0 (founder/team time: 3–5 hrs/week) | 10–15 customers | Engagement rate ≥ 4%, Story replies → DMs |
-| **Community (Reddit, FB coffee groups, HWZ)** | Trusted third-party context; peer discovery | 0 (founder participation) | 5–10 customers | Referral traffic, code redemptions |
-| **TikTok Organic** | Secondary discovery; younger home barista reach | 0 (repurpose IG Reels) | 5–8 customers | Video views, profile visits |
-| **Google Search** | Defensive brand + long-tail intent capture | 150 (15%) | 3–5 customers | Brand search volume, low CPC |
-| **Reserve / Testing** | Unforeseen opportunities, creative iteration | 50 (5%) | — | — |
-| **TOTAL** | | **1,000** | **70 (target)** | |
+### 2.1 The Core Problem This Campaign Must Solve
 
-**Why Meta dominates (80% of budget):**
+Coast Coffee is a new brand with **zero trust equity**. The campaign cannot assume anyone is ready to buy. The brand strategy identifies trust as the binding constraint (Observations #4; freshness anxiety rated HIGH across all segments). The purchase decision chain (Research §1.3) requires a trust signal **before** a value signal.
 
-At SGD 125/week, Meta's combination of:
-- Interest targeting granularity (specialty coffee, home brewing, pour-over, V60, Aeropress, Hario, Fellow, single-origin, coffee subscription)
-- Visual format suitability (coffee is inherently beautiful — beans, pours, landscapes)
-- Singapore user density (near-universal Instagram penetration among 22–45 demographic)
-- Lower CPM than TikTok Ads or YouTube for interest-targeted audiences in Singapore
+This means the campaign creative must **earn trust and drive conversion in the same ad** — the SGD 1,000 budget is too small to split into separate awareness and conversion campaigns with adequate frequency.
 
-...gives the highest probability of acquiring customers within budget. No other platform offers this combination at this budget level.
+### 2.2 The Strategic Answer: "Proof, Not Promise"
 
-**Why Google Search is small and defensive (15%):**
+Every campaign asset must embody the brand strategy's core principle: **specificity is credibility.** The campaign does not say "we care about freshness" — it shows the vacuum-sealing process. It does not say "we curate great beans" — it shows the three tiers and explains what each means. The trio offer is not just a discount bundle; it is the **physical embodiment of the curation system** — the customer experiences all three tiers in one purchase and forms their own judgment.
 
-The brand is new — no one is searching "Coast Coffee" at launch. But as organic and community content circulates, some will search. A small brand + long-tail campaign ("Asian coffee beans Singapore," "Yunnan coffee Singapore," "buy specialty coffee online Singapore") ensures those intent signals are captured, not lost to competitors. Long-tail terms have low competition and low CPC — efficient at this scale.
+**Why this approach:**
+- The purchase decision chain (Research §1.3) demands a trust signal first. A new brand cannot skip this step. "Proof, not promise" delivers the trust signal by letting process and specificity do the persuading.
+- The trio offer converts the curation framework from an abstract claim into a tangible, buyable product. It also lifts AOV to ≥ SGD 50, which is critical for unit economics at SGD 18–30/bag.
+- With SGD 1,000 total budget, the campaign cannot afford separate awareness and conversion flights. Every ad must do both jobs simultaneously.
 
-**Why community and organic are non-negotiable, not optional:**
+### 2.3 Why the Trio Offer Is the Right Conversion Mechanism
 
-The paid budget alone cannot hit 70 customers. Even at the realistic-case Meta CPA of SGD 22–25, SGD 800 buys ~32–36 customers. The remaining ~34–38 must come from organic and community — channels with zero media cost. The founder's 3–5 hours/week on content and community participation is the single most important variable outside the paid ads.
+| Reason | Grounding |
+|--------|-----------|
+| **Solves the paradox of choice** | Instead of asking a new customer to pick one tier (risky), the trio lets them try all three. The curation does the work. (Pain point: MEDIUM-HIGH, Research §1.2) |
+| **Lifts AOV to ≥ SGD 50** | Single-bag purchase at SGD 18–30 makes CAC economics punishing. Trio at ~SGD 50–54 gives the campaign breathing room. (Goal: AOV ≥ SGD 50) |
+| **Turns first purchase into brand education** | After brewing all three tiers, the customer understands the system and can confidently reorder their favourite. This builds retention into the acquisition event. |
+| **Differentiates from every competitor** | No other Singapore roaster offers a tiered-discovery bundle. It is the brand strategy's positioning made purchasable. |
 
----
+**Caveat:** Trio economics require validation (COGS on 3 bags vs. SGD 50–54 price point). If the trio is unprofitable at that price, the strategy shifts to a single-bag + discount code model, which will increase CAC and make the 70-customer target harder to hit. Flagged in Dependencies (§7).
 
-## 3. Budget Allocation — Detailed
+### 2.4 Creative Strategy Principle: The One-Ad Funnel
 
-### 3.1 Line Items
+The budget (SGD 125/week) cannot support a multi-ad funnel with statistical significance. The campaign runs a **single primary ad format** structured as a self-contained trust-to-conversion journey:
 
-| Line Item | Amount (SGD) | % of Budget | Weekly Run Rate | Notes |
-|-----------|-------------|-------------|-----------------|-------|
-| **Meta — Prospecting (Weeks 1–6)** | 500 | 50% | ~SGD 83/week (Wk 1–6) | Interest-based targeting: specialty coffee, home brewing, pour-over, V60, Aeropress, Hario, Fellow. Age 22–45, Singapore. Exclude existing customers (none yet). |
-| **Meta — Retargeting (Weeks 3–8)** | 250 | 25% | ~SGD 42/week (Wk 3–8) | Website visitors (all), video viewers (≥50%), IG profile visitors. Launch Week 3 once audience pool exists. |
-| **Google Search (Weeks 3–8)** | 150 | 15% | ~SGD 25/week (Wk 3–8) | Exact + phrase match on brand terms + long-tail: "Coast Coffee," "Asian coffee beans Singapore," "Yunnan coffee Singapore," "buy specialty coffee online Singapore," "coffee trio Singapore." Launch Week 3 when organic/community may drive searches. |
-| **Reserve** | 50 | 5% | As needed | Creative variant testing, unexpected opportunity, mid-campaign course correction. |
-| **Organic (IG + TikTok + Community)** | 0 | — | Founder/team time | Not a budget line item but requires 3–5 hours/week commitment. Critical path to the 70-customer goal. |
-| **TOTAL PAID** | **1,000** | **100%** | **~SGD 125/week** | |
+```
+HOOK (0–3 sec)        →  "Fresh beans by mail? Here's how we guarantee it."
+TRUST BUILD (3–15 sec) →  Show vacuum-sealing, degassing, the 6-week number.
+CURATION EXPLAIN (15–25 sec) →  Show 3 tiers, what each means, who each is for.
+OFFER + CTA (25–30 sec) →  "Try all three. The Flavour Trio. SGD 50. Link in bio."
+```
 
-### 3.2 Week-by-Week Spend Phasing
-
-| Phase | Weeks | Weekly Paid Spend | Focus | Decision Gate |
-|-------|-------|-------------------|-------|---------------|
-| **Setup + Test** | 1–2 | SGD 75–100/week | 3–4 prospecting ad variants testing different hooks: freshness process, Asian origin story, tier system/match-your-taste, convenience/delivery. Find the winner. | End of Week 2: which variant has highest hook rate + CTR? Kill anything below 20% hook rate or 0.8% CTR. |
-| **Scale** | 3–6 | SGD 125–150/week | Push winning creative. Add retargeting (Week 3). Google Search live (Week 3). Organic content cadence established. | End of Week 4: is CPA ≤ SGD 25? Is CVR ≥ 2.5%? Course-correct if not. |
-| **Close** | 7–8 | SGD 100/week | Retargeting-heavy (60%+). "Last chance" messaging on introductory trio pricing. Harvest organic + community momentum. | End of Week 8: final customer count. |
-
-### 3.3 The Phasing Rationale
-
-- **Weeks 1–2 at reduced spend (SGD 75–100):** The brand has no performance data. Spending the full SGD 125/week on untested creative is wasteful. Reduced spend buys enough data (~500–700 impressions per variant) to identify a winner while preserving budget for scaling.
-- **Weeks 3–6 at full spend (SGD 125–150):** The bulk of acquisition happens here. Winning creative is scaled. Retargeting audiences are populated. Organic content is compounding. The slight overspend in these weeks is funded by the Weeks 1–2 underspend.
-- **Weeks 7–8 at reduced spend (SGD 100):** The campaign approaches its close. Retargeting pool is largest and most efficient. New prospecting winds down. Remaining reserve is deployed where it can close the gap to 70.
+**Why one ad, not a funnel:**
+- SGD 125/week at Singapore Meta CPMs (SGD 8–15) buys ~8,300–15,600 impressions per week. Splitting across funnel stages dilutes frequency below effective thresholds.
+- The trio offer is novel enough to carry both curiosity (awareness) and purchase intent (conversion) in a single creative.
+- Retargeting will be layered on (people who watched ≥50% of the video → conversion-focused carousel), but only if audience pools reach minimum viable size (≥1,000). At this budget, that may take 3–4 weeks.
 
 ---
 
-## 4. KPI Tiers — Defined and Rationalised
+## 3. Channels at a Glance
 
-### 4.1 Business KPI
+| Channel | Role | Why This Channel | Expected Contribution |
+|---------|------|------------------|-----------------------|
+| **Meta Ads (Instagram Reels + Facebook Feed)** | Primary paid acquisition | Highest reach-per-dollar for Singapore DTC at small budgets. Interest targeting reaches home baristas (V60, Aeropress, specialty coffee, home espresso). Reels format suits the visual proof (vacuum-sealing, beans, tiers). | 35–45 customers (paid) |
+| **Instagram Organic** | Brand presence + social proof | The account hosts process content, origin stories, tier education. Serves as the "check us out" destination when people search the brand after seeing an ad. Builds credibility for a new brand. | 10–15 customers (organic referral) |
+| **Micro-Influencer Seeding** | Trust transfer + reach | 3–5 Singapore home-brewing creators receive the trio. Their honest brewing/review content provides the social proof a new brand lacks (DNA Gap: no testimonials). Cost = beans + delivery, not paid sponsorship. | 10–15 customers (creator audience) |
+| **Coffee Community / Word of Mouth** | Amplification | Singapore has active specialty coffee communities (Homeground Coffee Club, Kopi, Reddit r/singapore). Organic presence + early customer word-of-mouth drives discovery. Not a paid channel — a participation effort. | 5–10 customers (community) |
 
-| Metric | Target | Why This Number — and the Math |
-|--------|--------|-------------------------------|
-| **New customers** | 70 in 8 weeks | Primary business objective from goal.md. |
-| **Blended CAC** | ≤ SGD 14 | SGD 1,000 / 70 = ~SGD 14. Paid-only CAC will be higher (~SGD 22–25 for the ~40 paid-driven customers). Organic must deliver ~25–30 customers at SGD 0 media cost to hit the blended figure. |
-| **AOV** | ≥ SGD 50 | Driven by the trio offer at SGD 50–54. If trio share is ≥60% of orders and single-bag orders average SGD 24, blended AOV exceeds SGD 50. (Math: 60% × SGD 52 + 40% × SGD 24 = SGD 40.80. To clear SGD 50, trio share needs to be ≥70% or single-bag orders need to be at the higher end — SGD 28–30. Target ≥70% trio share.) |
+**Why these channels and not others:**
 
-**Why these business KPIs matter beyond the 70 number:**
+| Channel considered | Why excluded or deprioritised |
+|--------------------|-------------------------------|
+| **Google Search Ads** | At SGD 125/week, search budget is too thin to compete on "specialty coffee beans Singapore" against established roasters. Search intent exists but CPCs will consume the budget without sufficient conversion volume. Revisit when budget scales. |
+| **TikTok Organic** | Valid channel for home barista content, but requires consistent posting volume (3–5/week) to gain traction. Included as a secondary organic channel if the team has capacity; not a primary dependency. |
+| **Email** | No existing list (new brand). Email becomes relevant post-launch for retention and repeat purchases — out of scope for this acquisition campaign. |
+| **Marketplace (Shopee/Lazada)** | Would dilute the DTC brand experience and the curation narrative. The tier system needs its own landing page to explain. Marketplace is a future channel, not a launch channel. |
 
-The 70-customer target is the doorway, not the destination. These additional KPIs ensure the campaign doesn't hit 70 at any cost — it hits 70 at a sustainable CAC with an AOV that makes the economics work. A campaign that acquires 70 customers at SGD 20 blended CAC and SGD 35 AOV looks successful on the top line but destroys the unit economics. Coast Coffee's price band (SGD 18–30/bag) means every customer acquired above ~SGD 20 CAC risks being unprofitable on first purchase unless AOV is high.
+---
 
-### 4.2 Marketing KPI (Paid Channels)
+## 4. Budget Allocation
 
-| Metric | Target | Why This Number — and the Math |
-|--------|--------|-------------------------------|
-| **Landing page conversion rate** | ≥ 3% | Industry benchmark for DTC food/beverage first-purchase landing pages. At 3% CVR, achieving 40 paid customers requires ~1,333 landing page visits. At an estimated Meta CPC of SGD 0.50–0.80 (Singapore, interest-targeted, food/beverage), SGD 800 buys ~1,000–1,600 clicks. This is tight but feasible with a conversion-optimised landing page. |
-| **Cost per purchase — Meta** | ≤ SGD 25 | At SGD 25 CPA, SGD 800 in Meta spend delivers 32 customers. The remaining ~8 paid customers come from Google Search at lower CPA (brand/intent capture). If CPA drifts above SGD 30, the paid contribution drops below 30 customers — making the 70-goal unlikely given organic's ceiling. |
-| **CTR — Meta prospecting** | ≥ 1.0% | Singapore interest-targeted CTR benchmarks for food/beverage. Below 1.0% suggests creative/messaging isn't resonating with the audience — an early signal to iterate before scaling. |
-| **CPM — Meta** | ≤ SGD 12 | Singapore Meta CPM for food/beverage interest audiences. Higher CPM erodes reach per dollar and drives up CPA. If CPM exceeds SGD 15 by Week 2, audience or creative targeting needs adjustment. |
+### 4.1 Total: SGD 1,000
 
-### 4.3 Creative KPI
+| Line Item | Allocation | % of Budget | Rationale |
+|-----------|-----------|-------------|-----------|
+| **Meta Ads (paid social)** | SGD 800 | 80% | The engine. Only channel with targeting precision + sufficient reach at this budget. Run as a single conversion-optimised campaign with the hero video + 1–2 carousel variants. |
+| **Micro-influencer seeding** | SGD 120 | 12% | 4 creators × SGD 30 cost per trio (beans + delivery). No paid sponsorship — honest review content only. This is product cost, not media spend. |
+| **Reserve / contingency** | SGD 80 | 8% | Held for Week 4 reallocation: if Meta is overperforming, shift reserve into scaling the winner. If seeding generates strong UGC, boost top-performing creator posts with small paid spend. |
 
-| Metric | Target | Why This Number |
+### 4.2 Meta Ads Allocation Detail
+
+| Phase | Weeks | Weekly Spend | Total | Objective | Focus |
+|-------|-------|-------------|-------|-----------|-------|
+| **Phase 1: Launch + Learn** | 1–2 | SGD 100 | SGD 200 | Conversions (Purchase) | Hero video: freshness proof + trio offer. Broad interest targeting (specialty coffee, home brewing, Singapore 25–44). Gather data on who converts. |
+| **Phase 2: Optimise** | 3–6 | SGD 115 | SGD 460 | Conversions (Purchase) | Narrow to best-performing audiences from Phase 1. Introduce carousel ad variant (one slide per tier + trio CTA). Layer retargeting if pool ≥ 1,000. |
+| **Phase 3: Close** | 7–8 | SGD 70 | SGD 140 | Conversions (Purchase) | Retargeting-dominant. Introduce testimonial/social proof angle if early customer content is available. Spend drops as organic and word-of-mouth carry weight. |
+
+**Why SGD 800 on Meta, not the full SGD 1,000:**
+- At SGD 125/week flat, the campaign would have zero flexibility for experimentation or opportunistic spend. The SGD 120 seeding investment is high-leverage (SGD 30 per creator for content that would cost SGD 200–500 as paid sponsorship).
+- The SGD 80 reserve is insurance: if Meta underperforms in Phase 1, the reserve prevents the campaign from riding a losing horse for 8 weeks. It can be redirected to what works.
+
+### 4.3 Expected Paid Customer Economics
+
+| Metric | Target | How It Was Set |
 |--------|--------|-----------------|
-| **Hook rate (3-second / thumb-stop) — paid video** | ≥ 25% | On Meta, the first 3 seconds determine whether someone watches or scrolls. For a new brand with zero recognition, the hook must earn attention instantly. The freshness process (vacuum-sealing, beans pouring) and Asian origin visuals (landscapes, processing stations) are inherently scroll-stopping. Below 25% means the hook isn't working — change it before scaling. |
-| **Engagement rate — organic IG** | ≥ 4% | Singapore food/beverage organic engagement benchmarks. The home barista community is passionate and engaged — process content, brewing tips, and origin stories invite comments, saves, and shares. A 4% rate is ambitious but achievable for content that teaches or reveals something. |
-| **Video completion rate — 15s+ content** | ≥ 30% | For longer-form process content (degassing explainers, origin deep-dives). Signals content quality and audience interest depth. Relevant for both paid (optimise for ThruPlay) and organic. |
+| **Customers from paid** | 35–45 | Residual after organic/community contributions to the 70-customer goal |
+| **Blended CPA (paid)** | SGD 17.80–22.90 | SGD 800 ÷ 35–45 customers |
+| **Blended CAC (all channels)** | ≤ SGD 14 | SGD 1,000 ÷ 70 customers |
+| **AOV** | ≥ SGD 50 | Trio offer target price |
 
-### 4.4 KPI Interdependence — How to Read the Dashboard
-
-These KPIs are not independent. They form a chain:
-
-```
-Hook rate ≥ 25% → CTR ≥ 1.0% → CVR ≥ 3% → CPA ≤ SGD 25 → Blended CAC ≤ SGD 14
-```
-
-If one metric breaks, every downstream metric breaks too:
-- Low hook rate kills CTR regardless of how good the landing page is.
-- Low CTR raises effective CPM (you pay for impressions, not clicks) and reduces landing page traffic.
-- Low CVR means even strong traffic volume converts poorly, raising CPA.
-- High CPA means the paid budget delivers fewer customers, increasing the burden on organic.
-
-**The decision rule:** fix the earliest broken metric first. A landing page CVR problem is irrelevant if hook rate is at 15% — fix the creative hook, then revisit the landing page.
+The paid CPA target (≤ SGD 25 from the Goal) is achievable at SGD 800 spend if Meta delivers ≥ 32 conversions. At a 3% landing page conversion rate, that requires ~1,070 clicks — or ~107,000 impressions at 1% CTR. Over 8 weeks at SGD 125/week, that volume is feasible.
 
 ---
 
-## 5. The Funnel — How 70 Customers Happen
+## 5. KPI Tiers
 
-### 5.1 Funnel Architecture
+> Every KPI ties back to the business objective (70 new customers in 8 weeks). Tiers are cascading: Creative KPIs feed Marketing KPIs, which feed the Business KPI. If a KPI cannot be measured directly at launch (e.g., no Meta Pixel yet), the first week is instrumented as a measurement sprint.
 
-```
-IMPRESSIONS
-  Meta prospecting: ~40,000–60,000 impressions over 8 weeks
-  (SGD 800 at ~SGD 12 CPM)
-    ↓ Hook rate ≥ 25%; CTR ≥ 1.0%
-CLICKS TO LANDING PAGE
-  Meta: ~400–600 clicks (from prospecting at 1.0% CTR) + retargeting clicks
-  Google Search: ~150–250 clicks (SGD 150 at ~SGD 0.60–1.00 CPC on long-tail)
-  Organic/community: ~300–500 visits (from IG bio link, community posts, TikTok)
-    ↓ CVR ≥ 3%
-PURCHASES
-  Paid-driven: ~40 customers (35–40 Meta, 3–5 Google)
-  Organic-driven: ~25–30 customers
-    ↓
-70 NEW CUSTOMERS
-    ↓ (post-campaign, track for 90 days)
-REPEAT RATE
-  Not a campaign KPI but critical Coast Coffee business metric.
-  Track: how many of the 70 buy again within 30/60/90 days?
-```
+### 5.1 Business KPIs (why we're running this campaign)
 
-### 5.2 Funnel Math — Three Scenarios
+| KPI | Target | Measurement | Why This Target |
+|-----|--------|-------------|-----------------|
+| **New customers** | 70 in 8 weeks | Shopify/checkout unique first-time buyers | The primary objective from the Goal. 70 customers is the minimum viable cohort to test retention and repeat behaviour post-campaign. |
+| **Blended CAC** | ≤ SGD 14 | Total spend ÷ new customers | At SGD 18–30/bag and ~SGD 50 trio AOV, a SGD 14 CAC leaves a positive contribution margin on the first purchase — critical for a bootstrapped brand. |
+| **AOV** | ≥ SGD 50 | Total revenue ÷ orders | Trio offer is designed to pull AOV above single-bag pricing. If AOV drops below SGD 40, the trio is being bypassed and the campaign economics degrade. |
 
-| Variable | Conservative | Realistic | Optimistic |
-|----------|-------------|-----------|------------|
-| Meta prospecting CPC | SGD 0.80 | SGD 0.60 | SGD 0.45 |
-| Clicks from SGD 500 Meta prospecting | 625 | 833 | 1,111 |
-| Clicks from SGD 250 Meta retargeting | 300 | 400 | 500 |
-| Google Search clicks (SGD 150) | 150 | 200 | 250 |
-| Organic + community landing page visits | 300 | 400 | 500 |
-| **Total landing page visits** | **1,375** | **1,833** | **2,361** |
-| Landing page CVR | 2.5% | 3.0% | 3.5% |
-| **Total paid + organic customers** | **34** | **55** | **83** |
-| Additional: direct/referral/word-of-mouth | 14 | 15 | 16 |
-| **Total new customers** | **48** | **70** | **99** |
+### 5.2 Marketing KPIs (how the channels perform)
 
-**Interpretation:**
+| KPI | Target | Channel | Why This Target |
+|-----|--------|---------|-----------------|
+| **Landing page conversion rate** | ≥ 3% | All paid → landing page | Industry benchmark for DTC food/beverage is 2–5%. 3% is conservative-achievable for a new brand with a differentiated offer. Below 2% signals a trust or offer problem. |
+| **Cost per purchase (Meta)** | ≤ SGD 25 | Meta Ads | At SGD 800 Meta spend, SGD 25 CPA yields 32 customers — the floor for paid contribution. Above SGD 25, the campaign cannot hit 70 total without organic overperformance. |
+| **CTR (paid social)** | ≥ 1.0% | Meta Ads | Singapore F&B CTR benchmark. The freshness proof + Asian origin hook should outperform generic coffee ads. Below 0.8% means the creative hook isn't working. |
+| **Instagram profile visits → site clicks** | ≥ 20% visit-to-click rate | Instagram Organic | Measures whether the organic profile converts curiosity into traffic. If visits are high but clicks are low, the bio/link strategy needs fixing. |
 
-- The **realistic case hits 70** — but it requires both paid performance (CPC ≤ SGD 0.60, CVR ≥ 3%) and organic contribution (~400 visits from organic/community at 3%+ CVR) to perform.
-- The **conservative case falls short at 48** — which would still be a credible result for a new brand on SGD 1,000. At SGD 21 blended CAC, it's not a failure — it's a foundation.
-- The **optimistic case exceeds the target** — possible if Meta CPC is favourable (under SGD 0.50 is achievable with strong creative in a less-contested interest pool) or if one organic post performs unusually well.
+### 5.3 Creative KPIs (is the message landing?)
 
-**The critical insight from the math:** the difference between 48 and 70 customers is roughly 7 customers from paid performance improvement and 15 from organic. Both levers are within the campaign's control: creative iteration improves paid performance; founder commitment drives organic. Neither requires luck.
-
-### 5.3 Mid-Campaign Checkpoints
-
-| Week | Metric to Check | Action if Below Target |
-|------|----------------|----------------------|
-| **1** | Hook rate ≥ 25% on at least one variant | Kill low-performers. Launch new hook concept. |
-| **2** | CTR ≥ 1.0% on winning variant | Check audience targeting — are interests matching the creative? Refine. |
-| **3** | Landing page CVR ≥ 2.5% | If below 2.5%: check page load speed, mobile rendering, trio offer prominence, freshness guarantee visibility. |
-| **4** | ~35 customers acquired (halfway pace) | If below 30: examine full funnel. Is it a traffic problem or a conversion problem? Adjust budget allocation accordingly. |
-| **6** | ~55 customers acquired | If below 50: shift budget to retargeting (largest pool, lowest CPA). Push organic/community harder. |
-| **8** | Final count | Regardless of number: document learnings. Every data point is Campaign #2's strategy. |
+| KPI | Target | Format | Why This Target |
+|-----|--------|--------|-----------------|
+| **Hook rate (3-second / thumb-stop)** | ≥ 25% | Video (Reels) | The first 3 seconds must stop a scroll. The vacuum-sealing visual + "fresh beans by mail" hook is inherently curiosity-driving. Below 25% means the visual or opening line isn't working. |
+| **Engagement rate (organic)** | ≥ 4% | Instagram posts/reels | Measures whether the content resonates beyond paid distribution. Above 4% signals strong audience-product fit and supports organic growth toward the 70-customer target. |
+| **Video completion rate (50%)** | ≥ 30% | Video (Reels, 25–30 sec) | The ad's trust-build and offer live in the second half. If people drop off before the CTA, the ad is front-loaded but not closing. |
+| **Carousel swipe-through rate** | ≥ 60% to slide 3 | Carousel (3–4 cards) | Each card maps to a tier or proof point. Swipe-through indicates the curation story is compelling enough to finish. |
 
 ---
 
-## 6. Segment Routing — How Each Dollar Finds the Right Customer
+## 6. Phasing & Milestones
 
-The Brand Strategy (§4.3) segments the target audience into four profiles. The campaign routes reach to each segment differently — matching channel, creative angle, and landing page emphasis to what that segment needs to convert.
-
-| Segment | Size | Primary Reach | Creative Angle | Landing Page Emphasis | Why This Routing |
-|---------|------|--------------|----------------|----------------------|------------------|
-| **A — Safe Brewer** | ~35% (~25 customers) | Meta broad interest targeting ("specialty coffee," "home brewing") | "Find your perfect coffee — no guesswork." Show Tier 1 as the anchor; the trio as safe exploration. | Risk-reduction: freshness guarantee prominent, tier system explained, "Tier 1 is your daily driver." | Safe Brewers are the largest segment but most hesitant. They need permission more than excitement. The trio gives them an anchor (Tier 1) and a safety net (they're not committing to one bag they might hate). Meta's broader interest targeting reaches them because they self-identify as coffee-interested but not deeply obsessed. |
-| **B — Flavour Explorer** | ~30% (~21 customers) | Meta narrow interest targeting ("pour-over," "V60," "single origin coffee," "Aeropress") | "Three Asian origins. Three flavour worlds. One box." Show origin variety, processing diversity, tier range. | Discovery: origin stories, tasting notes, the trio as a curated journey across Asia. | Flavour Explorers want variety and newness. The trio is a perfect product for them — three distinct profiles in one purchase. Narrower interest targeting (brewing methods) finds them because they've signalled deeper engagement than the average coffee drinker. |
-| **C — Identity Brewer** | ~20% (~14 customers) | Community (Reddit, FB coffee groups) + IG organic (process/deep-dive content) | "What's in your cup that no one else has?" Asian origins as exclusive discovery; process as craftsmanship. | Sophistication: process transparency, unique origins, Tier 3 exclusivity, degassing/ sealing detail. | Identity Brewers are sceptical of ads. They discover through peers and communities. Paid ads are inefficient for this segment — they tune them out. Community participation and deep-dive organic content reach them in the contexts they trust. They're the smallest segment but have the highest word-of-mouth value. |
-| **D — Convenience Seeker** | ~15% (~10 customers) | Meta broad targeting + retargeting | "Specialty coffee, delivered. No trip. No queue." Freshness as peace of mind, not passion. | Convenience: delivery details, freshness guarantee, trio as one-click variety, no subscription required. | Convenience Seekers are the least emotionally engaged — they're converted by friction reduction, not brand story. Retargeting is efficient for them because they may need multiple exposures before acting. The trio removes even the friction of choosing. |
-
-**Why segment routing matters to the 70-customer goal:**
-
-If all four segments are targeted with the same creative and the same channel strategy, the campaign underperforms against every segment. Safe Brewers see "adventurous origin" messaging and feel intimidated. Identity Brewers see ads and ignore them. Flavour Explorers see "safe and easy" messaging and scroll past. Routing each segment to the right message in the right context is not optimisation — it's the difference between hitting 70 and hitting 40.
+| Week | Phase | Key Activities | Decision Point |
+|------|-------|----------------|----------------|
+| **Pre-launch** | Setup | Meta Pixel installed, landing page live, trio offer finalised, hero video produced, influencer seeding list confirmed, Instagram account populated with 6–9 posts | **Go/no-go:** Is the landing page converting at all in a soft test? Is the Pixel firing? |
+| **1–2** | Launch + Learn | Meta campaign live (hero video). Seeding packs dispatched. Organic posting 3×/week. | **End of Week 2:** Review CTR, hook rate, CPC. Is the creative working? If CTR < 0.8%, revise hook before scaling Phase 2. |
+| **3–6** | Optimise | Shift budget to best audiences. Introduce carousel variant. Retargeting layer activated if pool ≥ 1,000. Creator content starts appearing — reshare to brand account. | **End of Week 4 (mid-point):** Are we at ≥ 30 customers? If below 25, revisit offer, creative, or targeting. Deploy reserve to best performer. |
+| **7–8** | Close | Retargeting-dominant. Social proof angle introduced (early customer content/testimonials). Spend reduces as organic carries weight. | **End of Week 8:** Final count. Post-campaign analysis: CAC, repeat rate, segment breakdown. |
 
 ---
 
-## 7. Campaign Timeline — 8 Weeks with Decision Gates
+## 7. Risks & Mitigations
 
-| Week | Paid Activity | Organic Activity (IG) | Community Activity | Decision Gate |
-|------|--------------|----------------------|---------------------|---------------|
-| **1** | Launch 3–4 Meta prospecting variants (freshness, origin, tier-system, convenience hooks). Spend SGD 75. | 3 posts: brand intro, tier explainer carousel, freshness process Reel. | 1–2 value posts in Singapore coffee FB groups (not promotional — helpful content). | Which creative variant has highest hook rate (>25%) and CTR (>1.0%)? |
-| **2** | Continue testing. Spend SGD 75–100. Kill variants below 20% hook rate or 0.8% CTR. | 3 posts: origin spotlight #1 (Yunnan or Doi Chang), brewing guide, team/founder intro. | Monitor community responses. Reply authentically. | Is any variant clearing both thresholds? If not, launch new hook concept(s). |
-| **3** | Scale winning creative. Launch retargeting campaign. Google Search goes live. Spend SGD 125. | 3 posts: trio unboxing/brewing, degassing process explainer, tier comparison carousel. | Reddit: one thoughtful, non-promotional post in r/singapore or coffee subreddit. | Is landing page CVR ≥ 2.5%? If not, investigate — page load, mobile UX, offer clarity. |
-| **4** | Full run: prospecting + retargeting. Spend SGD 125. | 3 posts: customer feature (if any early buyers), origin spotlight #2, brew method comparison. | Continue community presence. Look for genuine conversation, not promotion. | Mid-campaign review: are we on pace for ≥35 customers? Is CPA ≤ SGD 25? Adjust audiences, creative, or landing page based on data. |
-| **5** | Optimise: shift budget to best-performing audiences and creative. Spend SGD 125. | 3 posts: freshness guarantee deep-dive, "which tier are you?" quiz/interactive, behind-the-scenes sourcing/roasting. | Engage. Share any milestones ("first 30 customers!"). | Is CPA ≤ SGD 25 for prospecting and ≤ SGD 15 for retargeting? Tighten audiences if not. |
-| **6** | Full run. Spend SGD 125. | 3 posts: origin spotlight #3, brewing fail → fix content (relatable), community shoutout/UGC if available. | Continue. Look for organic mention/collaboration opportunities. | Are we tracking to 50–55 customers? What's the outlook for 70? |
-| **7** | Shift to retargeting-heavy (60%+ of Meta budget). Spend SGD 100. | 2 posts: social proof/early customer feedback, "last chance" messaging on introductory trio pricing. | Share any press, mentions, milestones. | Final push assessment: can 70 be reached? Deploy reserve if close. |
-| **8** | Retargeting only. Spend SGD 50–75. | 1–2 posts: campaign wrap, what's next for Coast Coffee. | Thank community. Invite ongoing connection. | Campaign close. Measure final customer count. Document all learnings for Campaign #2. |
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| **Trio offer economics don't work** (COGS too high for SGD 50–54) | Medium | High — the primary conversion mechanism is undermined | Validate trio COGS before launch. Fallback: single-bag offer with tier-quiz landing page ("Which tier are you? Take the quiz → get SGD 5 off your first bag"). Reduces AOV but preserves the curation-led entry. |
+| **Meta Pixel not installed / firing incorrectly** | Medium | Critical — no conversion data, no optimisation, no retargeting | Pre-launch milestone: Pixel audit. Run a test purchase. Do not launch paid until Pixel confirms purchase events. |
+| **Creative doesn't achieve ≥ 25% hook rate** | Medium | High — without thumb-stops, the budget burns with no conversions | Produce 2 hook variants at launch (freshness visual vs. bean close-up vs. "three bags, one box" unboxing). Test simultaneously. Kill the loser by end of Week 1. |
+| **Influencer seeding yields no usable content** | Low-Medium | Medium — social proof gap remains unfilled | Brief creators clearly: "Honest review. Brew it, taste it, show your audience. No script." Pick creators with a track record of posting, not just follower count. If no content by Week 4, reallocate SGD 80 reserve to a small UGC-style testimonial ad using early customer reviews. |
+| **Landing page conversion < 2%** | Medium | High — breaks the paid economics | If Week 2 conversion is below 2%, audit the page: Is the trio offer clearly explained? Is the freshness guarantee visible above the fold? Is checkout friction low? Iterate before scaling Phase 2 spend. |
+| **70 customers unachievable within budget** | Low-Medium | Medium — goal miss, but campaign still generates learning | The 70-customer target is evidence-based but ambitious for a new brand at SGD 1,000. If the campaign reaches 50 customers at CAC ≤ SGD 14, that is a strong foundation. The learning (which segments converted, which tier they reorder, what creative worked) is as valuable as the customer count for a launch campaign. |
 
 ---
 
-## 8. Risks, Dependencies, and Mitigations
+## 8. Dependencies (must be true for this strategy to work)
 
-| # | Risk | Likelihood | Impact on 70-Customer Goal | Mitigation |
-|---|------|-----------|---------------------------|------------|
-| 1 | **Meta CPC exceeds SGD 0.80** — erodes clicks, raises CPA, reduces paid customer contribution | Medium | High — paid customers drop from ~40 to ~25–30, requiring organic to deliver 40+ (unlikely) | Shift budget toward retargeting (lower CPC). Narrow audience to reduce competition. Double organic/community effort. If CPC is structurally high, accept lower paid contribution and adjust the 70-target expectations — document for Campaign #2 budget planning. |
-| 2 | **Landing page CVR below 3%** — fewer customers per click, CPA rises | Medium | High — at 2% CVR with realistic traffic, total customers drop to ~50–55 | A/B test: headline, trio offer prominence, freshness guarantee placement, CTA. Simplify purchase flow. Check mobile rendering (likely 80%+ of traffic). If CVR is stuck below 2.5% by Week 4, the landing page — not the ads — is the bottleneck. |
-| 3 | **Organic content doesn't gain traction** — organic contribution drops, paid burden increases | Medium | Medium — organic was expected to deliver ~25–30 customers; at 10–15, the 70-goal becomes unlikely | Pivot format (Reels over carousels, or vice versa). Increase community participation to compensate. If organic is structurally weak, accept that the 70-goal is unlikely on this budget and focus on maximising paid efficiency as the primary learning. |
-| 4 | **Trio offer economics unfavourable** (Brand Strategy assumption #5 — COGS unconfirmed) | Low–Medium | High — margin erosion on the hero SKU makes every sale less profitable | If margin is too thin: shift messaging to single-bag purchases with tier-recommendation quiz. Trio becomes discovery tool (lower share of orders), single-bag AOV drops but margin per bag improves. Campaign still acquires customers; economics are protected. |
-| 5 | **No early customer testimonials or social proof** (DNA lists testimonials as `<TO CONFIRM>`) | High | Medium — harder to close trust-sensitive Safe Brewers without third-party validation | Lean on process transparency as credibility substitute: degassing, vacuum-sealing, testing process as visual proof. Incentivise first 10 customers to share feedback (photo + short review → discount code for next order). By Week 5, if any UGC exists, feature it prominently. |
-| 6 | **Brand voice not yet validated** (Brand Strategy §6, assumption #1) | Medium | Medium — creative tone may not resonate, reducing CTR and CVR | Test 3–4 ad variants with different tonal approaches in Week 1 (knowledgeable-warm vs. curious-adventurous vs. transparent-process-forward vs. Singapore-colloquial). Let data pick the winner, not intuition. The winning tone then informs all Week 3+ organic content. |
-| 7 | **Founder bandwidth for organic/community is insufficient** | Medium | High — the campaign's paid+organic model breaks if organic doesn't happen | This is a dependency, not a risk that can be mitigated inside the strategy. If the founder cannot commit 3–5 hours/week, the 70-customer target is unrealistic on SGD 1,000. The campaign must either (a) secure the founder commitment, (b) reduce the target, or (c) increase the budget. |
-
----
-
-## 9. Dependencies from Brand Strategy — Status
-
-The Brand Strategy (§6) identified six assumptions requiring customer validation. Their status affects this campaign strategy:
-
-| # | Assumption | Campaign Impact if Unresolved | Recommended Action |
-|---|-----------|------------------------------|---------------------|
-| 1 | Brand voice unconfirmed | Creative tone may miss. Mitigated by Week 1 multi-variant testing (see Risk #6 above). | Proceed with testing approach. Customer validates preferred tone by Week 2 based on performance data, not abstract preference. |
-| 2 | Competitor names unconfirmed | Positioning may need recalibration. Low immediate impact — the campaign strategy doesn't name competitors in ads. | Proceed. Competitor names matter more for long-term positioning than for this 8-week acquisition sprint. |
-| 3 | "Coast Coffee" name origin/story unknown | A founder-story hook (if one exists) is a powerful trust-building asset — missing it weakens creative. | Ask the founder before Creative Director briefs. If a story exists, it becomes a creative variant. |
-| 4 | English-only assumed (DNA confirms English as primary) | Missed multilingual reach in Singapore. | Proceed in English. If the founder later confirms Mandarin/Malay/Tamil reach is wanted, that becomes Campaign #2 scope — the budget is too small to support multilingual creative in this campaign. |
-| 5 | Trio offer economics unconfirmed | See Risk #4. | Validate COGS before launch. If unsustainable, adjust offer structure. |
-| 6 | Brand personality traits unconfirmed | Mitigated by the same Week 1 creative testing approach as brand voice (see Risk #6). | Proceed. |
+| Dependency | Owner | Status | If Not True |
+|------------|-------|--------|-------------|
+| **Trio offer economics validated** (COGS + delivery ≤ SGD 35–38, leaving margin at SGD 50–54) | Coast Coffee | ⚠ NEEDS CONFIRMATION | Shift to single-bag + quiz + discount model; recast AOV and CAC targets |
+| **Meta Pixel installed and firing purchase events** | Coast Coffee / tech setup | ⚠ NEEDS CONFIRMATION | Cannot launch paid. Delay campaign until resolved. |
+| **Landing page built and live** (trio offer, tier explanation, freshness guarantee, checkout) | Coast Coffee / tech setup | ⚠ NEEDS CONFIRMATION | No destination for paid traffic. Build minimal viable page before spend begins. |
+| **Hero video creative produced** (freshness process + tier showcase + trio offer CTA, 25–30 sec) | Creative Director (next step) | ⚠ PENDING | This strategy document hands off to Creative Director for the brief. |
+| **Brand voice confirmed by customer** (currently PROVISIONAL in brand strategy §3) | Coast Coffee | ⚠ RECOMMENDED | Creative can proceed with provisional voice attributes; customer should validate before final creative sign-off. |
+| **Micro-influencer shortlist** (3–5 Singapore home-brewing creators who post consistently) | Marketing Director / Coast Coffee | ⚠ NEEDS ACTION | If no creators are seeded by Week 2, the social proof pillar is delayed until organic reviews arrive. |
 
 ---
 
-## 10. Handoff to Downstream Agents
+## 9. Handoff to Creative Director
 
-### 10.1 To Creative Director
+This campaign strategy is the upstream deliverable. The **Creative Director** agent now has everything needed to produce the creative brief:
 
-**Your brief, in three sentences:**
+- **Positioning:** Asian-exclusive origins + curated 3-tier system + provable freshness (Brand Strategy §1)
+- **Core message:** "Asia's best beans. Curated for your taste. Sealed for freshness you can count on." (Brand Strategy §2.1)
+- **Messaging pillars:** Trust + Curation, Trust + Freshness, Differentiation + Story, Hygiene + Convenience (Brand Strategy §2.3)
+- **Voice:** Warm, specific, confident, curious, accessible — The Curator archetype (Brand Strategy §3)
+- **Campaign approach:** "Proof, not promise" — show the process, don't just claim it (this document §2.2)
+- **Primary format:** 25–30 sec Reels video structured as Hook → Trust Build → Curation Explain → Offer + CTA (this document §2.4)
+- **Offer:** Flavour Trio — all three tiers, ~SGD 50–54 (this document §2.3)
+- **KPIs:** Hook rate ≥ 25%, video completion rate (50%) ≥ 30%, engagement ≥ 4% (this document §5.3)
 
-The trio offer is the hero — every ad, every post, every asset points toward it. The freshness process (degassing → vacuum-sealing) is visually distinctive and must be shown, not described — prioritise video. Asian origin visuals (landscapes, processing stations, bean close-ups, maps) differentiate Coast Coffee from every other Singapore roaster's content — make them unmistakable.
-
-**Three ad hook concepts to test in Week 1:**
-1. **Freshness process hook:** The vacuum-seal moment. Visual: beans pouring into bag, air being drawn out, sealed bag with date stamp. Message: "Most beans start going stale the day they're roasted. Ours are rested 48 hours, vacuum-sealed, and guaranteed fresh for 6+ weeks."
-2. **Asian origin hook:** The landscape-to-cup story. Visual: origin landscape → processing → roasted beans → pour-over brew. Message: "Yunnan. Doi Chang. Kintamani. Three Asian origins most roasters overlook. We built a brand around them."
-3. **Tier system hook:** The "which coffee are you?" angle. Visual: three cups side by side, labelled Tier 1/2/3, with distinct flavour descriptors. Message: "Tier 1: Your daily driver. Tier 2: Floral, complex. Tier 3: For Saturday mornings when you want to be surprised. One trio. Discover your tier."
-
-**Creative principles (from Brand Strategy §3):**
-- Knowledgeable, not pretentious. Curious and adventurous. Trustworthy through transparency.
-- Specificity over superlatives: "vacuum-sealed after 48-hour degassing," not "fresh beans."
-- Show the process, don't just claim the result.
-
-**Brand voice note:** The voice is recommended but unconfirmed (see §9 above). Build flexibility into early creative — Week 1 testing will reveal which tonal approach resonates.
-
-### 10.2 To Performance Marketing Agent
-
-**Meta campaign structure:**
-- **1 prospecting campaign:** 1 ad set, interest-based targeting (specialty coffee, home brewing, pour-over, V60, Aeropress, Hario, Fellow, single origin coffee), age 22–45, Singapore, placements: IG Feed + Stories + Reels + FB Feed. 3–4 ad variants (the hooks above).
-- **1 retargeting campaign:** Custom audiences — website visitors (all, 30-day window), video viewers (≥50% watch, 30-day), IG profile visitors (30-day). Launch Week 3.
-
-**Google Search campaign:**
-- Exact match + phrase match only. No broad match — budget is too small.
-- Keywords: "coast coffee singapore," "asian coffee beans singapore," "yunnan coffee singapore," "buy specialty coffee online singapore," "coffee trio singapore," "single origin coffee delivery singapore."
-- Launch Week 3.
-
-**Tracking requirements (non-negotiable — must be live before Week 1 spend):**
-- Meta Pixel on the landing page (PageView, ViewContent, AddToCart, Purchase events).
-- Google Ads conversion tracking.
-- UTM parameters on all paid links (utm_source, utm_medium, utm_campaign, utm_content for creative variant).
-- If using a platform (Shopify, WooCommerce), ensure the purchase event fires correctly and captures order value.
-
-**Weekly reporting template:**
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Spend | — | — | — |
-| Impressions | — | — | — |
-| CPM | ≤ SGD 12 | — | — |
-| Clicks | — | — | — |
-| CTR | ≥ 1.0% | — | — |
-| CPC | ≤ SGD 0.80 | — | — |
-| Landing page visits | — | — | — |
-| Purchases | — | — | — |
-| CVR | ≥ 3.0% | — | — |
-| CPA | ≤ SGD 25 | — | — |
-| Hook rate | ≥ 25% | — | — |
-
-### 10.3 To the Founder/Operator
-
-**Your 3–5 hours/week is not optional — it's the difference between 48 customers and 70.**
-
-**What to do each week:**
-- **Content (2–3 hours):** Film the freshness process. Photograph the beans. Write one short origin story per week. Share brewing tips. Show the vacuum-sealer in action. Respond to comments and DMs promptly — early followers become early customers.
-- **Community (1–2 hours):** Be present in 1–2 Singapore coffee groups/forums. Don't promote — participate. Answer questions. Share knowledge. Let your expertise earn trust. When someone asks "where can I get interesting Asian beans?", that's when you mention Coast Coffee — and even then, understate it.
-- **First 10 customers (30 min each):** These are your most valuable asset. Personally message each one. Thank them. Ask what they brewed first. Request a photo of their brew. Offer a small incentive for sharing their experience. One genuine customer photo is worth SGD 100 in ads.
-
-**If you cannot commit this time, tell the Marketing Director now.** The campaign strategy can be adjusted — reduced target, increased budget, or a paid-only approach (with a lower customer expectation). But do not launch a paid+organic strategy if the organic half won't happen.
+**Next step:** Creative Director produces the creative brief → Creative Asset Prompt subagent produces the generation prompt → asset creation.
 
 ---
 
-*End of Campaign Strategy. Next: Creative Director Agent produces Creative Direction → Creative Brief → Asset Prompts.*
+*End of campaign strategy. All choices are grounded in the Customer DNA, Brand Strategy, and Campaign Goal. No recommendation is invented from thin air. Handoff ready.*
