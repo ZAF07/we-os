@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Marketing OS** — an AI-assisted marketing operating system for small businesses and solo founders. It is a **decision-making system, not a content generator**: it replicates the strategic process professional marketers follow _before_ assets are created. The goal is always revenue growth; content/assets are downstream tools. See `README.md` for the full product vision.
 
-There is no application code, build, or test suite. The repository _is_ an agentic system configured under `.claude/`.
+The repository has two layers: the **interactive agentic system** configured under `.claude/` (markdown agents, rules, skills — no build step), and the **compiled harness** under `agent-harness/` — a LangGraph-based Python application (uv, ports-and-adapters) with its own `src/`, `tests/`, `Makefile`, and quality gates (`ruff`, `mypy`, `pytest`). Both layers read the same governance markdown (see ADR 0003).
 
 ## Directory map
 
@@ -21,6 +21,10 @@ There is no application code, build, or test suite. The repository _is_ an agent
 | `campaigns/<slug>/`            | Per-campaign `goal.md` (input) + deliverables written by each pipeline stage. Writes here are pre-approved (no prompt).                    |
 | `templates/`                   | Fill-in templates for Customer DNA and campaign goals.                                                                                     |
 | `USAGE.md`                     | Operator guide: how to collect DNA, set the goal, and run the agent.                                                                       |
+| `agent-harness/`               | Compiled LangGraph runtime — Python package (`src/marketing_os/`), tests, Makefile. Runs the same pipeline headlessly.                     |
+| `CONTEXT.md`                   | Domain glossary and pipeline vocabulary — read before working in any area.                                                                 |
+| `docs/adr/`                    | Architecture Decision Records — decisions not to re-litigate.                                                                              |
+| `.scratch/<feature>/`          | Local issue tracker — PRDs and issues as markdown; the cross-session record of work (see `docs/agents/issue-tracker.md`).                  |
 
 ## Agent hierarchy → Claude Code mapping
 
@@ -46,12 +50,12 @@ In this version `knowledge/` is **read-only** to agents. A planned future capabi
 ## Coding standards
 
 - Type-annotate all public functions; `mypy` must pass on `src/`.
-- Ues absolute path imports instead of relative
+- Use absolute path imports instead of relative
 - Use UV for package and virtual env management
 - Keep functions focused; prefer pure functions and dependency injection over globals.
-- Function and variable names MUST be clear and describes what they do or hold.
+- Function and variable names MUST be clear and describe what they do or hold.
 - All methods _MUST_ have _google-style docstrings_ describing in concise manner what the method does, what parameters it takes and what it returns
-- No inline comments. If comments are absolutely needed, then put then in google style docstrings in the function.
+- No inline comments. If comments are absolutely needed, then put them in google style docstrings in the function.
 - Match the style of surrounding code — naming, comment density, structure.
 - No secrets, API keys, or tokens in code or commits. Read them via `config.py`/`.env`.
 - New code comes with tests. Don't mark a task done until `pytest`, `ruff`, and `mypy`
@@ -71,14 +75,41 @@ In this version `knowledge/` is **read-only** to agents. A planned future capabi
 
 ---
 
+## Development workflow (router)
+
+Every piece of work — feature, refactor, or bug — gets an issue file in `.scratch/<feature>/issues/` **before** code changes. The issue file is the cross-session anchor: status, decisions, and blockers live there, not in chat history.
+
+**New feature:**
+
+1. `/grill-with-docs` — sharpen the idea; ADRs and `CONTEXT.md` updates land as decisions are made. (Skippable for small, well-understood work.)
+2. `/to-prd` — synthesize the conversation into `.scratch/<feature>/PRD.md`.
+3. `/to-issues` — break into tracer-bullet vertical slices with `Blocked by:` dependencies.
+4. Per issue, on a branch: `/implement <issue path>` — TDD at agreed seams, quality gates, then `/code-review`.
+5. `/verify` (or `/run`) — confirm the change actually works in the running app, not just that tests pass. Skipping this is how green tests ship broken behaviour.
+6. `/post-implement` — verify acceptance criteria with evidence, mark `completed`, archive. Then `/domain-modeling` if the change moved the domain model (new terms, decisions) so `CONTEXT.md`/ADRs don't drift.
+
+**Improve existing code:** `/simplify` for diff-scoped cleanup; `/improve-codebase-architecture` (with `/codebase-design` vocabulary) for structural work. Once scoped, funnel into an issue and follow steps 4–6 above — refactors get issues too, and get verified too.
+
+**Debugging:** `/file-bug` to record it as an issue → `/diagnosing-bugs` (build a tight pass/fail feedback loop before touching code) → fix test-first with `/tdd` → `/verify` the fix in the running system → `/code-review` → `/post-implement`, recording the confirmed hypothesis in the archived issue.
+
+**What counts as a bug (important):** a bug is a defect in **already-implemented, shipped code** — the running system crashes, throws, or logs an error when exercised. Those get filed with `/file-bug`. A defect in code being written *right now* (a broken function in the current diff, a failing test you just introduced) is **not** filed — fix it in place as part of finishing that work. When the user mentions a bug, this is the distinction to apply before reaching for `/file-bug`.
+
+**Session ritual:**
+
+- **Start**: run `/triage` ("show me what needs attention") to re-orient on in-flight work. When the user asks "what's in flight?" or "where were we?", this is the answer.
+- **End, work complete**: `/post-implement`, then the user commits the `.scratch/` status change (commit message convention: "updated tasks status").
+- **End, mid-task**: append a status note under `## Comments` in the active issue file — where things stand, what's next, any open questions.
+
+---
+
 ## Definition of done
 
 A task is done when:
 
-1. Code compiles / imports and the app runs.
+1. Code compiles / imports, and the change is **verified in the running app** (via `/verify` or `/run`) — not just green in tests.
 2. `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`, and `uv run pytest` all pass.
-3. New behavior has tests.
-4. You've reported what you changed and any caveats plainly.
+3. New behavior has tests; for a bug fix, a test that was red before the fix and is green after.
+4. Acceptance criteria on the issue are checked off with evidence, and you've reported what you changed and any caveats plainly.
 
 ---
 
