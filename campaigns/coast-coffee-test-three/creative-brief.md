@@ -1,300 +1,449 @@
 # Creative Brief — Coast Coffee Launch
 
-> **Date:** 2025-07-16 — revised 2025-07-16  
-> **Grounded in:** Customer DNA (`customers/coast-coffee/dna.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`), Brand Strategy (`campaigns/coast-coffee-test-three/brand-strategy.md`), Campaign Strategy (`campaigns/coast-coffee-test-three/campaign-strategy.md`), Market Research (`campaigns/coast-coffee-test-three/research.md`)  
+> **Date:** 2025-07-16  
 > **Agent:** Creative Director  
-> **Status:** Complete — ready for Creative Asset Prompt Agent  
-> **Note:** This is a creative brief — concepts, themes, content direction, and asset requirements. It does not contain generation prompts. Those are the Creative Asset Prompt Agent's domain.
+> **Status:** Complete — ready for handoff to Creative Asset Prompt Agent  
+> **Grounding:** Customer DNA (`customers/coast-coffee/dna.md`), Market Research (`campaigns/coast-coffee-test-three/research.md`), Brand Strategy (`campaigns/coast-coffee-test-three/brand-strategy.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`), Campaign Strategy (`campaigns/coast-coffee-test-three/campaign-strategy.md`)
 
 ---
 
-## 0. Creative Strategic Foundation
+## 1. Brief Overview
 
-### 0.1 What this creative must achieve
-
-The campaign strategy states this is a channel-disciplined, content-amplified launch to acquire 70 new customers in 8 weeks on SGD 1,000 (Campaign Strategy §0). Creative is the single biggest lever — it controls hook rate, CTR, and (indirectly) conversion rate. The paid budget alone cannot deliver 70 customers; organic content must carry 25–30 of them (Campaign Strategy §0, §3 — Meta expected to deliver ~35–40, Google 3–5, organic/community ~25–30).
-
-**Implications of the approved strategy for creative:**
-
-| Implication | Source | Creative Consequence |
-|------------|--------|---------------------|
-| The trio offer converts the two largest segments simultaneously (Safe Brewer ~35% + Flavour Explorer ~30% = ~65% of target) and raises AOV to SGD 50+. | Brand Strategy §2.4; Campaign Strategy §1.1 | The trio must be visually prominent — the hero of the visual language across paid and organic, not a footnote or upsell. |
-| The freshness process (degassing → vacuum-sealing → ≥6-week guarantee) directly counters the #1 purchase blocker — freshness anxiety rated HIGH severity. | Research §1.2; Brand Strategy §1.2, §2.2 | The vacuum-sealing process must be shown visually. Text claims alone are not credible for a new brand (Brand Strategy §1.2 — "trust in a new brand" is HIGH severity). |
-| The competitive audit found Asian-origin focus is STRONG and ownable differentiation — no major Singapore roaster or subscription service specialises exclusively in Asian beans. | Research §2.1, §2.2; Brand Strategy §1.2 | Asian-origin visuals (landscapes, processing stations, maps, origin labels) differentiate Coast Coffee's content from every other Singapore roaster. Every piece of content should feel geographically specific. |
-
-### 0.2 Brand voice at a glance (from Brand Strategy §3)
-
-| Trait | What it means for creative |
-|-------|---------------------------|
-| **Knowledgeable, not pretentious** | Talk about degassing, varietals, processing methods — but explain them as you go. Never gatekeep. |
-| **Curious and adventurous** | The brand is a fellow explorer. Use language of discovery, not authority. "We tested this ourselves" > "This is the best." |
-| **Trustworthy through transparency** | Name the numbers. Show the process. "Vacuum-sealed after 48-hour degassing" > "Always fresh." Specificity = credibility. |
-
-**Voice note:** The brand voice is recommended but unconfirmed by the customer (Brand Strategy §6, assumption #1). The Campaign Strategy (§7, §10.1) directs that Week 1 creative should include tonal variants to let performance data — not intuition — pick the winner. This brief includes tonal variants under each theme (§2.1–§2.3) for that purpose. The testing approach itself is the Performance Marketing agent's domain (per Campaign Strategy §7, §10.2).
-
-### 0.3 Segment routing (from Campaign Strategy §6)
-
-| Segment | ~Size | Source | What creative must do for them |
-|---------|-------|--------|-------------------------------|
-| **A — Safe Brewer** | ~35% (~25 customers) | Research §5 | Make Tier 1 feel like a safe harbour, not a compromise. The trio is permission to explore with an anchor. Risk-reduction cues everywhere. |
-| **B — Flavour Explorer** | ~30% (~21 customers) | Research §5 | Make Asian origins feel like discovery, not a gamble. Variety, specificity, origin stories. The trio is a curated journey. |
-| **C — Identity Brewer** | ~20% (~14 customers) | Research §5 | Exclusivity, process depth, origin rarity. Community/authentic over polished. Tier 3 is the lure. |
-| **D — Convenience Seeker** | ~15% (~10 customers) | Research §5 | Friction removal. Delivery, freshness guarantee, one-click trio. Retargeting-friendly creative. |
+| Element | Detail |
+|---------|--------|
+| **Campaign** | Coast Coffee Launch (8 weeks) |
+| **Business objective** | 70 new first-time customers in 8 weeks |
+| **Primary conversion mechanism** | The Flavour Trio — all three tiers, ~SGD 50–54, low-risk discovery sampler |
+| **Budget** | SGD 1,000 total (SGD 800 Meta Ads, SGD 120 influencer seeding, SGD 80 reserve) |
+| **Primary channel** | Meta Ads — Instagram Reels + Facebook Feed |
+| **Creative strategy** | "Proof, Not Promise" — show the process; let specificity earn trust |
+| **Creative format** | One-Ad Funnel: 25–30 sec hero video (Reels) + 3–4 card carousel |
+| **Brand voice** | The Curator — warm, specific, confident, curious, accessible (Brand Strategy §3) |
 
 ---
 
-## 1. Master Creative Concept
+## 2. Creative Strategy
 
-### "Discover Your Tier"
+### 2.1 The Single Creative Principle
 
-**The unifying idea:** The tier system is not a product feature — it's a personal discovery. Every home barista has a tier that fits them. The trio is how they find it.
+> **Every frame must prove, not promise.**
 
-**Why this concept (grounded in DNA + Brand Strategy):**
+The campaign cannot afford separate awareness and conversion ads (SGD 125/week). Every creative asset must earn trust and drive purchase in the same piece of content. The mechanism is specificity — show the vacuum seal hissing shut, don't say "we care about freshness." Show the three bags side by side with their tier labels, don't say "we make coffee easy to choose."
 
-- Makes the **customer the protagonist** — Coast Coffee is the guide, not the hero. This aligns with the Brand Strategy's "knowledgeable, not pretentious" personality trait (Brand Strategy §3.1) and avoids the gatekeeping tone that would repel Safe Brewers (~35% of the target).
-- **Works for all four segments** — each discovers a different tier. Safe Brewers discover Tier 1 is their daily driver. Flavour Explorers discover Tier 2 is their sweet spot. Identity Brewers claim Tier 3. Convenience Seekers discover that discovery itself can be easy.
-- **Positions the trio as the discovery vehicle**, not a discount bundle. "Try all three. Find your tier." This frames the SGD 50–54 purchase as an exploration experience, not a bulk buy. The Brand Strategy (§2.4) identifies the trio as "the messaging vehicle for the entire positioning."
-- **Creates a natural content series** — "Which tier are you?" is inherently interactive (polls, quizzes, carousel comparisons, "brew your tier" demos). This fuels the organic content engine the campaign depends on (Campaign Strategy §0 — organic must deliver 25–30 customers).
-- **Rooted in the core differentiator** (DNA: 3-tier flavour framework) that Research §2.2 rates as STRONG differentiation. The concept makes that differentiator tangible and desirable.
+This principle flows directly from three research findings:
 
-**Concept expression across touchpoints:**
+| Research finding | What it demands of the creative |
+|------------------|--------------------------------|
+| Freshness anxiety is the #1 purchase blocker — HIGH severity across ALL segments (Research §1.2) | The vacuum-sealing process must be visible and visceral — not described, but shown. The number "six weeks" must appear on screen. |
+| Trust is the binding constraint for a new brand (Research Observation #4; purchase decision chain §1.3 requires trust signal before value signal) | Every creative element must build credibility through transparency. No superlatives without evidence. No claims without demonstration. |
+| The trio offer is the physical embodiment of the curation system (Campaign Strategy §2.3) | The three tiers must be visually distinct and instantly understandable. The customer should grasp the safe → adventurous spectrum in one glance. |
 
-| Touchpoint | "Discover Your Tier" expression |
-|------------|-------------------------------|
-| **Paid ad hook** | "Which coffee are you? Take the 3-tier test." |
-| **Landing page hero** | "Discover Your Tier" as headline with trio product shot. (One-sentence direction: the landing page hero should express "Discover Your Tier" — full landing page direction is outside this brief's scope.) |
-| **IG carousel** | Slide 1: Tier 1 (chocolatey, balanced). Slide 2: Tier 2 (floral, complex). Slide 3: Tier 3 (wild, unexpected). Slide 4: "Find yours in one trio." |
-| **IG Story poll** | "Brewed Tier 1 this morning? 👋 Or did you go Tier 3? ☕" |
-| **Retargeting** | "Still deciding which tier is yours? The trio answers that in three cups." |
+### 2.2 The One-Ad Funnel Structure
 
----
+The hero video follows a 30-second arc that functions as a complete trust-to-conversion journey. No viewer needs to see another ad to understand the offer.
 
-## 2. Creative Themes (Three Paid Ad Hooks)
+```
+HOOK (0–3 sec)
+Visual: Vacuum-seal hissing shut over fresh beans. Close-up. Satisfying.
+Text overlay option: "Fresh beans by mail? Here's how we guarantee it."
+Purpose: Stop the scroll. Trigger curiosity. Signal "this is different."
 
-The campaign strategy (§10.1) specifies three ad hook concepts to test in Week 1. Below, each is fleshed out into a full creative theme with visual direction, messaging, and segment targeting.
+↓
 
-### 2.1 Theme A — "The Freshness Process"
+TRUST BUILD (3–15 sec)
+Visual: Split-screen or sequence showing degassing → vacuum-sealing → sealed bag with "6 WEEKS FRESH" stamp.
+VO or text: "We rest the beans 48 hours so CO₂ escapes. That's degassing. Then we vacuum-seal every bag. You get six weeks of freshness — guaranteed."
+Purpose: Neutralise the #1 purchase blocker. Show the process. Name the number.
 
-**Hook:** The vacuum-seal moment — a visually distinctive asset grounded in Coast Coffee's actual process.
+↓
 
-**Strategic job:** Neutralise the #1 purchase blocker. Freshness anxiety is rated HIGH severity (Research §1.2). For a new brand with no reputation, process footage is more credible than claims (Brand Strategy §1.2 — process transparency substitutes for heritage). This theme is the trust engine.
+CURATION EXPLAIN (15–25 sec)
+Visual: Three distinct bags/beans side by side — Tier 1 (warm, golden tones), Tier 2 (bright, floral), Tier 3 (dark, intriguing).
+VO or text: "Three flavour tiers. Tier 1: safe, balanced, tastes like what you love. Tier 2: complex, floral — the sweet spot. Tier 3: exciting, unknown — for the adventurous brew. You pick the tier. We've done the cupping."
+Purpose: Introduce the curation system. Demonstrate the value of guided choice. Frame the trio offer.
 
-**Visual direction:**
+↓
 
-- **Opening shot (0–3s):** Beans pouring from the roaster into a resting tray. Warm, natural light. Text overlay: "Most beans start going stale the day they're roasted."
-- **Middle (3–10s):** The degassing resting period (time-lapse or text card: "We rest ours 48 hours"). Then — the hero shot: the vacuum-sealer in action. Bag inserted. Air visibly drawn out. The bag compresses. The seal bar comes down.
-- **Close (10–15s):** The sealed bag with a date stamp visible — roast date + "Fresh for 6+ weeks." Pour-over shot: freshly brewed coffee steaming. Text overlay: "Open it 4 weeks later. It still pops with aroma. That's the process, not luck."
-- **End card:** Trio product shot. "Discover Your Tier. Three bags. Guaranteed fresh."
+OFFER + CTA (25–30 sec)
+Visual: All three bags together in a flat-lay or unboxing — the Flavour Trio.
+Text overlay: "The Flavour Trio. All three tiers. ~SGD 50. Try them all."
+CTA: "Link in bio." / "Tap to order."
+Purpose: Convert. The trio is framed as the natural next step after understanding the system.
+```
 
-**Specs:** 15-second vertical (9:16) for Meta Reels/Stories. Adaptable to 15–30s horizontal (16:9) for FB Feed. Square (1:1) cutdown for Feed.
+### 2.3 Why This Structure, Not Others
 
-**Segments targeted:** All four, but weighted toward Safe Brewer (A) and Convenience Seeker (D) — the segments most driven by freshness anxiety and risk reduction (Research §5).
+| Alternative considered | Why rejected |
+|------------------------|-------------|
+| Lifestyle-led ad (beautiful morning pour-over, aspirational vibes) | Generic. Every coffee brand does this. Does not differentiate Coast Coffee. Does not neutralise freshness anxiety or explain the tier system. |
+| Origin-story-led ad (deep dive into a single bean's provenance) | Interesting for Segment C but too narrow. Safe Brewers (Segment A, ~35% of target) don't lead with origin curiosity — they lead with safety. A single-origin story doesn't sell the curation system. |
+| Offer-first ad (price-led: "SGD 50 for three bags — buy now") | Fails the trust test for a new brand. The purchase decision chain (§1.3) requires a trust signal before a value signal. Leading with price without establishing credibility burns budget on curious-but-unconvinced clicks. |
+| Humour/entertainment-led ad | Mismatched to the brand archetype (The Curator) and the trust-building imperative. Entertainment can earn attention but doesn't earn permission to charge SGD 18–30 for beans from unfamiliar origins. |
 
-**Tonal variants:**
-- **Variant A1 — Process-forward:** "48 hours. Vacuum-sealed. 6+ weeks fresh." (Transparent, numbers-driven)
-- **Variant A2 — Curiosity-forward:** "What if your beans were still this fresh on day 30?" (Provocative, benefit-led)
-- **Variant A3 — Conversational:** "Fresh beans by mail? We solved that." (Relatable, approachable — Brand Strategy §3.2 permits natural Singapore-colloquial if authentic to founder)
+### 2.4 Creative Territories
 
----
+The creative lives in a specific visual and tonal territory:
 
-### 2.2 Theme B — "The Asian Origin Story"
-
-**Hook:** The landscape-to-cup journey — Coast Coffee's visual territory that no major Singapore roaster occupies (Research §2.2: Asian-origin focus rated STRONG, ownable differentiation).
-
-**Strategic job:** Turn the "unfamiliar Asian origins" objection (Research §1.2: MEDIUM severity) into a strength. Make Asian origins feel like an exclusive discovery. This theme is the interest engine — it earns curiosity clicks from Flavour Explorers and Identity Brewers.
-
-**Visual direction:**
-
-- **Opening shot (0–3s):** Wide shot of an Asian coffee-growing landscape — Yunnan's mountain terraces, Doi Chang's highlands, Kintamani's volcanic slopes. Cinematic, travel-content feel. Text overlay names the region.
-- **Middle (3–12s):** Quick cuts: coffee cherries on the branch. Processing station — washed process, raised beds. Roasted beans close-up — light catches the texture. The visual journey: origin → process → roast → cup. Each origin gets a distinct colour grade and text label so the viewer registers *three distinct places*.
-- **Close (12–18s):** Pour-over brew shot. Three cups side by side, each labelled with its origin and tier. Text overlay: "Yunnan. Doi Chang. Kintamani. Three origins most roasters overlook. We built a brand around them."
-- **End card:** Trio product shot. Map of Asia with origin markers (simple, illustrated). "Discover Your Tier. Asia's best, in one box."
-
-**Specs:** 18–20-second vertical (9:16) for Meta Reels/Stories. Adaptable to 30s horizontal (16:9) for FB Feed with extended origin footage. Square (1:1) cutdown.
-
-**Segments targeted:** Flavour Explorer (B) and Identity Brewer (C) primarily (Research §5). Safe Brewer (A) secondarily — the landscape beauty alone earns attention even if the origin isn't their primary decision driver.
-
-**Tonal variants:**
-- **Variant B1 — Discovery-forward:** "Yunnan gets called 'the next Colombia' by Q-graders who've cupped it blind." (Knowledgeable, insider — Brand Strategy §3.1)
-- **Variant B2 — Cinematic:** Minimal text. Let the landscapes and processing footage carry the narrative. "Three Asian origins. One trio." (Emotional, visual-led)
-- **Variant B3 — Challenge-forward:** "You've tasted Ethiopian. You've tasted Colombian. But have you tasted Yunnan?" (Curious, slightly provocative — targets Flavour Explorer curiosity, Research §5, Segment B)
+| Dimension | Territory | Why |
+|-----------|-----------|-----|
+| **Visual world** | Process & product-forward. Clean, tactile, honest. Natural light. Close-ups of beans, bags, seals. The hands of someone who knows coffee. No lifestyle fluff. | Specificity is credibility (Brand Strategy voice principle). The product and process are inherently interesting — let them lead. |
+| **Tonal register** | Warm, knowledgeable, unpretentious. "I found these. I tested them. Here's what I think you'll like." The Curator, not the Gatekeeper. | Brand Strategy §3.2 — the Curator archetype is relational, generous, not snobbish. |
+| **Colour palette** | Three-tier system as colour anchor: Tier 1 = warm amber/gold, Tier 2 = bright jade/floral green, Tier 3 = deep indigo/charcoal. These become a visual navigation system across all assets. | The tier colours create instant recognition. When a customer sees the amber bag, they know it's Tier 1 — safe, balanced. This is the curation system made visual. |
+| **Typography & motion** | Clean sans-serif. Numbers and process terms (degassing, vacuum-sealed, 6 weeks) get large, bold on-screen treatment. Text overlays are minimal — short phrases that reinforce the VO, never compete with it. | The Convenience Seeker (Segment D) skims. Large, bold process claims ensure the message lands even without sound (critical for Meta feed scroll). |
 
 ---
 
-### 2.3 Theme C — "The Tier Match"
+## 3. Primary Concept: "The Proof Is in the Seal"
 
-**Hook:** "Which coffee are you?" — the tier system as a personality discovery.
+### 3.1 Concept Summary
 
-**Strategic job:** Solve the paradox of choice (Research §1.2: MEDIUM-HIGH severity). The tier system is Coast Coffee's strongest differentiator (Research §2.2: STRONG). This theme makes it intuitive and desirable in 15 seconds. It's the conversion engine — it gives prospects a reason to click through to the landing page to "find their tier."
+| Element | Detail |
+|---------|--------|
+| **Concept name** | The Proof Is in the Seal |
+| **Core idea** | Coast Coffee doesn't make claims — it shows the evidence. The vacuum-seal is the hero. The three tiers are the map. The Asian origins are the treasure. Every visual element is a trust signal. |
+| **Emotional arc** | Scepticism → curiosity → understanding → confidence → purchase. The viewer starts wary ("beans by mail?") and ends convinced ("this process is real; the trio is a smart way to try"). |
+| **Why this concept** | It embodies the "Proof, Not Promise" strategy (Campaign Strategy §2.2). It neutralises all four major objections from the DNA in a single creative arc. It is visually ownable — the vacuum-seal close-up and the three colour-coded tiers are distinctive assets no competitor uses. |
 
-**Visual direction:**
+### 3.2 How the Concept Addresses Each Audience Segment
 
-- **Opening shot (0–3s):** Three cups on a wooden surface, side by side. Each visually distinct — Tier 1: warm tones, classic white mug. Tier 2: bright, glass server or colourful ceramic. Tier 3: dark, intriguing, matte black or textured cup. Text overlay: "Which coffee are you?"
-- **Middle (3–10s):** Quick cuts — each cup gets its moment. Tier 1 cup: pouring, steam, text: "Your daily driver. Chocolatey. Balanced. Impossible to brew wrong." Tier 2 cup: close-up of pour-over bloom, floral notes, text: "Complex. Floral. For when you want to notice something new." Tier 3 cup: slow-motion pour, dramatic, text: "Wild. Unexpected. For Saturday mornings when you want your V60 to surprise you."
-- **Close (10–15s):** Pull-back to all three cups together. Text overlay: "One trio. All three tiers. Find yours."
-- **End card:** Trio product shot. "Discover Your Tier."
+| Segment | What they see in this concept | Why it works for them |
+|---------|------------------------------|----------------------|
+| **A — Safe Brewer** (~35%) | The vacuum-seal process + Tier 1 description ("tastes like what you love") + the guarantee number. | Risk reduction is their dominant need. The seal is visual proof of freshness. Tier 1 gives them a safe entry point. The trio lets them try all three without committing to just the adventurous ones. |
+| **B — Flavour Explorer** (~30%) | Three distinct tiers with descriptive flavour language + the Asian-origin reveal. | Discovery with guardrails. The tier system promises variety without danger. The trio offer is exactly what they want: a structured tasting experience. |
+| **C — Identity Brewer** (~20%) | Process rigour (degassing, vacuum-sealing, tier testing) + origin specificity. | Credibility is their bar. The video names specific processes and origins — it doesn't hide behind adjectives. The Asian-exclusive sourcing signals uniqueness. |
+| **D — Convenience Seeker** (~15%) | The "six weeks fresh" number + "delivered" + clean CTA. | Friction reduction. The video answers their question in 30 seconds: good beans, fresh, easy, delivered. The trio offer means they don't need to choose — just buy. |
 
-**Specs:** 15-second vertical (9:16) for Meta Reels/Stories. Carousel version: 3–5 slides, one per tier + trio CTA slide — for Feed. Square (1:1) cutdown for Feed video.
+### 3.3 Scene-by-Scene Direction (Hero Video)
 
-**Segments targeted:** All four — this is the broadest-audience theme (Research §5). Safe Brewer (A) sees Tier 1 as their anchor. Flavour Explorer (B) is intrigued by Tier 2. Identity Brewer (C) is drawn to Tier 3. Convenience Seeker (D) sees the trio as a one-click decision.
+| Time | Scene | Visual Direction | Audio / VO | Text Overlay | Trust Signal |
+|------|-------|-----------------|------------|--------------|-------------|
+| **0:00–0:03** | Close-up: vacuum-seal machine hissing shut over a bag of freshly roasted beans. Steam/air escaping. Satisfying ASMR-quality sound. | Macro lens. Natural side-light. Slow-motion seal compression. Warm amber tones. | *Sound of vacuum seal engaging — crisp, mechanical hiss.* | "FRESH BEANS BY MAIL?" | The seal is visually unmistakable. It signals "this is not a regular coffee bag." |
+| **0:03–0:08** | Cut to: beans resting in a wide tray. Text explains degassing. | Overhead/flat-lay. Beans in a single layer. Natural window light. | "We rest every batch 48 hours after roasting — that's degassing. The CO₂ escapes so the flavour settles." | "48-HOUR REST" / "DEGASSED" | Process transparency. The viewer is being taken behind the scenes. |
+| **0:08–0:15** | Cut to: the sealed bag, held up. "6 WEEKS FRESH" stamp visible on the bag. Cut to: bag being packed into a delivery box. | Clean product shot. Bag texture visible. Stamp prominent. Box shot: hands placing bag in box, taping it. | "Then vacuum-sealed. You get six weeks of freshness — guaranteed. From our roaster to your door." | "≥6 WEEKS FRESHNESS GUARANTEED" | The stamp and the number. Specific. Provable. No vague "farm-to-cup" language. |
+| **0:15–0:19** | Cut to: three bags side by side. Each a different colour. Tier 1 (amber), Tier 2 (jade), Tier 3 (indigo). | Product flat-lay. Bags arranged left to right. Labels visible. | "Three flavour tiers. Zero guesswork." | "3 TIERS. ZERO GUESSWORK." | The curation system becomes visual. Three bags = three choices = simple. |
+| **0:19–0:22** | Quick montage: Tier 1 beans pouring (warm, chocolate tones) → Tier 2 beans (bright, fruity) → Tier 3 beans (dark, intriguing). | Each tier gets ~1 second. Tight close-ups. Bean texture and colour differentiate the tiers. | "Tier 1: balanced and familiar. Tier 2: complex and floral. Tier 3: exciting and unknown." | "SAFE → COMPLEX → ADVENTUROUS" | The flavour spectrum is made visible through bean appearance and colour grading. |
+| **0:22–0:25** | Cut to: map of Asia with origin dots (China, Thailand, Indonesia, Malaysia). Subtle animation — dots appearing one by one. | Clean, minimal map graphic. Navy background. Gold dots. Not cluttered. | "Beans from across Asia — origins most roasters don't stock. Tested before they earn their tier." | "ASIAN ORIGINS. TESTED & TIERED." | Origin specificity + quality signal ("tested"). Answers the "are Asian beans good?" objection. |
+| **0:25–0:30** | Cut to: all three bags together in a gift-style flat-lay OR being lifted out of a box together. The Flavour Trio. | Warm, inviting product shot. Bags arranged beautifully. | "Try all three. The Flavour Trio. Around fifty dollars. Link in bio." | "THE FLAVOUR TRIO" / "~SGD 50" / "LINK IN BIO →" | The offer. Clear price. Clear CTA. The trio is the natural endpoint of the tier explanation. |
 
-**Tonal variants:**
-- **Variant C1 — Quiz-forward:** "Which coffee are you? 👇" Text-heavy, interactive framing. Fast cuts. (Playful, engagement-driven)
-- **Variant C2 — Descriptive-forward:** "Tier 1: Your daily driver. Tier 2: Complex and floral. Tier 3: For when you want to be surprised." (Clear, educational, Safe Brewer-friendly — Brand Strategy §3.2)
-- **Variant C3 — Aspirational-forward:** "There's a tier for every brewer. Even one you haven't met yet." (Curious, slightly mysterious — Flavour Explorer/Identity Brewer bait)
+### 3.4 Hook Variants (for Week 1 A/B Testing)
 
----
+The Campaign Strategy (§7) recommends producing two hook variants and killing the loser by end of Week 1. The same video body (scenes 0:03–0:30) can be paired with three alternative opens:
 
-## 3. The Three Themes at a Glance
+| Variant | Hook (first 3 sec) | Visual | Target psychology | Risk |
+|---------|-------------------|--------|-------------------|------|
+| **A: Freshness Hook** (primary) | Vacuum-seal hissing shut. "Fresh beans by mail? Here's how we guarantee it." | Macro close-up of seal engaging over beans. | Targets freshness anxiety directly. Broadest appeal — freshness is the HIGH-severity pain across all segments. | If the visual isn't immediately clear as a vacuum seal, the hook may confuse. |
+| **B: Curation Hook** (alternative) | Three bags slide into frame. "Meet your new coffee compass. Three tiers. Zero guesswork." | Clean product shot — three colour-coded bags, tier labels visible. | Targets paradox-of-choice pain. Appeals most to Segments A and B. | Fresher-anxious viewers may scroll past — the curation hook doesn't address their immediate worry. |
+| **C: Origin Hook** (alternative) | A striking, unfamiliar origin label: "Yunnan, China." Pull back to reveal the bag. "Specialty coffee from China? Yes — and it's exceptional." | Close-up of origin label, then zoom-out to full bag. | Targets curiosity + scepticism about Asian origins. Appeals most to Segments B and C. | May alienate Safe Brewers who aren't origin-driven. Limits broad appeal. |
 
-| | Theme A: Freshness | Theme B: Origin | Theme C: Tier Match |
-|---|---|---|---|
-| **Hook** | Vacuum-seal moment | Asian landscape to cup | "Which coffee are you?" |
-| **Primary job** | Neutralise #1 purchase blocker (trust/freshness) | Turn origin scepticism into discovery desire | Solve paradox of choice; make tier system intuitive |
-| **Visual signature** | Vacuum-sealer close-up, date stamp, beans pouring | Drone landscapes, cherry → cup journey, origin labels | Three distinct cups, tier labels, side-by-side comparison |
-| **Primary segments** | A (Safe Brewer), D (Convenience) | B (Flavour Explorer), C (Identity) | All four |
-| **Length** | 15s | 18–20s | 15s |
-| **Organic repurpose** | IG Reel: "Our freshness process, step by step" | IG Reel: "Origin spotlight: Yunnan" | IG Carousel: "Which tier are you?" |
-| **Tonal variants** | A1 Process, A2 Curiosity, A3 Conversational | B1 Discovery, B2 Cinematic, B3 Challenge | C1 Quiz, C2 Descriptive, C3 Aspirational |
-
----
-
-## 4. Content Direction — Organic & Community
-
-The campaign strategy (§0, §3, §7) makes organic content non-negotiable: it must deliver 25–30 customers at zero media cost. The creative direction below supports that goal.
-
-### 4.1 Weekly Content Cadence (IG Primary; TikTok via repurpose)
-
-This cadence is designed to move prospects through awareness → consideration → purchase across the 8-week cycle, with the target of 25–30 organic customers (per Campaign Strategy §0). Each content pillar serves a distinct stage: Process/Trust removes purchase blockers; Origin/Discovery fuels interest; Tier/Community drives engagement and conversion.
-
-| Week | Content Pillar 1: Process/Trust | Content Pillar 2: Origin/Discovery | Content Pillar 3: Tier/Community |
-|------|-------------------------------|-----------------------------------|----------------------------------|
-| **1** | Brand intro Reel: who we are, what we do, 15s | — | Tier explainer carousel (3 tiers, 1 slide each) |
-| **2** | Freshness process Reel (degassing → vacuum-seal — repurpose Theme A footage) | Origin spotlight #1: Yunnan or Doi Chang — landscape + bean close-up | Brewing guide: how to brew Tier 1 (approachable, anyone-can-do-it) |
-| **3** | Degassing explainer carousel (why 48 hours matters) | Trio unboxing + brewing Reel — show all three bags being opened, brewed | Tier comparison carousel: Tier 1 vs Tier 2 vs Tier 3 side-by-side |
-| **4** | — | Origin spotlight #2: second origin — different landscape, different processing | Customer feature (if early buyers exist — their brew photo, with permission) |
-| **5** | Freshness guarantee deep-dive carousel: "6+ weeks — here's how" | Behind-the-scenes: sourcing/roasting process, founder at work | "Which tier are you?" interactive Story poll + quiz |
-| **6** | — | Origin spotlight #3: third origin | Brewing fail → fix Reel (relatable, human, educational) |
-| **7** | Social proof: early customer feedback (quotes, photos) | — | "Last chance" content: introductory trio pricing, what's next |
-| **8** | Campaign wrap: what we learned, what's next for Coast | — | Thank-you post to community + early customers |
-
-### 4.2 Content Principles (apply to all organic posts)
-
-1. **Show, don't tell.** The vacuum-sealer in action. Beans pouring. Steam rising. Origin landscapes. Every piece of content should contain at least one visual moment that couldn't be a text post.
-2. **Specificity over superlatives.** "Degassed 48 hours, then vacuum-sealed" > "Super fresh." "Harvested at 1,400m in Doi Chang" > "Premium Thai beans." This is the Brand Strategy voice in practice (Brand Strategy §3.2).
-3. **One idea per post.** A carousel explaining the three tiers. A Reel showing the vacuum-seal process. A single photo of Yunnan. Do not cram multiple messages into one asset.
-4. **End with a soft CTA.** Not "BUY NOW" but "The trio's on our site — link in bio" or "DM us if you want to know which tier is yours." Community-building over conversion-hammering. The landing page does the heavy conversion work.
-5. **Founder presence.** The founder's voice, hands, workspace, and face (if comfortable) should appear in at least 1–2 posts per week. For a new brand with no reputation, the person behind it is the trust proxy (Research §1.2: "trust in a new brand" is HIGH severity). Authentic founder content outperforms polished brand content for trust-building at this stage. *Note: this is an informed recommendation — the founder's comfort level is the binding constraint.*
-
-### 4.3 Community Participation (Reddit, FB coffee groups, HWZ)
-
-The campaign strategy (§10.3) asks the founder to spend 1–2 hours/week in community spaces. Creative direction for this:
-
-- **No promotional assets.** Community posts are text-first, authentically participatory. No Canva graphics. No "check out our site" language.
-- **Share knowledge, not products.** Answer someone's question about V60 technique. Share a brewing tip. Discuss Asian coffee origins if the topic arises naturally.
-- **When Coast Coffee comes up:** "I actually just started a small brand focused on Asian-origin beans — happy to share more if you're curious." Understatement, not pitch.
-- **One asset exception:** If the founder wants to share a photo of their brewing setup or beans in a community context (e.g., "Here's my brew this morning — a Yunnan from a small brand I'm building"), this is acceptable. Authentic, not staged.
-
-### 4.4 TikTok Organic
-
-Repurpose IG Reels directly (9:16 native format). No additional production required. TikTok's algorithm rewards the same vertical short-form video. Prioritise:
-- Process/freshness Reels (Theme A footage) — visually satisfying, algorithm-friendly
-- Origin landscape footage (Theme B) — travel-content adjacent, broad appeal
-- "Which tier are you?" interactive — TikTok's duet/stitch culture rewards participation content
+**Recommendation:** Launch with Variant A (Freshness Hook) as primary, Variant B (Curation Hook) as the A/B test. Variant C (Origin Hook) is strongest for Segments B/C but risks losing Segment A — hold for Phase 2 carousel or organic content where audience is more targeted.
 
 ---
 
-## 5. Asset Requirements — by Channel and Format
+## 4. Campaign Theme
 
-*What follows describes what assets are needed, for which channels, and the key message each must communicate. Generation prompt production — including text overlay placement, timing, and specific prompt wording — is the Creative Asset Prompt Agent's domain.*
+### 4.1 Unifying Theme
 
-### 5.1 Meta Ads (Instagram + Facebook) — Paid Video
+> **"Your coffee, curated. Your freshness, guaranteed."**
 
-| Asset | Format | Key Message |
-|-------|--------|-------------|
-| **Theme A — Freshness Process** | 9:16 vertical, 15s + 1:1 square cutdown + 16:9 horizontal cutdown | The vacuum-seal process makes "fresh for 6+ weeks" credible. Must include the vacuum-sealer in action, the date stamp, and the trio end card. |
-| **Theme B — Asian Origin** | 9:16 vertical, 18–20s + 1:1 square cutdown + 16:9 horizontal cutdown | Asian origins are a discovery, not a compromise. Must include origin-identifiable visuals (landscape, processing, region labels) and the trio end card. |
-| **Theme C — Tier Match** | 9:16 vertical, 15s + 1:1 square cutdown + 16:9 horizontal cutdown | The tier system matches coffee to personality. Must include three distinct cups side-by-side with tier labels and the trio end card. |
-| **Tonal variants (all themes)** | Same specs as masters | Variants explore different tonal approaches (see §2.1–§2.3). The master and variants share the same visual signature but differ in copy, pacing, and on-screen text approach. |
+This theme carries the two pillars that differentiate Coast Coast Coffee from every Singapore competitor: curation (the tier system) and provable freshness (the vacuum seal + guarantee). It is short enough for a bio line, substantive enough to anchor an 8-week campaign.
 
-### 5.2 Meta Ads — Paid Static
+### 4.2 Theme Expression Across Touchpoints
 
-| Asset | Format | Key Message |
-|-------|--------|-------------|
-| **Trio product static (2–3 approaches)** | 1:1, 1080×1080 | The trio — three bags together — is the hero product. Approaches: lifestyle shot, flat-lay, bag-only. Each must include tier indicators (1/2/3 labels or visual cues) and Coast Coffee branding. |
-| **Theme C carousel — Tier Match** | 1:1, 4–5 slides | Slide-by-slide tier reveal: Tier 1, Tier 2, Tier 3, then all three + trio CTA. Each slide must show a visually distinct cup/bean treatment per tier. |
+The theme flexes by context but stays recognisable:
 
-### 5.3 Instagram Organic
+| Touchpoint | Theme expression |
+|------------|-----------------|
+| **Hero video** | The full arc: proof of freshness → explanation of curation → trio offer. |
+| **Carousel ad** | Card 1: "Your coffee, curated." (tier explanation). Card 2: "Your freshness, guaranteed." (vacuum-seal proof). Card 3: "The Flavour Trio. Try all three." (offer). |
+| **Instagram bio** | "Asia's best beans. 3 tiers. 6-week freshness. Delivered. 🇸🇬" |
+| **Landing page hero** | Headline: "Your coffee, curated. Your freshness, guaranteed." Subhead: "Three flavour tiers. Vacuum-sealed after degassing. Delivered to your door." |
+| **Influencer briefing** | "We want you to experience the curation (three tiers, three flavour worlds) and the freshness (vacuum-sealed, six weeks guaranteed). Show your audience what surprised you." |
 
-| Asset | Format | Key Message |
-|-------|--------|-------------|
-| **Process Reels** | 9:16 vertical, 15–30s | Freshness process, degassing explainer, vacuum-seal demo, bean storage tips. Must show actual Coast Coffee process — no stock footage. |
-| **Origin spotlight posts** | 1:1 carousel or static | One origin per post. Photo + location name + tasting notes. Origin-identifiable visuals required. |
-| **Tier explainer carousel** | 1:1, 3–5 slides | Educational cornerstone: what each tier means, who it's for, what to expect. Tier 1 must not be positioned as "boring" — it's the daily driver (Brand Strategy §2.3, segment A routing). |
-| **Brewing guide / tips** | 9:16 Reel or 1:1 carousel | Approachable brewing content — "how to brew Tier 1," "V60 basics." Knowledgeable, not pretentious (Brand Strategy §3.1). |
-| **Behind-the-scenes** | 9:16 Reel or Stories | Founder at work, sourcing trips (if footage exists), roasting space, order packing. Founder presence builds trust (Research §1.2). |
-| **Customer / UGC features** | 1:1 static or 9:16 Story repost | Early customer brew photos (Weeks 4–8, with permission). Social proof. |
-| **Community / interactive Stories** | 9:16 Story | Polls ("Which tier are you?"), Q&A stickers, brew-your-tier prompts. Ongoing 1–3/week. |
-| **Trio product posts** | 1:1 static or carousel | Trio product photography, unboxing, flat-lay. Must show all three bags. |
+### 4.3 Visual Motif System
 
-### 5.4 TikTok Organic
+Three recurring visual motifs unify all campaign assets:
 
-Repurpose IG Reels directly (9:16 native format). No separate production. Same visual signatures apply.
-
-### 5.5 Google Search Ads — Text Direction
-
-*Direction only — not finished copy. The Performance Marketing agent owns exact headline/description crafting within these parameters.*
-
-Search ad messaging should lead with: the tier-matching system, Asian specialty origins, the freshness guarantee, and the trio offer. The brand voice principles in §0.2 apply — specificity over superlatives.
+| Motif | What it is | Where it appears |
+|-------|-----------|-----------------|
+| **The Seal** | The vacuum-seal engagement — a bag compressing, the hiss, the tight wrap around the beans. The primary visual trust signal. | Hero video hook, carousel Card 2, organic process posts, landing page product imagery. |
+| **The Three Bags** | Colour-coded tier bags (amber / jade / indigo) shown together — the curation system made physical. | Hero video (curation section), carousel full spread, trio product photography, Instagram feed posts. |
+| **The Map Dot** | A simple gold dot on a dark Asia map — an origin marker. Builds intrigue and regional pride without cliché. | Hero video origin section, carousel Card 3, origin-story organic posts, landing page "where we source" section. |
 
 ---
 
-## 6. Creative Guardrails
+## 5. Content Directions
 
-### 6.1 Do
+### 5.1 Content by Messaging Pillar
 
-- **Show the vacuum-sealer.** It is Coast Coffee's most distinctive visual asset. Use across paid and organic.
-- **Name origins.** "Yunnan" > "Asian beans." Specificity builds credibility (Brand Strategy §3.2).
-- **Use three-cup compositions.** The trio and the tier system are visually reinforced every time three cups appear together.
-- **Include the freshness guarantee visibly.** "Fresh for 6+ weeks" should appear on ad end cards and organic posts — not buried or omitted. This neutralises the #1 purchase blocker (Research §1.2: HIGH severity).
-- **Let the founder's hands/space appear.** For a new brand, the person behind the product is the trust proxy (Research §1.2: "trust in a new brand" rated HIGH). Authentic, unpolished founder content outperforms overproduced brand content at this stage.
-- **End every paid ad on the trio product shot.** Every impression that earns attention should end with "this is what you can buy."
+Every piece of content across the campaign serves one of the four messaging pillars (Brand Strategy §2.3). The content mix is weighted toward the Trust + Freshness pillar because freshness anxiety is the #1 purchase blocker.
 
-### 6.2 Don't
+#### Pillar 1 — Trust + Curation: "You pick the tier. We've done the rest."
 
-- **Don't use vague superlatives.** No "premium," "artisanal," "best beans," "amazing quality." These erode trust for a new brand (Brand Strategy §3.2). Replace every superlative with a specific claim.
-- **Don't show beans without context.** A close-up of roasted beans is indistinguishable from any other coffee brand. Always include an origin label, a tier indicator, or the vacuum-seal bag — something that makes it unmistakably Coast Coffee.
-- **Don't hard-sell.** No "BUY NOW," no fake urgency, no countdown timers. The purchase cycle for specialty beans is considered, not impulse (Research §1.3). Hard-sell language undermines the "trusted guide" positioning and alienates Safe Brewers — the largest segment (Research §5, ~35%).
-- **Don't use stock coffee footage.** Every frame must be Coast Coffee's actual beans, actual process, actual origins. Stock footage is detectable and trust-eroding. *If origin landscape footage is unavailable at launch, this is a production constraint to flag — not a reason to substitute stock.*
-- **Don't position Tier 1 as "boring."** "Safe" does not mean "uninteresting." Tier 1 is "your daily driver," "the one you reach for every morning," "impossible to brew wrong." It is the anchor for the largest segment (~35%). Do not make them feel like they're settling (Brand Strategy §2.3).
-- **Don't cram multiple messages into one asset.** One hook. One message. One CTA. The campaign strategy's KPI chain (hook rate → CTR → CVR) breaks if the creative confuses the viewer about what to pay attention to (Campaign Strategy §4.4).
+| Content type | Direction | Channel | Frequency |
+|-------------|-----------|---------|-----------|
+| **Tier explainer posts** | One post per tier. Tier 1: "Tastes like what you love, from an origin you haven't tried." Tier 2: "The sweet spot — complex, floral, interesting but not intimidating." Tier 3: "For when you want to be surprised." Each post shows the bag, the beans, and a suggested brew method. | Instagram Organic | 1×/week (rotate tiers) |
+| **"How we tier" behind-the-scenes** | A single carousel or short reel showing the cupping/tasting process: beans lined up, tasting notes being written, the moment a bean earns its tier. | Instagram Organic / Stories | 1× during campaign (Week 1–2) |
+| **Carousel ad (Phase 2)** | Card 1: Tier 1 — amber bag, "Safe. Balanced. Familiar." Card 2: Tier 2 — jade bag, "Complex. Floral. The sweet spot." Card 3: Tier 3 — indigo bag, "Exciting. Unknown. Adventurous." Card 4 (optional): All three + "The Flavour Trio. Try them all." | Meta Ads | Launch Week 3 |
+
+#### Pillar 2 — Trust + Freshness: "Vacuum-sealed. Degassed. Fresh for six weeks. Guaranteed."
+
+| Content type | Direction | Channel | Frequency |
+|-------------|-----------|---------|-----------|
+| **Hero video (primary paid)** | The full One-Ad Funnel — vacuum seal hook through trio CTA. | Meta Ads (Reels + Feed) | Continuous, Weeks 1–8 |
+| **Process reel — "What happens after roasting"** | A 15–20 sec condensed version of the freshness process: roast → rest (degas) → vacuum-seal → box → deliver. High-satisfaction visuals. No hard sell — this is trust content. | Instagram Organic, Instagram Stories (saved to Highlights) | 1× during campaign (Week 1) |
+| **"Six weeks" proof post** | Static or carousel: a bag stamped "≥6 WEEKS FRESH" with a simple caption — "Not a promise. A guarantee. Here's what that means." | Instagram Organic | 1× during campaign (Week 2) |
+| **Unboxing Reel** | A first-person unboxing: box opens, three colour-coded bags revealed, the vacuum-seal visible and tight. "This is what the Flavour Trio looks like when it arrives." | Instagram Organic / Stories | 1× (Week 1–2, or repurpose influencer content) |
+
+#### Pillar 3 — Differentiation + Story: "Origins you won't find everywhere. Stories worth sharing."
+
+| Content type | Direction | Channel | Frequency |
+|-------------|-----------|---------|-----------|
+| **Origin spotlight posts** | One post per key origin (Yunnan, China / Doi Chang, Thailand / Gayo, Indonesia / Malaysia). Photo of the origin landscape or producer + tasting notes + why it earned its tier. | Instagram Organic | 1×/2 weeks |
+| **"Asia on the map" reel** | 10–15 sec: animated map dots appearing across Asia, then cut to beans from that origin. Music-driven, minimal text. | Instagram Organic / Reels | 1× (Week 2–3) |
+| **Carousel ad Card 3 (origin focus)** | In the Phase 2 carousel, one card dedicated to origins: "Beans from China, Thailand, Indonesia, Malaysia. Tested. Tiered. Delivered." | Meta Ads | Launch Week 3 |
+
+#### Pillar 4 — Hygiene + Convenience: "From our roaster to your door."
+
+| Content type | Direction | Channel | Frequency |
+|-------------|-----------|---------|-----------|
+| **Delivery FAQ Story highlights** | Saved Stories answering: how fast is delivery? How is it packed? What if I'm not home? | Instagram Stories → Highlights | Set up pre-launch; maintain |
+| **"What you get" static post** | Flat-lay: trio bags + a brew recipe card (if included) + delivery box. "The Flavour Trio. Delivered. Fresh for six weeks." | Instagram Organic | 1× (Week 1) |
+
+**Note:** Pillar 4 content is the lightest touch — delivery is table-stakes (Brand Strategy §2.3). It must be present (so the convenience promise isn't absent) but never leads the message.
+
+### 5.2 Organic Content Calendar (First 4 Weeks)
+
+| Week | Post 1 | Post 2 | Post 3 | Stories |
+|------|--------|--------|--------|---------|
+| **Week 1** | Process reel: "What happens after roasting" (Pillar 2) | Tier 1 explainer (Pillar 1) | "What you get" trio flat-lay (Pillar 4) | Delivery FAQ highlights set up; behind-the-scenes cupping snippets |
+| **Week 2** | "Six weeks" proof post (Pillar 2) | Origin spotlight #1 (Pillar 3) | Tier 2 explainer (Pillar 1) | Unboxing reel; share early customer reactions if any |
+| **Week 3** | "Asia on the map" reel (Pillar 3) | Tier 3 explainer (Pillar 1) | "How we tier" behind-the-scenes (Pillar 1) | Share/repost influencer content as it appears |
+| **Week 4** | Origin spotlight #2 (Pillar 3) | Tier 1 explainer (repeat/remix) (Pillar 1) | Customer quote/testimonial (if available) or process repost | Polls: "Which tier are you?"; Q&A box |
+
+### 5.3 Content Principles (Apply to All Assets)
+
+1. **Lead with process, not adjectives.** "We vacuum-seal after 48 hours of degassing" over "incredibly fresh."
+2. **Show the number.** "6 weeks" appears in every freshness-related asset. Numbers are trust signals.
+3. **The three bags are always together in offer content.** The trio is the conversion mechanism — it should be visually familiar by Week 3.
+4. **Never disparage other origins.** Asian beans are another source of great coffee, not a replacement for African/Latin beans.
+5. **Captions work without sound.** Text overlays must communicate the core message for silent-scrollers (critical for Meta feed).
+6. **Every post has a job.** No filler content. If a post doesn't build trust, explain the system, showcase an origin, or drive toward the trio — it doesn't get made.
 
 ---
 
-## 7. Creative Variants for Testing
+## 6. Asset Requirements
 
-The Campaign Strategy (§7, §10.1) specifies that Weeks 1–2 should test creative variants to identify the highest-performing hook before scaling. This brief provides three themes, each with three tonal approaches (9 total creative directions — §2.1–§2.3).
+### 6.1 Asset Inventory
 
-**Testing approach:** The Performance Marketing agent owns the testing framework — including variant selection, sequencing, budget allocation, and kill/scale decision rules — per Campaign Strategy §7 and §10.2. The creative variants described in this brief are the raw material for that process.
+| # | Asset | Format | Channel(s) | Dimensions | Duration / Length | Priority | Phase |
+|---|-------|--------|-----------|------------|-------------------|----------|-------|
+| **A1** | Hero video — Freshness Hook (Variant A, primary) | Video (Reels) | Meta Ads (IG Reels + FB Feed), IG Organic | 9:16 vertical, 1080×1920px | 25–30 sec | P0 — cannot launch without | Phase 1 (Week 1) |
+| **A2** | Hero video — Curation Hook (Variant B, A/B test) | Video (Reels) | Meta Ads (IG Reels + FB Feed) | 9:16 vertical, 1080×1920px | 25–30 sec | P0 — needed for Week 1 hook test | Phase 1 (Week 1) |
+| **A3** | Carousel ad — Tier Journey | Carousel (3–4 cards) | Meta Ads (IG Feed + FB Feed) | 1:1 square, 1080×1080px per card | 3–4 cards | P1 — needed by Week 3 | Phase 2 (Week 3) |
+| **A4** | Process reel — "What happens after roasting" | Video (Reels) | IG Organic | 9:16 vertical, 1080×1920px | 15–20 sec | P1 — needed by Week 1 | Phase 1 (Week 1) |
+| **A5** | Tier explainer posts (×3) | Static image or short video | IG Organic | 1:1 square, 1080×1080px | 1 post per tier | P1 — needed across Weeks 1–3 | Phase 1 (Weeks 1–3) |
+| **A6** | "Six weeks" proof post | Static image | IG Organic | 1:1 square, 1080×1080px | Single image | P2 — needed by Week 2 | Phase 1 (Week 2) |
+| **A7** | Unboxing Reel | Video (Reels) | IG Organic / Stories | 9:16 vertical, 1080×1920px | 10–15 sec | P2 — needed by Week 2 | Phase 1 (Week 2) |
+| **A8** | "Asia on the map" reel | Video (Reels) | IG Organic | 9:16 vertical, 1080×1920px | 10–15 sec | P2 — needed by Week 3 | Phase 2 (Week 3) |
+| **A9** | Origin spotlight posts (×2) | Static image or carousel | IG Organic | 1:1 square, 1080×1080px | Single post | P3 — needed by Week 4 | Phase 2 (Weeks 2–4) |
+| **A10** | "What you get" trio flat-lay | Static image | IG Organic | 1:1 square, 1080×1080px | Single image | P1 — needed by Week 1 | Phase 1 (Week 1) |
+| **A11** | Landing page hero imagery | Static images for web | Shopify landing page | Hero banner: ~1200×628px or full-width. Product shots: 1:1, 800×800px. | N/A | P0 — cannot launch without | Pre-launch |
+| **A12** | Instagram Story highlights covers | Static icon/typography | IG Stories → Highlights | 9:16 vertical, 1080×1920px (cover frame) | 4–5 covers | P3 — nice to have | Pre-launch / Week 1 |
+
+### 6.2 Asset Specifications by Channel
+
+#### Meta Ads (Instagram Reels + Facebook Feed)
+
+| Spec | Requirement |
+|------|-------------|
+| **Hero video (A1, A2)** | 9:16, 1080×1920px, 25–30 sec, ≤ 30 fps, H.264, AAC audio. File ≤ 4 GB (Meta spec). Sound design critical — vacuum-seal hiss must register even at low volume. Captions burned in (not just auto-captions — many viewers scroll with sound off). |
+| **Carousel (A3)** | 1:1, 1080×1080px per card. 3–4 cards. Card 1 is the hook — must work as a standalone image. Each card has a single message. Final card is the CTA. |
+| **Primary text (ad copy)** | ≤ 125 characters recommended. Must include "vacuum-sealed," "three tiers," and "delivered." |
+| **Headline** | "The Flavour Trio — try all three tiers." |
+| **CTA button** | "Shop Now" |
+| **Landing page URL** | Trio product page or dedicated campaign landing page. |
+
+#### Instagram Organic
+
+| Spec | Requirement |
+|------|-------------|
+| **Feed posts (A5, A6, A9, A10)** | 1:1 square, 1080×1080px. Clean, well-lit product photography. Captions: 100–150 words, warm tone, specific details. Always include relevant hashtags: #specialtycoffeesg #homebaristasg #asiancoffee #sgcoffee #coffeetier |
+| **Reels (A4, A7, A8)** | 9:16, 1080×1920px, 10–20 sec. Music optional — if used, instrumental only, no vocals competing with VO/text. Captions burned in. |
+| **Stories** | 9:16, 1080×1920px. Interactive where possible (polls: "Which tier are you?", Q&A: "Ask us anything about the beans"). Saved to relevant Highlights. |
+
+#### Landing Page
+
+| Spec | Requirement |
+|------|-------------|
+| **Hero section** | Headline: "Your coffee, curated. Your freshness, guaranteed." Subhead: "Three flavour tiers. Vacuum-sealed after degassing. Delivered in Singapore." CTA: "Shop the Flavour Trio — SGD 50." Hero image: the three colour-coded bags together. |
+| **How it works section** | 3-step visual: (1) Pick your tier or try all three, (2) We degas and vacuum-seal, (3) Fresh beans at your door, 6 weeks guaranteed. Icons + short text. |
+| **Freshness proof section** | Photo of the vacuum-sealed bag with "≥6 WEEKS FRESH" stamp visible. One sentence: "Degassed for 48 hours after roasting. Vacuum-sealed. Six weeks guaranteed." |
+| **Trio product shot** | All three bags in a flat-lay. Price clearly displayed: "SGD 50" (or confirmed price). "Includes: Tier 1 (Safe & Balanced), Tier 2 (Complex & Floral), Tier 3 (Exciting & Unknown)." |
+| **Trust signals (above the fold)** | If any exist by launch: "⭐️⭐️⭐️⭐️⭐️" placeholder for reviews, "Free delivery in Singapore," "≥6-week freshness guarantee" badge. |
+
+### 6.3 Shoot Requirements (What Must Be Captured/Created)
+
+To produce assets A1–A11, the following raw visuals are required:
+
+| Visual | Description | Used in |
+|--------|-------------|---------|
+| **Vacuum-seal close-up** | Macro shot of vacuum-sealer engaging over a filled coffee bag. Steam/air escaping. Slow-motion if possible. | A1, A2 (hook scene), A4, A11 |
+| **Degassing tray wide shot** | Overhead: freshly roasted beans spread in a wide tray. Natural light. Warm tones. | A1, A2 (trust build scene), A4 |
+| **Sealed bag product shot** | Clean, well-lit shot of a vacuum-sealed Coast Coffee bag. Stamp/logo visible. Bag texture visible (tight seal). | A1, A2, A6, A10, A11 |
+| **Tier 1 bag + beans** | Amber-coloured bag. Beans pouring or in a mound. Warm, chocolatey tones in the beans. | A1, A2, A3, A5, A10, A11 |
+| **Tier 2 bag + beans** | Jade-coloured bag. Beans pouring or in a mound. Brighter, fruitier-looking beans. | A1, A2, A3, A5, A10, A11 |
+| **Tier 3 bag + beans** | Indigo-coloured bag. Beans pouring or in a mound. Darker, more varied beans. | A1, A2, A3, A5, A10, A11 |
+| **All three bags together** | Flat-lay or grouped arrangement. Colour contrast clear (amber / jade / indigo). | A1, A2 (offer scene), A3 (card 4), A10, A11 |
+| **Boxing/packing shot** | Hands placing a sealed bag into a delivery box. Natural, un-staged feel. | A1, A2 (trust build scene), A7, A11 |
+| **Unboxing sequence** | First-person or over-shoulder: box opens, three bags revealed. | A7 |
+| **Asia map graphic** | Clean, minimal vector map. Navy/dark background. Gold dots for origins. | A1, A2 (origin scene), A8 |
+| **Origin location photos** | If available: landscape shots of Yunnan coffee farms, Doi Chang, Gayo, Malaysia. If not available: use clean product + label shots with origin name prominent. | A9 |
+| **Cupping/tasting BTS** | Hands holding cupping spoon, tasting notes being written, beans being inspected. | A5, organic Stories |
+
+### 6.4 Design System Elements
+
+| Element | Spec |
+|---------|------|
+| **Tier colour codes** | Tier 1: Amber (#D4A054 or similar warm gold). Tier 2: Jade (#5B8C5A or similar muted green). Tier 3: Indigo (#3D4F7A or similar deep blue). Consistent across all bags, graphics, text overlays. |
+| **Typography** | Clean geometric sans-serif (e.g., Inter, DM Sans, or Proxima Nova). Headlines: Bold, 700 weight. Body: Regular, 400 weight. Numbers ("6", "3", "50") always bold. |
+| **"≥6 WEEKS FRESH" stamp** | A badge or stamp graphic used consistently on product imagery. Looks like a quality mark — similar to a roast-date stamp but distinct. |
+| **Logo placement** | Discreet but present. Lower-right corner of video frames, bottom of static images. The product and process lead — the logo is the signature, not the headline. |
 
 ---
 
-## 8. Handoff — Required Assets for Creative Asset Prompt Agent
+## 7. Creative KPIs
 
-The following assets are required. All video prompts should anchor on the visual signature for each theme (vacuum-seal moment for Theme A; origin-identifiable landscapes for Theme B; three distinct cups side-by-side for Theme C). All static prompts should include the trio (three bags together), Coast Coffee branding, and tier indicators.
+> Inherited from Campaign Strategy §5.3. These are the quantitative measures of whether the creative is working.
 
-### Required assets
-
-1. **Theme A master video — Freshness Process (Variant A1)** — 9:16 vertical, 15s
-2. **Theme C master video — Tier Match (Variant C2)** — 9:16 vertical, 15s
-3. **Trio product statics** — 2–3 approaches: lifestyle, flat-lay, bag-only (1:1)
-4. **Theme B master video — Asian Origin (Variant B1)** — 9:16 vertical, 18–20s
-5. **Theme C carousel — Tier Match** — 4–5 slides (1:1)
-6. **Tonal variants for all three themes** — A2/A3, B2/B3, C1/C3 (same specs as masters)
-7. **Square cutdowns** (1:1) for all three theme masters — for Meta Feed
-8. **Horizontal cutdowns** (16:9) for all three theme masters — for FB Feed
-9. **Organic Week 1 assets** — brand intro Reel, tier explainer carousel
+| KPI | Target | Asset(s) Measured | Why This Target | Action If Missed |
+|-----|--------|-------------------|-----------------|------------------|
+| **Hook rate (3-sec / thumb-stop)** | ≥ 25% | Hero video A1, A2 | The first 3 seconds must stop a scroll. At SGD 125/week, every impression counts. | If < 25% after Week 1: kill the underperforming hook variant. If both are below 25%, test Variant C (Origin Hook) or revise the opening visual. |
+| **Video completion rate (50%)** | ≥ 30% | Hero video A1, A2 | The trust-build and offer live in the second half. If viewers drop before 15 sec, they never see the CTA. | If < 30%: the mid-section (Trust Build or Curation Explain) is losing people. Test a shorter variant (20 sec) or tighten the edit. |
+| **CTR (paid social)** | ≥ 1.0% | Hero video A1, A2, Carousel A3 | Singapore F&B benchmark. The trio offer + clear CTA should drive clicks. | If < 0.8%: the CTA isn't compelling or the offer isn't clear. Test explicit price in the ad text ("SGD 50 for all three"). |
+| **Engagement rate (organic)** | ≥ 4% | All organic posts | Measures resonance beyond paid distribution. Signals audience-product fit. | If consistently below 4%: content may be too product-forward without enough human connection. Introduce more behind-the-scenes and process content. |
+| **Carousel swipe-through rate** | ≥ 60% to card 3 | Carousel A3 | Each card maps to a tier or proof point. High swipe-through = the curation story is compelling. | If < 60%: Card 1 isn't intriguing enough to swipe. Revise the opening card. |
+| **Landing page conversion rate** | ≥ 3% | Landing page (A11 direction) | Industry benchmark for DTC food/beverage. The creative must set expectations that the landing page fulfills. | If < 2%: audit whether the creative promise (freshness, tiers, trio) matches the landing page reality. Dissonance kills conversion. |
 
 ---
 
-*End of Creative Brief. Handoff to Creative Asset Prompt Agent for generation prompt production.*
+## 8. Influencer Briefing Guidelines
+
+> The Campaign Strategy (§3) allocates SGD 120 for 4 micro-influencer seedings. These are honest reviews, not paid sponsorships — the creative output is their authentic reaction, not scripted copy.
+
+### 8.1 What to Brief Creators
+
+| Element | Direction |
+|---------|-----------|
+| **The ask** | "We're sending you our Flavour Trio — three bags, three flavour tiers, vacuum-sealed. Brew them. Taste them. Share your honest reaction with your audience." |
+| **No script** | Do not provide a script or talking points. The value is in authentic reaction. The only request: show the bags (so the tier colours are visible) and mention the freshness (the vacuum seal and 6-week guarantee are designed to be noticeable). |
+| **Talking points (if asked)** | "Here are three things you might find interesting: (1) the beans are all from Asian origins — China, Thailand, Indonesia, Malaysia — which is unusual. (2) They're vacuum-sealed after degassing, so they stay fresh for six weeks. (3) The three tiers go from safe to adventurous — Tier 1 is balanced, Tier 2 is complex, Tier 3 is unexpected. But honestly, just brew them and say what you think." |
+| **What to look for when choosing creators** | Posting consistency over follower count (a creator with 2K engaged followers who posts 3×/week is worth more than 20K dormant followers). Home brewing content in their feed. Singapore-based. At least one creator who leans toward the "safe" end and one who's clearly adventurous — so the trio is evaluated across the flavour spectrum. |
+| **Content format** | Their choice. Reel, carousel, Stories — whatever their audience responds to. |
+| **Usage rights** | Request permission to reshare to Coast Coffee's account and potentially use clips in a Phase 3 testimonial ad. Offer attribution. |
+
+### 8.2 What Coast Coffee Should Expect
+
+- **Week 2–3:** Creator content starts appearing (shipping + brewing + posting time).
+- **Content variability:** Some creators will focus on taste, some on the unboxing/packaging, some on the Asian-origin angle. All are valuable.
+- **Potential gap:** If no creator posts by Week 4, reallocate the SGD 80 reserve to a testimonial-style ad using any early customer reviews or feedback (Campaign Strategy §7).
+
+---
+
+## 9. Tone & Voice Guardrails for All Creative
+
+> From Brand Strategy §3. These apply to every word written or spoken in campaign assets.
+
+### 9.1 Voice Attributes (The Curator)
+
+- **Warm, not clinical.** Write like a coffee lover talking to another coffee lover.
+- **Specific, not vague.** "Vacuum-sealed after 48 hours of degassing" — never "farm-fresh."
+- **Confident, not boastful.** Assert what's provable. No superlatives without evidence.
+- **Curious, not preachy.** Share origins with genuine fascination. Never lecture.
+- **Accessible, not dumbed-down.** Plain language. Explain terms once. Assume intelligence.
+
+### 9.2 Non-Negotiable Copy Rules
+
+| DO | DON'T |
+|----|-------|
+| Use concrete sensory language: "stonefruit sweetness" | Use empty coffee-speak: "artisanal," "handcrafted," "small-batch" |
+| Name the process: "degassed," "vacuum-sealed" | Use vague freshness language: "farm-to-cup" |
+| Let numbers do work: "6 weeks," "3 tiers," "SGD 50" | Over-explain. If 7 words work, don't use 17. |
+| Lead with what the customer gets | Lead with the brand story |
+| Frame Asian origins as discoveries: "Yunnan is making waves" | Disparage African/Latin origins to elevate Asian ones |
+| Use the tier names consistently | Use snobbery or gatekeeping language |
+| State scarcity as fact: "This lot was 12 sacks" | Use urgency tactics: "Only 50 bags left!!!" |
+
+---
+
+## 10. Handoff to Creative Asset Prompt Agent
+
+### 10.1 What the Next Agent Needs to Produce
+
+The Creative Asset Prompt Agent reads this brief and produces **asset generation prompts** — the exact text prompts that will be given to image/video-generation tools, designers, or photographers to create each asset in the inventory (§6.1).
+
+The agent should produce prompts for **P0 assets first** (A1, A2, A11), then P1 (A3, A4, A5, A10), then P2 (A6, A7, A8, A9, A12) as time allows.
+
+### 10.2 Key References for the Asset Prompt Agent
+
+| Reference | Where to find it |
+|-----------|-----------------|
+| Full scene-by-scene direction for hero video | This brief §3.3 |
+| Hook variant details | This brief §3.4 |
+| Visual motif system | This brief §4.3 |
+| Tier colour codes | This brief §6.4 |
+| Asset specifications (format, dimensions) | This brief §6.2 |
+| Shoot requirements (what visuals are needed) | This brief §6.3 |
+| Brand voice do's and don'ts | This brief §9.2 |
+| Landing page direction | This brief §6.2 (Landing Page) |
+
+### 10.3 Prompt Conventions
+
+The Asset Prompt Agent should consult `knowledge/creative/` for the project's prompt conventions and format specs. If those are not yet populated (the README notes them as TODO), the agent should produce clear, specific prompts with:
+
+- Subject and composition
+- Lighting and colour direction
+- Mood and tone
+- Technical specs (format, resolution, duration)
+- Any text overlays required
+- Reference to the tier colour system (§6.4)
+
+### 10.4 Priority Order
+
+```
+P0 (cannot launch without):
+  → A1: Hero video — Freshness Hook (Variant A)
+  → A2: Hero video — Curation Hook (Variant B)
+  → A11: Landing page hero imagery
+
+P1 (needed by Week 1–3):
+  → A4: Process reel — "What happens after roasting"
+  → A5: Tier explainer posts (×3)
+  → A10: "What you get" trio flat-lay
+  → A3: Carousel ad — Tier Journey
+
+P2 (needed by Week 2–4):
+  → A6: "Six weeks" proof post
+  → A7: Unboxing Reel
+  → A8: "Asia on the map" reel
+  → A9: Origin spotlight posts (×2)
+
+P3 (nice to have):
+  → A12: Instagram Story highlights covers
+```
+
+---
+
+## 11. Dependencies & Risks
+
+| Dependency / Risk | Status | Impact if Unresolved |
+|-------------------|--------|---------------------|
+| **Trio offer economics validated** (COGS viable at SGD 50–54) | ⚠ NEEDS CONFIRMATION (from Campaign Strategy §8) | If the trio is unprofitable, the primary conversion mechanism and all creative framing the trio must shift to single-bag + quiz model. This changes the CTA, the hero video offer scene, and the landing page. |
+| **Brand voice confirmed by customer** | ⚠ PROVISIONAL (Brand Strategy §3) | This brief uses the inferred voice. If the customer revises the voice, creative copy may need rewriting. |
+| **Visual assets available** | ⚠ DEPENDS ON PRODUCTION | The shoot requirements list (§6.3) assumes Coast Coffee can produce or source these visuals. If product photography / video production is not yet done, the Asset Prompt Agent's prompts must account for what's achievable (stock, generated, or DIY-shot). |
+| **Meta Pixel installed** | ⚠ NEEDS CONFIRMATION (Campaign Strategy §8) | Does not block creative production but blocks campaign launch and measurement. |
+| **Landing page built** | ⚠ NEEDS CONFIRMATION (Campaign Strategy §8) | The landing page direction (§6.2) assumes a page exists. If not, the Asset Prompt Agent should flag this — creative assets need a destination. |
+| **Customer testimonials** | ⚠ NOT AVAILABLE (DNA gap) | The creative brief works around this — the hero video relies on process proof, not social proof. But Phase 3 (Weeks 7–8) is designed to introduce testimonial angles. If no testimonials by Week 6, the Phase 3 creative direction shifts to retention/community. |
+
+---
+
+*End of creative brief. Every concept, direction, and asset requirement traces to the Customer DNA, Brand Strategy, and Campaign Strategy. No recommendation is invented from thin air. Ready for handoff to the Creative Asset Prompt Agent.*
