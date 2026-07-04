@@ -1,5 +1,7 @@
 # 0007 — Thread-confined sync Playwright web backend
 
+> **Revised by [ADR-0009](0009-async-cancellable-pipeline-execution.md).** The worker-thread confinement described here is unchanged and still load-bearing. Only this ADR's implicit "keep the whole tool chain synchronous" stance is overturned: the node/model/reviewer path is now async (`ainvoke`) so runs are cancellable, while sync tools — including this Playwright backend — keep running on worker threads under the async nodes.
+
 `PlaywrightWebSearch` routes every browser operation through a single dedicated worker thread it owns, created lazily and torn down by `close()`. The executor is not an optimisation and must not be "simplified" away — it is the correctness mechanism that lets the sync Playwright API survive LangGraph's threading model.
 
 ## Context
