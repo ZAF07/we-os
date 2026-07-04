@@ -7,8 +7,10 @@ Playwright or Chromium installed. Pure helpers are tested directly.
 
 from __future__ import annotations
 
+import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
@@ -28,6 +30,7 @@ from marketing_os.adapters.tools import (
     WebSearchTool,
     build_tools,
     build_web_backend,
+    websearch_playwright,
 )
 from marketing_os.adapters.tools.sandbox import FilesystemSandbox
 from marketing_os.adapters.tools.websearch_playwright import (
@@ -353,6 +356,220 @@ def test_search_confines_playwright_work_to_one_dedicated_thread(
 def test_close_is_a_noop_when_backend_never_used() -> None:
     backend = PlaywrightWebSearch()
     backend.close()
+
+
+class _FakeBrowser:
+    """A stand-in Chromium recording its close and the thread it closed on."""
+
+    def __init__(self, *, close_error: Exception | None = None) -> None:
+        self.closed = False
+        self.close_thread_ident: int | None = None
+        self._close_error = close_error
+
+    def close(self) -> None:
+        self.closed = True
+        self.close_thread_ident = threading.get_ident()
+        if self._close_error is not None:
+            raise self._close_error
+
+
+class _FakePlaywrightDriver:
+    """A stand-in Playwright driver recording its stop and the thread it ran on."""
+
+    def __init__(self) -> None:
+        self.stopped = False
+        self.stop_thread_ident: int | None = None
+
+    def stop(self) -> None:
+        self.stopped = True
+        self.stop_thread_ident = threading.get_ident()
+
+
+def _install_live_browser(
+    backend: PlaywrightWebSearch,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    browser: _FakeBrowser,
+    driver: _FakePlaywrightDriver,
+) -> list[int]:
+    """Patch ``_new_page`` to install fake browser/driver handles like the real one.
+
+    The real ``_new_page`` launches Chromium and the Playwright driver on the
+    worker thread and stashes them on the backend; the fake mirrors that so
+    ``close`` exercises real teardown against handles a search actually created.
+
+    Returns:
+        A list the fake records each ``_new_page`` worker-thread ident into.
+    """
+    page_thread_idents: list[int] = []
+
+    def fake_new_page() -> _FakePage:
+        page_thread_idents.append(threading.get_ident())
+        backend._browser = browser
+        backend._playwright = driver
+        return _FakePage(blocks=[_result_block("Hit", "https://hit.test", "s")])
+
+    monkeypatch.setattr(backend, "_new_page", fake_new_page)
+    return page_thread_idents
+
+
+def test_close_tears_down_live_browser_on_the_worker_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``close`` with a live browser closes it and stops the driver, off the caller.
+
+    This is the teardown half of the original greenlet bug: the browser and
+    driver must be torn down on the same dedicated worker thread that created
+    them, never on the calling thread.
+    """
+    backend = PlaywrightWebSearch()
+    browser = _FakeBrowser()
+    driver = _FakePlaywrightDriver()
+    page_threads = _install_live_browser(backend, monkeypatch, browser=browser, driver=driver)
+
+    backend.search("q")
+    backend.close()
+
+    assert browser.closed is True
+    assert driver.stopped is True
+    assert backend._browser is None
+    assert backend._playwright is None
+    assert browser.close_thread_ident == page_threads[0]
+    assert driver.stop_thread_ident == page_threads[0]
+    assert browser.close_thread_ident != threading.get_ident()
+
+
+def test_close_stops_driver_and_clears_handles_when_browser_close_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A browser that raises on close must still stop the driver and clear handles.
+
+    Otherwise the driver stays running and a stale browser handle survives into
+    the next worker, reintroducing the cross-thread greenlet error.
+    """
+    backend = PlaywrightWebSearch()
+    browser = _FakeBrowser(close_error=RuntimeError("browser crashed during close"))
+    driver = _FakePlaywrightDriver()
+    _install_live_browser(backend, monkeypatch, browser=browser, driver=driver)
+
+    backend.search("q")
+    with pytest.raises(RuntimeError):
+        backend.close()
+
+    assert driver.stopped is True
+    assert backend._browser is None
+    assert backend._playwright is None
+
+
+def test_search_after_close_relaunches_a_fresh_worker_and_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reuse after close transparently relaunches a fresh worker and browser."""
+    pages: list[_FakePage] = []
+
+    def fake_new_page() -> _FakePage:
+        page = _FakePage(blocks=[_result_block("Hit", "https://hit.test", "s")])
+        pages.append(page)
+        return page
+
+    backend = PlaywrightWebSearch()
+    monkeypatch.setattr(backend, "_new_page", fake_new_page)
+
+    first = backend.search("first")
+    first_executor = backend._executor
+    backend.close()
+    assert backend._executor is None
+
+    second = backend.search("second")
+    assert backend._executor is not None
+    assert backend._executor is not first_executor
+    backend.close()
+
+    assert "hit.test" in first and "hit.test" in second
+    assert len(pages) == 2
+
+
+class _GatedSingleThreadExecutor(ThreadPoolExecutor):
+    """A single-thread executor that pauses its first ``submit`` for a test.
+
+    Wedging the first dispatch open lets a test drive a concurrent ``close``
+    into the exact window the hardening closes, making the dispatch-vs-close
+    race deterministic instead of timing-dependent.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.first_submit_entered = threading.Event()
+        self.release_first_submit = threading.Event()
+        self.shutdown_called = threading.Event()
+        self._submit_count = 0
+        self._count_lock = threading.Lock()
+
+    def submit(self, fn: Any, /, *args: Any, **kwargs: Any) -> Any:
+        with self._count_lock:
+            self._submit_count += 1
+            is_first = self._submit_count == 1
+        if is_first:
+            self.first_submit_entered.set()
+            self.release_first_submit.wait(timeout=5)
+        return super().submit(fn, *args, **kwargs)
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        self.shutdown_called.set()
+        super().shutdown(wait=wait, cancel_futures=cancel_futures)
+
+
+def test_close_racing_in_flight_dispatch_does_not_schedule_after_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``close`` racing an in-flight ``search`` must not raise ``RuntimeError``.
+
+    With the dispatch captured under the lock but submitted after releasing it,
+    a concurrent ``close`` can shut the executor down in between, so the submit
+    hits ``cannot schedule new futures after shutdown``. Submitting under the
+    lock closes that window: the search either queues before teardown or starts
+    a fresh worker, and the executor is left cleanly torn down either way.
+    """
+    executors: queue.Queue[_GatedSingleThreadExecutor] = queue.Queue()
+
+    def gated_executor_factory(**kwargs: Any) -> _GatedSingleThreadExecutor:
+        executor = _GatedSingleThreadExecutor(**kwargs)
+        executors.put(executor)
+        return executor
+
+    monkeypatch.setattr(websearch_playwright, "ThreadPoolExecutor", gated_executor_factory)
+    backend = PlaywrightWebSearch()
+    monkeypatch.setattr(
+        backend,
+        "_new_page",
+        lambda: _FakePage(blocks=[_result_block("Hit", "https://hit.test", "s")]),
+    )
+
+    errors: list[BaseException] = []
+
+    def run(operation: Any) -> None:
+        try:
+            operation()
+        except Exception as exc:
+            errors.append(exc)
+
+    searcher = threading.Thread(target=run, args=(lambda: backend.search("q"),))
+    searcher.start()
+
+    executor = executors.get(timeout=5)
+    assert executor.first_submit_entered.wait(timeout=5)
+
+    closer = threading.Thread(target=run, args=(backend.close,))
+    closer.start()
+
+    executor.shutdown_called.wait(timeout=0.3)
+    executor.release_first_submit.set()
+
+    searcher.join(timeout=5)
+    closer.join(timeout=5)
+
+    assert not any(isinstance(exc, RuntimeError) for exc in errors), errors
+    assert backend._executor is None
 
 
 def test_resolve_web_backend_gates_on_enable_web(settings: Settings) -> None:
