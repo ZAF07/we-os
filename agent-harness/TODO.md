@@ -9,7 +9,7 @@ What ships working today, and what *you* fill in to make it production-complete.
 | Chat models (DeepSeek/Anthropic/OpenAI) | working via `adapters/models.py` | confirm the DeepSeek model id; add keys |
 | Specialist agents (`create_agent`) | working | nothing required |
 | Tools — filesystem | working, write-scoped to `campaigns/**` | nothing required |
-| Tools — web search | working (Playwright), gated on `MARKETING_OS_WEB=1` | install the extra + `playwright install chromium` |
+| Tools — web search | working (Google → DuckDuckGo fallback chain), gated on `MARKETING_OS_WEB=1` | install the extra + `playwright install chromium` |
 | Gate · pipeline · nodes · graph · QA reviewer | working | nothing required |
 | Guardrail rubrics (`guardrails/*.md`) | starter rubrics | sharpen to your professional bar |
 | Persistence | `MemorySaver` (in-process) | wire `PostgresSaver` for production |
@@ -28,19 +28,25 @@ are clean.
   they differ). To swap providers entirely, set `MARKETING_OS_PROVIDER=anthropic`
   (or `openai`) and the matching key — resolved through `init_chat_model`.
 
-### 1b. Enable web search (the Playwright backend)
+### 1b. Enable web search (the Playwright backends)
 - **What**: `adapters/tools/websearch_playwright.py` — `PlaywrightWebSearch`
-  now implements `_new_page()`, `search()`, and `fetch()` against
-  `playwright.sync_api` (DuckDuckGo HTML endpoint, redirect-unwrapped links).
+  (DuckDuckGo HTML endpoint, redirect-unwrapped links) and its subclass
+  `GoogleWebSearch` (scrapes `google.com/search`, reusing the same browser
+  lifecycle and `fetch`), both driving `playwright.sync_api`.
 - **Why**: `market-research` and `performance-marketing` declare `WebSearch`/
   `WebFetch`; without a live backend they get `NoopWebSearch` and reason from DNA
-  only. The backend is off by default so the offline suite needs no browser.
+  only. The backends are off by default so the offline suite needs no browser.
 - **How**: install the extra — `uv add --optional playwright playwright && uv run
-  playwright install chromium` — then set `MARKETING_OS_WEB=1`. The runner wires a
-  `PlaywrightWebSearch` via the `web_backend=` injection point automatically
-  (`_default_web_backend` in `graph/runner.py`); pass an explicit `web_backend=`
+  playwright install chromium` — then set `MARKETING_OS_WEB=1`. The runner builds
+  a `FallbackWebSearch` chain via the `web_backend=` injection point automatically
+  (`_resolve_web_backend` in `graph/runner.py`); pass an explicit `web_backend=`
   to `run_campaign` / `build_campaign_graph` to override. Playwright is imported
   lazily and the browser launches on first tool call, so the gate stays cheap.
+- **Which engines**: set `MARKETING_OS_WEB_BACKENDS` to a comma-separated,
+  priority-ordered list of `google` / `duckduckgo` / `noop` (default
+  `google,duckduckgo`). The chain tries each in order and falls through to the
+  next on a recoverable failure or empty result, so Google leads and DuckDuckGo
+  covers Google's consent-wall / CAPTCHA blocks.
 
 ## 2. Extension points
 

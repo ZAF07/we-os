@@ -7,13 +7,23 @@ from langchain_core.tools import BaseTool
 from marketing_os.adapters.tools.filesystem import filesystem_tools
 from marketing_os.adapters.tools.sandbox import FilesystemSandbox
 from marketing_os.adapters.tools.websearch import NoopWebSearch, WebSearchTool, web_tools
-from marketing_os.adapters.tools.websearch_playwright import PlaywrightWebSearch
+from marketing_os.adapters.tools.websearch_fallback import (
+    FallbackWebSearch,
+    build_web_backend,
+)
+from marketing_os.adapters.tools.websearch_playwright import (
+    GoogleWebSearch,
+    PlaywrightWebSearch,
+)
 
 __all__ = [
     "FilesystemSandbox",
     "WebSearchTool",
     "NoopWebSearch",
     "PlaywrightWebSearch",
+    "GoogleWebSearch",
+    "FallbackWebSearch",
+    "build_web_backend",
     "build_tools",
 ]
 

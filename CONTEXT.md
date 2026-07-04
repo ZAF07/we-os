@@ -13,8 +13,12 @@ The per-campaign business objective and success metrics (`campaigns/<slug>/goal.
 _Avoid_: objective doc, spec.
 
 **Campaign Slug**:
-The identifier for a single campaign run. It names the campaign's directory (`campaigns/<slug>/`), so every input and deliverable for that campaign lives under it, and it identifies the run for resumption. A specialist must use the run's slug verbatim; a write under any other slug is rejected as off-slug (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
+The identifier for a single **campaign** — the durable thing. It names the campaign's directory (`campaigns/<slug>/`), so every input and deliverable for that campaign lives under it, and it keys the checkpoint thread that makes the campaign resumable. A specialist must use the campaign's slug verbatim; a write under any other slug is rejected as off-slug (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
 _Avoid_: id, name, key, thread.
+
+**Run**:
+A single **execution attempt** of a campaign's pipeline, identified by a unique `run_id`. A campaign (slug) may accumulate many runs over its life — one per attempt — but **at most one run per slug may be active at a time** (a second concurrent run of the same slug is rejected). Each run has its own JSONL trace (`logs/<slug>/<run_id>.jsonl`) and, in the background-job model, its own status and cancellation handle. The slug names the campaign; the run_id names one attempt to advance it.
+_Avoid_: job (use for the background execution mechanism only), execution, session, thread.
 
 **Marketing Director**:
 The orchestrator (the `/new-campaign` skill / main session). Runs the DNA gate, sets the business goal and campaign strategy, and delegates to specialists in mandatory order. Never produces research, strategy, creative, or assets itself.
@@ -45,8 +49,12 @@ The central, citable store of expert frameworks by discipline (`knowledge/<disci
 _Avoid_: docs, references, wiki.
 
 **Web Backend**:
-The pluggable live-web capability (`WebSearchTool` port) granting the specialists that declare it — market-research and performance-marketing — `web_search`/`web_fetch` tools. Two adapters exist: the default **NoopWebSearch**, which returns an honest "web search is not configured" message so runs stay grounded in the Customer DNA, and **PlaywrightWebSearch**, a browser-driven backend (see [ADR-0007](docs/adr/0007-thread-confined-sync-playwright-backend.md)). The live backend is off by default and wired only when `MARKETING_OS_WEB=1` (see [ADR-0001](docs/adr/0001-ports-and-adapters-architecture.md)).
+The pluggable live-web capability (`WebSearchTool` port) granting the specialists that declare it — market-research and performance-marketing — `web_search`/`web_fetch` tools. Adapters: the default **NoopWebSearch**, which returns an honest "web search is not configured" message so runs stay grounded in the Customer DNA; **PlaywrightWebSearch**, a browser-driven backend scraping DuckDuckGo (see [ADR-0007](docs/adr/0007-thread-confined-sync-playwright-backend.md)); and **GoogleWebSearch**, which subclasses it to scrape `google.com/search`, reusing the same browser lifecycle and `fetch`. The live capability is off by default and wired only when `MARKETING_OS_WEB=1` (see [ADR-0001](docs/adr/0001-ports-and-adapters-architecture.md)).
 _Avoid_: search tool, web tool, scraper.
+
+**Backend Fallback Chain** (`FallbackWebSearch`):
+An ordered composition of web backends that is itself a `WebSearchTool`, so the graph wiring is unchanged. `search` tries each backend in priority order and falls through to the next on a recoverable `ToolError` or an empty result set; the final backend's outcome (result or raised error) surfaces unchanged, so a single configured backend behaves exactly as one backend alone. The order is set by `MARKETING_OS_WEB_BACKENDS` — a comma-separated, priority-ordered list of `google` / `duckduckgo` / `noop` (default `google,duckduckgo`, i.e. Google first, DuckDuckGo as fallback when Google hits a consent wall or CAPTCHA). Google's anti-automation responses (consent interstitial, `/sorry/` CAPTCHA, zero-parse markup) are raised as recoverable `ToolError`s so the chain moves on rather than crashing the run (see [ADR-0008](docs/adr/0008-google-scraping-web-search-with-fallback-chain.md) for why Google is scraped rather than called via an official API).
+_Avoid_: retry chain, backend pool, load balancer.
 
 **KPI tiers**:
 The three levels every campaign must define, which ladder up to each other — **Business KPI** (revenue, leads, bookings, retention), **Marketing KPI** (CTR, CPC, CPM, conversion rate), **Creative KPI** (hook rate, watch time, engagement rate).
