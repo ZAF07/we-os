@@ -152,6 +152,12 @@ class PlaywrightWebSearch(WebSearchTool):
         the sync API raises ``greenlet.error`` when touched from any other
         thread, including the short-lived executor threads tool nodes run on.
 
+        The submit happens under the executor lock so dispatch and :meth:`close`
+        never interleave: a concurrent close either lands after this submit (its
+        teardown queues behind the work on the same worker) or is refused the
+        dying executor and this call transparently starts a fresh one — the work
+        is never scheduled onto an executor that is shutting down.
+
         Args:
             fn: The callable to run on the worker thread.
             *args: Positional arguments for ``fn``.
@@ -164,8 +170,8 @@ class PlaywrightWebSearch(WebSearchTool):
                 self._executor = ThreadPoolExecutor(
                     max_workers=1, thread_name_prefix="playwright-web"
                 )
-            executor = self._executor
-        return executor.submit(fn, *args).result()
+            future = self._executor.submit(fn, *args)
+        return future.result()
 
     def _new_page(self) -> Any:
         """Launch Playwright lazily and return a new page.
@@ -311,26 +317,45 @@ class PlaywrightWebSearch(WebSearchTool):
         """Stop the browser, the Playwright driver, and the worker thread.
 
         Safe to call from any thread and a no-op when the backend was never
-        used.
+        used. Teardown holds the executor lock for its whole duration, so a
+        :meth:`search`/:meth:`fetch` racing this call cannot schedule work onto
+        the shutting-down executor: it either already queued its work here (which
+        drains on the worker before teardown) or blocks until this returns and
+        then starts a fresh worker.
+
+        Reuse after close is supported. A later :meth:`search`/:meth:`fetch`
+        lazily relaunches a fresh worker thread, Playwright driver, and browser,
+        so the backend behaves as if newly constructed.
         """
         with self._executor_lock:
             executor = self._executor
             self._executor = None
-        if executor is None:
-            return
-        try:
-            executor.submit(self._close_on_worker).result()
-        finally:
-            executor.shutdown(wait=True)
+            if executor is None:
+                return
+            try:
+                executor.submit(self._close_on_worker).result()
+            finally:
+                executor.shutdown(wait=True)
 
     def _close_on_worker(self) -> None:
-        """Tear down the browser and driver on the Playwright thread."""
-        if self._browser is not None:
-            self._browser.close()
-            self._browser = None
-        if self._playwright is not None:
-            self._playwright.stop()
-            self._playwright = None
+        """Tear down the browser and driver on the Playwright thread.
+
+        Both handles are cleared up front and the driver is stopped in a
+        ``finally``, so a ``browser.close()`` that raises still stops the
+        Playwright driver and leaves no stale handle for a later worker to touch
+        cross-thread — the failure that would otherwise reintroduce the original
+        greenlet error.
+        """
+        browser = self._browser
+        playwright = self._playwright
+        self._browser = None
+        self._playwright = None
+        try:
+            if browser is not None:
+                browser.close()
+        finally:
+            if playwright is not None:
+                playwright.stop()
 
 
 _GOOGLE_BLOCK_MARKERS = ("consent.google.com", "/sorry/", "/sorry?")
