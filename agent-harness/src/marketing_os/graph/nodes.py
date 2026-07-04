@@ -43,7 +43,7 @@ _USAGE_KEYS = (
 
 
 class CampaignNode(Protocol):
-    """A graph node mapping the campaign state to a partial state update.
+    """A synchronous graph node mapping the campaign state to a state update.
 
     The single parameter is named ``state`` (rather than using a positional-only
     ``Callable[[CampaignState], ...]`` alias) so the node satisfies LangGraph's
@@ -51,6 +51,26 @@ class CampaignNode(Protocol):
     """
 
     def __call__(self, state: CampaignState) -> dict[str, Any]:
+        """Run the node.
+
+        Args:
+            state: The current campaign state.
+
+        Returns:
+            The partial state update produced by the node.
+        """
+        ...
+
+
+class AsyncCampaignNode(Protocol):
+    """An async graph node mapping the campaign state to a state update.
+
+    The specialist and review nodes are ``async def`` (per ADR-0009) so their LLM
+    calls are awaited on the event loop and abort when the run's task is
+    cancelled. LangGraph awaits these coroutine nodes on the async run path.
+    """
+
+    async def __call__(self, state: CampaignState) -> dict[str, Any]:
         """Run the node.
 
         Args:
@@ -288,7 +308,7 @@ def make_enter_node(settings: Settings, stage: Stage) -> CampaignNode:
     return enter_node
 
 
-def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> CampaignNode:
+def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> AsyncCampaignNode:
     """Build a stage's specialist node.
 
     Args:
@@ -301,9 +321,12 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> C
     """
     recursion_limit = 2 * settings.max_steps + 1
 
-    def specialist_node(state: CampaignState) -> dict[str, Any]:
+    async def specialist_node(state: CampaignState) -> dict[str, Any]:
         """Run the specialist agent over the current stage conversation.
 
+        The agent's tool-use loop is awaited (``ainvoke``) so every LLM call runs
+        on the event loop; cancelling the run's task aborts the in-flight LLM
+        request inside the loop rather than only between stages (see ADR-0009).
         The run ``slug`` is passed into the agent state so the ``write_file`` tool
         can scope writes to ``campaigns/<slug>/`` at call time.
 
@@ -315,7 +338,7 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> C
         """
         inbound = list(state["messages"])
         with get_usage_metadata_callback() as callback:
-            result = agent.invoke(
+            result = await agent.ainvoke(
                 {"messages": inbound, "slug": state["slug"]},
                 config={
                     "recursion_limit": recursion_limit,
@@ -328,7 +351,7 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> C
     return specialist_node
 
 
-def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> CampaignNode:
+def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> AsyncCampaignNode:
     """Build a stage's QA review node.
 
     Args:
@@ -341,8 +364,11 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
     """
     budget = settings.max_qa_iterations
 
-    def review_node(state: CampaignState) -> dict[str, Any]:
+    async def review_node(state: CampaignState) -> dict[str, Any]:
         """Verify the deliverable was saved, score it, and set the route.
+
+        The reviewer's LLM call is awaited (per ADR-0009) so it aborts if the
+        run's task is cancelled mid-review.
 
         Args:
             state: The campaign state after the specialist ran.
@@ -359,7 +385,7 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
 
         text = path.read_text(encoding="utf-8")
         with get_usage_metadata_callback() as callback:
-            verdict = reviewer.review(stage.key, text)
+            verdict = await reviewer.areview(stage.key, text)
         qa_iterations = state.get("qa_iterations", 0)
         discrepancies = [d.model_dump() for d in verdict.discrepancies]
         _emit(

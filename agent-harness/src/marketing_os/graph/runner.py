@@ -8,6 +8,7 @@ collide with the full-campaign thread.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -291,7 +292,7 @@ def _write_error_summary(trace: RunTrace | None, exc: BaseException, run_log: st
     )
 
 
-def run_campaign(
+async def arun_campaign(
     settings: Settings,
     customer: str,
     slug: str,
@@ -301,10 +302,14 @@ def run_campaign(
     web_backend: WebSearchTool | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> CampaignResult:
-    """Run a campaign (or a single stage) to completion in one graph run.
+    """Run a campaign (or a single stage) to completion on the async graph path.
 
-    The run always streams internally so every event is logged to the console and
-    appended to the run's JSONL trace, regardless of whether ``on_event`` is given.
+    This is the cancellable run path (ADR-0009): the graph is driven with
+    ``astream`` so every specialist and review LLM call is an awaited coroutine.
+    Launched as an :class:`asyncio.Task`, the run can be cancelled such that the
+    ``CancelledError`` aborts the in-flight LLM request. The run always streams
+    internally so every event is logged to the console and appended to the run's
+    JSONL trace, regardless of whether ``on_event`` is given.
 
     Args:
         settings: The harness settings.
@@ -334,14 +339,16 @@ def run_campaign(
         "run.start customer=%s slug=%s stage=%s run_log=%s", customer, slug, stage, run_log
     )
     try:
-        for mode, chunk in graph.stream(inbound, config=config, stream_mode=["custom", "updates"]):
+        async for mode, chunk in graph.astream(
+            inbound, config=config, stream_mode=["custom", "updates"]
+        ):
             if mode != "custom":
                 continue
             if trace is not None:
                 trace.event(chunk)
             if on_event is not None:
                 on_event(chunk)
-        state: CampaignState = graph.get_state(config).values
+        state: CampaignState = (await graph.aget_state(config)).values
         _write_summary(trace, state, run_log)
     except Exception as exc:
         _write_error_summary(trace, exc, run_log)
@@ -353,6 +360,53 @@ def run_campaign(
             backend.close()
     _raise_on_error(state, run_log)
     return _to_result(customer, slug, state, run_log)
+
+
+def run_campaign(
+    settings: Settings,
+    customer: str,
+    slug: str,
+    *,
+    stage: str | None = None,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
+    web_backend: WebSearchTool | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> CampaignResult:
+    """Run a campaign (or a single stage) to completion, blocking until done.
+
+    A synchronous convenience wrapper for the CLI and other sync callers: it drives
+    :func:`arun_campaign` on a fresh event loop via :func:`asyncio.run`. Callers
+    that need to cancel a run (the API) must await :func:`arun_campaign` directly so
+    the run is an :class:`asyncio.Task` on their loop.
+
+    Args:
+        settings: The harness settings.
+        customer: The customer name.
+        slug: The campaign slug.
+        stage: The single stage to run, or ``None`` for the full pipeline.
+        on_event: An optional callback invoked with each progress event.
+        web_backend: The web backend for agents that declare web tools.
+        checkpointer: An optional checkpointer.
+
+    Returns:
+        The structured campaign result.
+
+    Raises:
+        GateError: If the run halted on the Stage 0 gate.
+        PipelineError: If a prerequisite was missing or a deliverable never saved.
+        GuardrailError: If a deliverable failed QA within the revision budget.
+    """
+    return asyncio.run(
+        arun_campaign(
+            settings,
+            customer,
+            slug,
+            stage=stage,
+            on_event=on_event,
+            web_backend=web_backend,
+            checkpointer=checkpointer,
+        )
+    )
 
 
 async def astream_campaign(

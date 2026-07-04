@@ -105,7 +105,7 @@ def _write_specs(settings: Settings) -> None:
         )
 
 
-def test_single_stage_happy_path(settings: Settings) -> None:
+async def test_single_stage_happy_path(settings: Settings) -> None:
     reviewer = FakeReviewer([_PASS])
     graph = build_single_stage_graph(
         settings,
@@ -113,7 +113,7 @@ def test_single_stage_happy_path(settings: Settings) -> None:
         model=ProgrammableChatModel(handler=_writing_handler),
         reviewer=reviewer,
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("t1"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("t1"))
     assert (settings.campaigns_dir / "acme" / "research.md").is_file()
     assert state["error"] is None
     assert state["results"][0]["approved"] is True
@@ -121,17 +121,17 @@ def test_single_stage_happy_path(settings: Settings) -> None:
     assert len(reviewer.calls) == 1
 
 
-def test_save_retry_forces_a_write(settings: Settings) -> None:
+async def test_save_retry_forces_a_write(settings: Settings) -> None:
     reviewer = FakeReviewer([_PASS])
     model = ProgrammableChatModel(handler=_refusing_then_writing_handler)
     graph = build_single_stage_graph(settings, "research", model=model, reviewer=reviewer)
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("t2"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("t2"))
     assert (settings.campaigns_dir / "acme" / "research.md").is_file()
     assert state["error"] is None
     assert state["results"][0]["save_retries"] == 1
 
 
-def test_qa_revise_loop_until_pass(settings: Settings) -> None:
+async def test_qa_revise_loop_until_pass(settings: Settings) -> None:
     reviewer = FakeReviewer([_FAIL, _PASS])
     graph = build_single_stage_graph(
         settings,
@@ -139,14 +139,14 @@ def test_qa_revise_loop_until_pass(settings: Settings) -> None:
         model=ProgrammableChatModel(handler=_writing_handler),
         reviewer=reviewer,
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("t3"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("t3"))
     assert state["error"] is None
     assert state["results"][0]["approved"] is True
     assert state["results"][0]["qa_iterations"] == 1
     assert len(reviewer.calls) == 2
 
 
-def test_revise_resets_conversation_no_transcript_accumulation(settings: Settings) -> None:
+async def test_revise_resets_conversation_no_transcript_accumulation(settings: Settings) -> None:
     human_counts: list[int] = []
 
     def recording_handler(messages: list[BaseMessage], index: int) -> AIMessage:
@@ -163,13 +163,13 @@ def test_revise_resets_conversation_no_transcript_accumulation(settings: Setting
         model=ProgrammableChatModel(handler=recording_handler),
         reviewer=reviewer,
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("reset"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("reset"))
     assert state["error"] is None
     assert state["results"][0]["qa_iterations"] == 1
     assert human_counts and max(human_counts) == 1
 
 
-def test_bad_path_tool_error_is_recoverable_not_fatal(settings: Settings) -> None:
+async def test_bad_path_tool_error_is_recoverable_not_fatal(settings: Settings) -> None:
     def handler(messages: list[BaseMessage], index: int) -> AIMessage:
         last = messages[-1]
         if isinstance(last, ToolMessage):
@@ -183,13 +183,13 @@ def test_bad_path_tool_error_is_recoverable_not_fatal(settings: Settings) -> Non
     graph = build_single_stage_graph(
         settings, "research", model=ProgrammableChatModel(handler=handler), reviewer=reviewer
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("recover"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("recover"))
     assert state["error"] is None
     assert state["results"][0]["approved"] is True
     assert (settings.campaigns_dir / "acme" / "research.md").is_file()
 
 
-def test_off_slug_write_rejected_then_recovered(settings: Settings) -> None:
+async def test_off_slug_write_rejected_then_recovered(settings: Settings) -> None:
     errors: list[str] = []
 
     def handler(messages: list[BaseMessage], index: int) -> AIMessage:
@@ -206,7 +206,7 @@ def test_off_slug_write_rejected_then_recovered(settings: Settings) -> None:
     graph = build_single_stage_graph(
         settings, "research", model=ProgrammableChatModel(handler=handler), reviewer=reviewer
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("offslug"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("offslug"))
     assert state["error"] is None
     assert state["results"][0]["approved"] is True
     assert (settings.campaigns_dir / "acme" / "research.md").is_file()
@@ -217,7 +217,7 @@ def test_off_slug_write_rejected_then_recovered(settings: Settings) -> None:
     assert "verbatim" in errors[0]
 
 
-def test_revision_inlines_draft_and_requires_no_read(settings: Settings) -> None:
+async def test_revision_inlines_draft_and_requires_no_read(settings: Settings) -> None:
     seeds: list[str] = []
 
     def handler(messages: list[BaseMessage], index: int) -> AIMessage:
@@ -232,7 +232,7 @@ def test_revision_inlines_draft_and_requires_no_read(settings: Settings) -> None
     graph = build_single_stage_graph(
         settings, "research", model=ProgrammableChatModel(handler=handler), reviewer=reviewer
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("inline"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("inline"))
     assert state["error"] is None
     assert state["results"][0]["qa_iterations"] == 1
     revision_seeds = [s for s in seeds if "# Revision" in s]
@@ -242,7 +242,7 @@ def test_revision_inlines_draft_and_requires_no_read(settings: Settings) -> None
     assert "read_file" not in revision_seeds[0]
 
 
-def test_seeds_anchor_the_campaign_slug(settings: Settings) -> None:
+async def test_seeds_anchor_the_campaign_slug(settings: Settings) -> None:
     seeds: list[str] = []
 
     def handler(messages: list[BaseMessage], index: int) -> AIMessage:
@@ -257,13 +257,13 @@ def test_seeds_anchor_the_campaign_slug(settings: Settings) -> None:
     graph = build_single_stage_graph(
         settings, "research", model=ProgrammableChatModel(handler=handler), reviewer=reviewer
     )
-    graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("anchor"))
+    await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("anchor"))
     assert seeds
     assert "This campaign's slug is `acme`" in seeds[0]
     assert "campaigns/acme/" in seeds[0]
 
 
-def test_qa_budget_exhausted_fails(settings: Settings) -> None:
+async def test_qa_budget_exhausted_fails(settings: Settings) -> None:
     reviewer = FakeReviewer([_FAIL])
     settings.max_qa_iterations = 1
     graph = build_single_stage_graph(
@@ -272,12 +272,12 @@ def test_qa_budget_exhausted_fails(settings: Settings) -> None:
         model=ProgrammableChatModel(handler=_writing_handler),
         reviewer=reviewer,
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("t4"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("t4"))
     assert state["error"]["type"] == "guardrail"
     assert state["results"][0]["approved"] is False
 
 
-def test_gate_halts_on_placeholder_dna(settings: Settings) -> None:
+async def test_gate_halts_on_placeholder_dna(settings: Settings) -> None:
     dna = settings.customers_dir / "acme" / "dna.md"
     dna.write_text(
         "# Customer DNA — Acme\n\n## Business\n- **Business name:** <name>\n",
@@ -290,12 +290,12 @@ def test_gate_halts_on_placeholder_dna(settings: Settings) -> None:
         model=ProgrammableChatModel(handler=_writing_handler),
         reviewer=reviewer,
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("t5"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("t5"))
     assert state["error"]["type"] == "gate"
     assert not (settings.campaigns_dir / "acme" / "research.md").is_file()
 
 
-def test_prerequisite_halts_when_upstream_missing(settings: Settings) -> None:
+async def test_prerequisite_halts_when_upstream_missing(settings: Settings) -> None:
     _write_specs(settings)
     reviewer = FakeReviewer([_PASS])
     graph = build_single_stage_graph(
@@ -304,18 +304,18 @@ def test_prerequisite_halts_when_upstream_missing(settings: Settings) -> None:
         model=ProgrammableChatModel(handler=_writing_handler),
         reviewer=reviewer,
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("t6"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("t6"))
     assert state["error"]["type"] == "pipeline"
     assert state["error"]["prerequisite"] == "research.md"
 
 
-def test_full_pipeline_advances_through_every_stage(settings: Settings) -> None:
+async def test_full_pipeline_advances_through_every_stage(settings: Settings) -> None:
     _write_specs(settings)
     reviewer = FakeReviewer([_PASS])
     graph = build_campaign_graph(
         settings, model=ProgrammableChatModel(handler=_writing_handler), reviewer=reviewer
     )
-    state = graph.invoke({"customer": "acme", "slug": "acme"}, config=_config("t7"))
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("t7"))
     assert state["error"] is None
     stages = [record["stage"] for record in state["results"]]
     assert stages == [

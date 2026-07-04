@@ -17,8 +17,11 @@ from marketing_os.schemas import ReviewVerdict
 class Reviewer(Protocol):
     """A QA judge that scores a deliverable against a stage rubric."""
 
-    def review(self, stage_key: str, deliverable_text: str) -> ReviewVerdict:
+    async def areview(self, stage_key: str, deliverable_text: str) -> ReviewVerdict:
         """Judge a deliverable against the rubric for its stage.
+
+        The review runs as an awaited coroutine (per ADR-0009) so the review
+        node's LLM call is on the event loop and aborts when the run is cancelled.
 
         Args:
             stage_key: The pipeline stage the deliverable belongs to.

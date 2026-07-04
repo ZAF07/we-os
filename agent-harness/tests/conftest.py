@@ -132,7 +132,7 @@ class FakeReviewer:
         self._verdicts = list(verdicts)
         self.calls: list[tuple[str, str]] = []
 
-    def review(self, stage_key: str, deliverable_text: str) -> ReviewVerdict:
+    async def areview(self, stage_key: str, deliverable_text: str) -> ReviewVerdict:
         """Return the next scripted verdict.
 
         Args:

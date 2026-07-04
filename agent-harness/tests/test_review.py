@@ -15,7 +15,7 @@ class _StructuredStub:
     def __init__(self, result: Any) -> None:
         self._result = result
 
-    def invoke(self, messages: Any, config: Any = None) -> ReviewVerdict:
+    async def ainvoke(self, messages: Any, config: Any = None) -> ReviewVerdict:
         if isinstance(self._result, Exception):
             raise self._result
         return self._result
@@ -38,14 +38,14 @@ def test_load_rubric_includes_shared_and_stage(settings):
     assert "Operating Principles" in rubric
 
 
-def test_reviewer_pass(settings):
+async def test_reviewer_pass(settings):
     model = _FakeStructuredModel(ReviewVerdict(passed=True, summary="ok"))
-    verdict = LLMReviewer(model, settings).review("research", "some deliverable")
+    verdict = await LLMReviewer(model, settings).areview("research", "some deliverable")
     assert verdict.passed
     assert verdict.discrepancies == []
 
 
-def test_reviewer_fail_with_discrepancies(settings):
+async def test_reviewer_fail_with_discrepancies(settings):
     result = ReviewVerdict(
         passed=False,
         summary="missing competitors",
@@ -57,14 +57,14 @@ def test_reviewer_fail_with_discrepancies(settings):
             )
         ],
     )
-    verdict = LLMReviewer(_FakeStructuredModel(result), settings).review("research", "d")
+    verdict = await LLMReviewer(_FakeStructuredModel(result), settings).areview("research", "d")
     assert not verdict.passed
     assert verdict.discrepancies[0].rubric_point == "competitor research"
     assert "no competitors named" in verdict.as_revision_instruction()
 
 
-def test_reviewer_unparseable_fails_closed(settings):
+async def test_reviewer_unparseable_fails_closed(settings):
     model = _FakeStructuredModel(ValueError("model returned junk"))
-    verdict = LLMReviewer(model, settings).review("research", "deliverable")
+    verdict = await LLMReviewer(model, settings).areview("research", "deliverable")
     assert not verdict.passed
     assert verdict.discrepancies[0].rubric_point == "review-format"

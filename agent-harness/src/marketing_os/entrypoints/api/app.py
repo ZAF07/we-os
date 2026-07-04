@@ -27,7 +27,7 @@ from marketing_os.adapters.observability import configure_logging, configure_tra
 from marketing_os.config import Settings, load_settings
 from marketing_os.errors import GateError, MarketingOSError
 from marketing_os.governance import check_gate
-from marketing_os.graph.runner import astream_campaign, run_campaign
+from marketing_os.graph.runner import arun_campaign, astream_campaign
 
 
 @asynccontextmanager
@@ -169,8 +169,11 @@ def deliverables(slug: str) -> dict[str, object]:
 
 
 @app.post("/campaigns/{slug}/run")
-def run(slug: str, body: RunCampaign) -> dict[str, object]:
+async def run(slug: str, body: RunCampaign) -> dict[str, object]:
     """Run the pipeline (or one stage) and return the structured result.
+
+    The run executes on the async graph path (ADR-0009) so it is an awaited
+    coroutine on the event loop and can be cancelled with its in-flight LLM calls.
 
     Args:
         slug: The campaign slug.
@@ -184,7 +187,7 @@ def run(slug: str, body: RunCampaign) -> dict[str, object]:
     """
     settings = get_settings()
     try:
-        result = run_campaign(settings, body.customer, slug, stage=body.stage)
+        result = await arun_campaign(settings, body.customer, slug, stage=body.stage)
     except GateError as exc:
         raise HTTPException(409, _error_detail(exc)) from exc
     except MarketingOSError as exc:

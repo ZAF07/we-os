@@ -45,8 +45,11 @@ class LLMReviewer:
         self._model = model.with_structured_output(ReviewVerdict)
         self._settings = settings
 
-    def review(self, stage_key: str, deliverable_text: str) -> ReviewVerdict:
+    async def areview(self, stage_key: str, deliverable_text: str) -> ReviewVerdict:
         """Judge a deliverable against the rubric for its stage.
+
+        The model call is awaited (``ainvoke``) so it runs on the event loop and
+        is aborted if the run's task is cancelled mid-flight (see ADR-0009).
 
         Args:
             stage_key: The pipeline stage the deliverable belongs to.
@@ -64,7 +67,9 @@ class LLMReviewer:
         )
         messages = [SystemMessage(_REVIEWER_SYSTEM), HumanMessage(user)]
         try:
-            verdict = self._model.invoke(messages, config={"run_name": f"review:{stage_key}"})
+            verdict = await self._model.ainvoke(
+                messages, config={"run_name": f"review:{stage_key}"}
+            )
         except Exception:
             return self._format_failure()
         if not isinstance(verdict, ReviewVerdict):
