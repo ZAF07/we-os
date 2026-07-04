@@ -9,6 +9,7 @@ through an ``lru_cache`` that each test clears.
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -211,16 +212,76 @@ def test_get_run_404_for_unknown_id(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_stream_emits_sse_progress_and_done(client: TestClient, repo: Path) -> None:
-    response = client.get(
-        "/campaigns/acme/stream", params={"customer": "acme", "stage": "research"}
-    )
+def _run_to_completion(client: TestClient, slug: str = "acme") -> str:
+    """Start a background run and return its id once it has completed.
+
+    Args:
+        client: The entered test client.
+        slug: The campaign slug to run.
+
+    Returns:
+        The completed run's id.
+    """
+    started = client.post(f"/campaigns/{slug}/run", json={"customer": "acme", "stage": "research"})
+    assert started.status_code == 202
+    run_id = started.json()["run_id"]
+    _wait_for_status(client, run_id, "completed")
+    return run_id
+
+
+def _sse_events(text: str) -> list[dict]:
+    """Parse the events out of an SSE response body.
+
+    Args:
+        text: The raw ``text/event-stream`` response body.
+
+    Returns:
+        The decoded event payloads, in order.
+    """
+    return [
+        json.loads(line[len("data: ") :]) for line in text.splitlines() if line.startswith("data: ")
+    ]
+
+
+def test_stream_attaches_to_finished_run_replays_trace_and_closes(
+    client: TestClient, repo: Path
+) -> None:
+    run_id = _run_to_completion(client)
+
+    response = client.get(f"/runs/{run_id}/stream")
+
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
-    frames = [line for line in response.text.splitlines() if line.startswith("data: ")]
-    assert frames
-    assert '"campaign.done"' in response.text
-    assert (repo / "campaigns" / "acme" / "research.md").is_file()
+    events = _sse_events(response.text)
+    assert events, "the finished run's trace should be replayed"
+    assert events[-1]["event"] == "run.summary", "the stream closes on the terminal summary"
+    assert events[-1]["outcome"] == "ok"
+
+
+def test_stream_attach_does_not_start_a_new_run(client: TestClient) -> None:
+    run_id = _run_to_completion(client)
+    before = client.get("/campaigns/acme/runs").json()["runs"]
+
+    response = client.get(f"/runs/{run_id}/stream")
+    assert response.status_code == 200
+    _sse_events(response.text)
+
+    assert client.get("/runs").json()["runs"] == [], "observing must not register a run"
+    assert client.get("/campaigns/acme/runs").json()["runs"] == before, "no new trace is written"
+
+
+def test_stream_attach_404_for_unknown_run(client: TestClient) -> None:
+    assert client.get("/runs/does-not-exist/stream").status_code == 404
+
+
+def test_multiple_observers_each_get_the_full_event_sequence(client: TestClient) -> None:
+    run_id = _run_to_completion(client)
+
+    first = _sse_events(client.get(f"/runs/{run_id}/stream").text)
+    second = _sse_events(client.get(f"/runs/{run_id}/stream").text)
+
+    assert first == second
+    assert first[-1]["event"] == "run.summary"
 
 
 def _install_blocking_client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:

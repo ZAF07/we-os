@@ -9,7 +9,7 @@ Endpoints:
   GET  /runs                            -> list in-flight runs
   GET  /runs/{run_id}                   -> report a run's lifecycle status
   POST /runs/{run_id}/cancel            -> cancel an in-flight run
-  GET  /campaigns/{slug}/stream?customer=&stage= -> SSE progress stream
+  GET  /runs/{run_id}/stream            -> attach to a run and tail its trace as SSE
 
 Run with:  uvicorn marketing_os.entrypoints.api.app:app --reload
 """
@@ -27,12 +27,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from marketing_os.adapters.observability import configure_logging, configure_tracing, new_run_id
+from marketing_os.adapters.observability import (
+    configure_logging,
+    configure_tracing,
+    new_run_id,
+    tail_trace,
+)
 from marketing_os.config import Settings, load_settings
 from marketing_os.errors import RunConflictError
 from marketing_os.governance import check_gate
-from marketing_os.graph.registry import CANCELLED, RUNNING, RunRegistry, read_run_status
-from marketing_os.graph.runner import arun_campaign, astream_campaign
+from marketing_os.graph.registry import (
+    CANCELLED,
+    RUNNING,
+    RunRegistry,
+    read_run_status,
+    resolve_trace_path,
+)
+from marketing_os.graph.runner import arun_campaign
 from marketing_os.schemas import CampaignResult
 
 
@@ -340,27 +351,40 @@ def get_run(slug: str, run_id: str) -> dict[str, object]:
     return {"slug": slug, "run_id": run_id, "events": events}
 
 
-@app.get("/campaigns/{slug}/stream")
-def stream(slug: str, customer: str, stage: str | None = None) -> StreamingResponse:
-    """Stream campaign progress as Server-Sent Events.
+@app.get("/runs/{run_id}/stream")
+def stream_run(run_id: str) -> StreamingResponse:
+    """Attach to an existing run and stream its progress as Server-Sent Events.
+
+    Observing is split from starting (the run is already executing as a detached
+    background job — see ``POST /run``): this endpoint does **not** launch a run, it
+    tails the run's JSONL trace. A client attaching late is replayed the events
+    already recorded from the top of the trace, then followed live until the terminal
+    ``run.summary`` event, at which point the stream closes. Because it only reads the
+    durable trace, any number of observers can attach to the same run concurrently,
+    and a finished run replays and closes.
 
     Args:
-        slug: The campaign slug.
-        customer: The customer name.
-        stage: The single stage to run, or ``None`` for the full pipeline.
+        run_id: The id of the run to observe.
 
     Returns:
-        A streaming response emitting one SSE ``data:`` line per progress event.
+        A streaming response emitting one SSE ``data:`` frame per trace event.
+
+    Raises:
+        HTTPException: 404 if no live run and no trace exist for the run id.
     """
     settings = get_settings()
+    registry = get_registry()
+    trace_path = resolve_trace_path(settings, registry, run_id)
+    if trace_path is None:
+        raise HTTPException(404, f"No run '{run_id}'")
 
     async def event_source() -> AsyncIterator[str]:
-        """Yield each progress event as an SSE ``data:`` frame.
+        """Yield each trace event as an SSE ``data:`` frame.
 
         Yields:
             SSE-formatted event lines.
         """
-        async for event in astream_campaign(settings, customer, slug, stage=stage):
+        async for event in tail_trace(trace_path, is_live=lambda: registry.get(run_id) is not None):
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(event_source(), media_type="text/event-stream")
