@@ -9,13 +9,14 @@ through an ``lru_cache`` that each test clears.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import FAIL_VERDICT, PLACEHOLDER_DNA, install_scripted_graph
+from conftest import FAIL_VERDICT, PLACEHOLDER_DNA, BlockingChatModel, install_scripted_graph
 
 
 def _make_client(repo: Path) -> TestClient:
@@ -27,10 +28,33 @@ def _make_client(repo: Path) -> TestClient:
     Returns:
         A configured (not yet entered) FastAPI test client.
     """
-    from marketing_os.entrypoints.api.app import app, get_settings
+    from marketing_os.entrypoints.api.app import app, get_registry, get_settings
 
     get_settings.cache_clear()
+    get_registry.cache_clear()
     return TestClient(app)
+
+
+def _wait_for_status(client: TestClient, run_id: str, target: str) -> dict:
+    """Poll a run's status until it reaches ``target`` or time out.
+
+    The background run executes on the test client's portal event loop, so each
+    poll (and the sleeps between them) lets the loop advance the run.
+
+    Args:
+        client: The entered test client.
+        run_id: The run id to poll.
+        target: The status to wait for.
+
+    Returns:
+        The status payload once it matches ``target``.
+    """
+    for _ in range(200):
+        response = client.get(f"/runs/{run_id}")
+        if response.status_code == 200 and response.json()["status"] == target:
+            return response.json()
+        time.sleep(0.02)
+    raise AssertionError(f"run {run_id} never reached status {target!r}")
 
 
 @pytest.fixture
@@ -46,11 +70,12 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     install_scripted_graph(monkeypatch)
-    from marketing_os.entrypoints.api.app import get_settings
+    from marketing_os.entrypoints.api.app import get_registry, get_settings
 
     with _make_client(repo) as entered:
         yield entered
     get_settings.cache_clear()
+    get_registry.cache_clear()
 
 
 def test_health_reports_provider_and_root(client: TestClient, repo: Path) -> None:
@@ -110,12 +135,17 @@ def test_deliverables_404_when_campaign_missing(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_run_then_deliverables_lists_written_files(client: TestClient, repo: Path) -> None:
+def test_run_starts_background_job_and_returns_run_id(client: TestClient, repo: Path) -> None:
     run = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
-    assert run.status_code == 200
-    result = run.json()
-    assert result["slug"] == "acme"
-    assert [stage["stage"] for stage in result["stages"]] == ["research"]
+    assert run.status_code == 202
+    started = run.json()
+    assert started["slug"] == "acme"
+    assert started["status"] == "running"
+    run_id = started["run_id"]
+    assert run_id
+
+    completed = _wait_for_status(client, run_id, "completed")
+    assert completed["run_id"] == run_id
     assert (repo / "campaigns" / "acme" / "research.md").is_file()
 
     listing = client.get("/campaigns/acme/deliverables")
@@ -132,21 +162,28 @@ def test_run_returns_409_when_gate_fails(client: TestClient, repo: Path) -> None
     assert response.json()["detail"]["type"] == "gate"
 
 
-def test_run_returns_422_on_guardrail_failure(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_background_job_fails_on_guardrail_failure(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     monkeypatch.setenv("MARKETING_OS_MAX_QA", "1")
     install_scripted_graph(monkeypatch, verdicts=[FAIL_VERDICT])
-    from marketing_os.entrypoints.api.app import get_settings
+    from marketing_os.entrypoints.api.app import get_registry, get_settings
 
     with _make_client(repo) as client:
-        response = client.post(
-            "/campaigns/acme/run", json={"customer": "acme", "stage": "research"}
-        )
+        started = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+        assert started.status_code == 202
+        run_id = started.json()["run_id"]
+
+        failed = _wait_for_status(client, run_id, "failed")
+        assert failed["status"] == "failed"
+        trace = client.get(f"/campaigns/acme/runs/{run_id}").json()["events"]
+
     get_settings.cache_clear()
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert detail["type"] == "guardrail"
-    assert "failed QA" in detail["message"]
+    get_registry.cache_clear()
+    summary = [event for event in trace if event.get("event") == "run.summary"][-1]
+    assert summary["outcome"] == "error"
+    assert summary["error"]["type"] == "guardrail"
 
 
 def test_runs_endpoints_list_and_return_trace(client: TestClient) -> None:
@@ -154,13 +191,15 @@ def test_runs_endpoints_list_and_return_trace(client: TestClient) -> None:
     assert empty.status_code == 200
     assert empty.json()["runs"] == []
 
-    client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+    started = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+    run_id = started.json()["run_id"]
+    _wait_for_status(client, run_id, "completed")
 
     listing = client.get("/campaigns/acme/runs")
     runs = listing.json()["runs"]
-    assert len(runs) == 1
+    assert runs == [run_id]
 
-    trace = client.get(f"/campaigns/acme/runs/{runs[0]}")
+    trace = client.get(f"/campaigns/acme/runs/{run_id}")
     assert trace.status_code == 200
     events = trace.json()["events"]
     assert events
@@ -182,3 +221,105 @@ def test_stream_emits_sse_progress_and_done(client: TestClient, repo: Path) -> N
     assert frames
     assert '"campaign.done"' in response.text
     assert (repo / "campaigns" / "acme" / "research.md").is_file()
+
+
+def _install_blocking_client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """Build a client whose runs block in-flight until cancelled.
+
+    Each background run builds a fresh :class:`BlockingChatModel`, so a run stays
+    active in the registry — held inside the specialist's awaited LLM call — until
+    it is cancelled. Lets concurrency, cancellation, and listing be observed at the
+    HTTP layer.
+
+    Args:
+        repo: The hermetic repository root fixture.
+        monkeypatch: The pytest monkeypatch fixture.
+
+    Returns:
+        A configured (not yet entered) test client backed by blocking runs.
+    """
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    install_scripted_graph(monkeypatch, model_factory=BlockingChatModel)
+    return _make_client(repo)
+
+
+def test_second_run_same_slug_conflicts_while_cross_slug_is_concurrent(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (repo / "campaigns" / "beta").mkdir(parents=True, exist_ok=True)
+    (repo / "campaigns" / "beta" / "goal.md").write_text(
+        (repo / "campaigns" / "acme" / "goal.md").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    from marketing_os.entrypoints.api.app import get_registry, get_settings
+
+    with _install_blocking_client(repo, monkeypatch) as client:
+        first = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+        assert first.status_code == 202
+        first_id = first.json()["run_id"]
+        _wait_for_status(client, first_id, "running")
+
+        conflict = client.post(
+            "/campaigns/acme/run", json={"customer": "acme", "stage": "research"}
+        )
+        assert conflict.status_code == 409
+        detail = conflict.json()["detail"]
+        assert detail["type"] == "slug_busy"
+        assert detail["active_run_id"] == first_id
+
+        cross = client.post("/campaigns/beta/run", json={"customer": "acme", "stage": "research"})
+        assert cross.status_code == 202
+
+        active_slugs = {run["slug"] for run in client.get("/runs").json()["runs"]}
+        assert active_slugs == {"acme", "beta"}
+
+        for run_id in (first_id, cross.json()["run_id"]):
+            assert client.post(f"/runs/{run_id}/cancel").status_code == 200
+
+    get_settings.cache_clear()
+    get_registry.cache_clear()
+
+
+def test_cancel_endpoint_stops_run_and_marks_it_cancelled(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marketing_os.entrypoints.api.app import get_registry, get_settings
+
+    with _install_blocking_client(repo, monkeypatch) as client:
+        started = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+        assert started.status_code == 202
+        run_id = started.json()["run_id"]
+        assert _wait_for_status(client, run_id, "running")["status"] == "running"
+
+        cancel = client.post(f"/runs/{run_id}/cancel")
+        assert cancel.status_code == 200
+        assert cancel.json()["status"] == "cancelled"
+
+        assert client.get("/runs").json()["runs"] == []
+        assert client.get(f"/runs/{run_id}").json()["status"] == "cancelled"
+
+    get_settings.cache_clear()
+    get_registry.cache_clear()
+
+
+def test_get_run_status_404_for_unknown_run(client: TestClient) -> None:
+    assert client.get("/runs/does-not-exist").status_code == 404
+
+
+def test_cancel_404_for_unknown_run(client: TestClient) -> None:
+    assert client.post("/runs/does-not-exist/cancel").status_code == 404
+
+
+def test_get_run_status_infers_interrupted_from_orphaned_trace(
+    client: TestClient, repo: Path
+) -> None:
+    run_id = "20260704T120000Z-deadbeef"
+    trace = repo / "logs" / "acme" / f"{run_id}.jsonl"
+    trace.parent.mkdir(parents=True, exist_ok=True)
+    trace.write_text('{"event": "stage.start", "stage": "research"}\n', encoding="utf-8")
+
+    response = client.get(f"/runs/{run_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "interrupted"
+    assert body["slug"] == "acme"

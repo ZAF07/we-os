@@ -269,6 +269,29 @@ def _write_summary(trace: RunTrace | None, state: CampaignState, run_log: str | 
     )
 
 
+def _write_cancelled_summary(trace: RunTrace | None, run_log: str | None) -> None:
+    """Write the terminal ``cancelled`` summary for a run whose task was cancelled.
+
+    Cancellation is the third terminal outcome alongside ``ok`` and ``error``. It
+    rides the same issue-01 wrapper: when the run's :class:`asyncio.Task` is
+    cancelled (by the cancel endpoint), the escaping :class:`asyncio.CancelledError`
+    lands here so the trace still ends with a terminal ``run.summary`` event and a
+    later status query resolves to ``cancelled`` rather than ``interrupted``.
+
+    Args:
+        trace: The open trace, or ``None``.
+        run_log: The repo-relative trace path, if any.
+    """
+    _emit_summary(
+        trace,
+        run_log,
+        outcome="cancelled",
+        error=None,
+        results=[],
+        usage={},
+    )
+
+
 def _write_error_summary(trace: RunTrace | None, exc: BaseException, run_log: str | None) -> None:
     """Write a terminal error summary for a run killed by an escaping exception.
 
@@ -298,6 +321,7 @@ async def arun_campaign(
     slug: str,
     *,
     stage: str | None = None,
+    run_id: str | None = None,
     on_event: Callable[[dict[str, Any]], None] | None = None,
     web_backend: WebSearchTool | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
@@ -307,15 +331,19 @@ async def arun_campaign(
     This is the cancellable run path (ADR-0009): the graph is driven with
     ``astream`` so every specialist and review LLM call is an awaited coroutine.
     Launched as an :class:`asyncio.Task`, the run can be cancelled such that the
-    ``CancelledError`` aborts the in-flight LLM request. The run always streams
-    internally so every event is logged to the console and appended to the run's
-    JSONL trace, regardless of whether ``on_event`` is given.
+    ``CancelledError`` aborts the in-flight LLM request; the escaping cancellation
+    still writes a terminal ``run.summary outcome=cancelled`` before propagating.
+    The run always streams internally so every event is logged to the console and
+    appended to the run's JSONL trace, regardless of whether ``on_event`` is given.
 
     Args:
         settings: The harness settings.
         customer: The customer name.
         slug: The campaign slug.
         stage: The single stage to run, or ``None`` for the full pipeline.
+        run_id: The id used as the trace filename; a fresh id is generated when
+            ``None``. The API supplies one up front so it can register and return
+            the run before the pipeline starts.
         on_event: An optional callback invoked with each progress event.
         web_backend: The web backend for agents that declare web tools.
         checkpointer: An optional checkpointer.
@@ -332,8 +360,7 @@ async def arun_campaign(
     graph = _select_graph(settings, stage, web_backend=backend, checkpointer=checkpointer)
     config = _config(customer, slug, stage)
     inbound = {"customer": customer, "slug": slug}
-    run_id = new_run_id()
-    trace = _open_trace(settings, slug, run_id)
+    trace = _open_trace(settings, slug, run_id or new_run_id())
     run_log = _rel_log(settings, trace)
     _LOGGER.info(
         "run.start customer=%s slug=%s stage=%s run_log=%s", customer, slug, stage, run_log
@@ -350,6 +377,9 @@ async def arun_campaign(
                 on_event(chunk)
         state: CampaignState = (await graph.aget_state(config)).values
         _write_summary(trace, state, run_log)
+    except asyncio.CancelledError:
+        _write_cancelled_summary(trace, run_log)
+        raise
     except Exception as exc:
         _write_error_summary(trace, exc, run_log)
         raise
@@ -368,6 +398,7 @@ def run_campaign(
     slug: str,
     *,
     stage: str | None = None,
+    run_id: str | None = None,
     on_event: Callable[[dict[str, Any]], None] | None = None,
     web_backend: WebSearchTool | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
@@ -384,6 +415,8 @@ def run_campaign(
         customer: The customer name.
         slug: The campaign slug.
         stage: The single stage to run, or ``None`` for the full pipeline.
+        run_id: The id used as the trace filename; a fresh id is generated when
+            ``None``.
         on_event: An optional callback invoked with each progress event.
         web_backend: The web backend for agents that declare web tools.
         checkpointer: An optional checkpointer.
@@ -402,6 +435,7 @@ def run_campaign(
             customer,
             slug,
             stage=stage,
+            run_id=run_id,
             on_event=on_event,
             web_backend=web_backend,
             checkpointer=checkpointer,
