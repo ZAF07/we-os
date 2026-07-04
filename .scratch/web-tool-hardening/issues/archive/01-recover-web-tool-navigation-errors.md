@@ -1,6 +1,6 @@
 # Web tool navigation errors crash the entire pipeline run
 
-Status: ready-for-agent
+Status: completed
 
 ## Symptom
 
@@ -67,11 +67,11 @@ not bare `Exception`, so genuine harness defects still surface.
 
 ## Acceptance criteria
 
-- [ ] `web_fetch` on a non-resolving URL surfaces to the specialist as an error tool-result; the graph run continues.
-- [ ] `web_search` navigation failures behave the same way.
-- [ ] The repro above goes green.
-- [ ] Offline tests cover the wrapping (fake backend raising the Playwright error types), no live browser needed.
-- [ ] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`, `uv run pytest` all pass.
+- [x] `web_fetch` on a non-resolving URL surfaces to the specialist as an error tool-result; the graph run continues.
+- [x] `web_search` navigation failures behave the same way.
+- [x] The repro above goes green.
+- [x] Offline tests cover the wrapping (fake backend raising the Playwright error types), no live browser needed.
+- [x] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`, `uv run pytest` all pass.
 
 ## Completion
 
