@@ -263,7 +263,7 @@ def make_enter_node(settings: Settings, stage: Stage) -> CampaignNode:
         slug = state["slug"]
         customer = state["customer"]
         if not prerequisite_met(settings, slug, stage):
-            _emit("stage.blocked", stage=stage.key, prerequisite=stage.prerequisite)
+            _emit("stage.blocked", slug=slug, stage=stage.key, prerequisite=stage.prerequisite)
             return {
                 "error": {
                     "type": "pipeline",
@@ -273,7 +273,7 @@ def make_enter_node(settings: Settings, stage: Stage) -> CampaignNode:
                 "halt": True,
                 "route": "end",
             }
-        _emit("stage.start", stage=stage.key, agent=stage.agent)
+        _emit("stage.start", slug=slug, stage=stage.key, agent=stage.agent)
         task = _stage_task(settings, slug, customer, stage)
         task_body = f"{_path_anchor(slug)}\n\n# Your task\n\n{task}"
         return {
@@ -364,6 +364,7 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
         discrepancies = [d.model_dump() for d in verdict.discrepancies]
         _emit(
             "stage.review",
+            slug=slug,
             stage=stage.key,
             passed=verdict.passed,
             iteration=qa_iterations,
@@ -381,7 +382,13 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
                 verdict=verdict,
                 approved=True,
             )
-            _emit("stage.done", stage=stage.key, deliverable=str(rel), qa_iterations=qa_iterations)
+            _emit(
+                "stage.done",
+                slug=slug,
+                stage=stage.key,
+                deliverable=str(rel),
+                qa_iterations=qa_iterations,
+            )
             return {
                 "deliverable_text": text,
                 "verdict": verdict.model_dump(),
@@ -401,6 +408,7 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> Ca
             )
             _emit(
                 "stage.failed",
+                slug=slug,
                 stage=stage.key,
                 reason="qa",
                 summary=verdict.summary,
@@ -456,16 +464,16 @@ def _handle_missing_deliverable(
     Returns:
         A state update that either re-prompts the specialist to save or halts.
     """
+    slug = state["slug"]
     save_retries = state.get("save_retries", 0)
     if save_retries >= budget:
-        _emit("stage.failed", stage=stage.key, reason="not-saved")
+        _emit("stage.failed", slug=slug, stage=stage.key, reason="not-saved")
         return {
             "error": {"type": "save", "stage": stage.key, "deliverable": rel},
             "halt": True,
             "route": "fail",
         }
-    _emit("stage.save_retry", stage=stage.key, attempt=save_retries + 1)
-    slug = state["slug"]
+    _emit("stage.save_retry", slug=slug, stage=stage.key, attempt=save_retries + 1)
     task = _stage_task(settings, slug, state["customer"], stage)
     save_body = (
         f"{_path_anchor(slug)}\n\n# Your task\n\n{task}\n\n# Important\n\nYou did NOT save "
