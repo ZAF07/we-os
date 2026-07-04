@@ -17,7 +17,7 @@ The identifier for a single **campaign** — the durable thing. It names the cam
 _Avoid_: id, name, key, thread.
 
 **Run**:
-A single **execution attempt** of a campaign's pipeline, identified by a unique `run_id`. A campaign (slug) may accumulate many runs over its life — one per attempt — but **at most one run per slug may be active at a time** (a second concurrent run of the same slug is rejected). Each run has its own JSONL trace (`logs/<slug>/<run_id>.jsonl`) and, in the background-job model, its own status and cancellation handle. The slug names the campaign; the run_id names one attempt to advance it.
+A single **execution attempt** of a campaign's pipeline, identified by a unique `run_id`. A campaign (slug) may accumulate many runs over its life — one per attempt — but **at most one run per slug may be active at a time** (a second concurrent run of the same slug is rejected). Each run has its own JSONL trace (`logs/<slug>/<run_id>.jsonl`) and, in the background-job model, its own status and cancellation handle. The slug names the campaign; the run_id names one attempt to advance it. A run's **status** is one of: **running** (executing now), **completed** (finished ok), **failed** (halted on an error), **cancelled** (stopped on operator/customer request), or **interrupted** (its process died — e.g. a restart — leaving a trace with no terminal summary). Cancelling a run **abandons** it: it is not resumed, and the next run of the slug starts clean.
 _Avoid_: job (use for the background execution mechanism only), execution, session, thread.
 
 **Marketing Director**:
