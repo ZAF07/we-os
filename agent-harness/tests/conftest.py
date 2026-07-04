@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -79,6 +80,88 @@ class ProgrammableChatModel(BaseChatModel):
         self.calls.append(1)
         message = self.handler(list(messages), index)
         return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class BlockingChatModel(BaseChatModel):
+    """An async-only chat model whose ``ainvoke`` blocks until the task is cancelled.
+
+    It signals when the LLM call is in-flight via :attr:`entered` and records
+    whether that awaited call was cancelled via :attr:`was_cancelled`. Used to hold
+    a run open (blocked inside the specialist's awaited LLM call) so cancellation
+    and per-slug concurrency can be observed without any network: the run stays
+    active in the registry until its task is cancelled, at which point the awaited
+    call is aborted.
+    """
+
+    entered: asyncio.Event = Field(default_factory=asyncio.Event)
+    was_cancelled: bool = False
+    model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def _llm_type(self) -> str:
+        """Return the model type identifier."""
+        return "blocking"
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> BlockingChatModel:
+        """Ignore tool binding and return self, since the reply never arrives.
+
+        Args:
+            tools: The tools being bound (ignored).
+            **kwargs: Additional binding arguments (ignored).
+
+        Returns:
+            This model instance.
+        """
+        return self
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Fail loudly if invoked synchronously; this model is async-only.
+
+        Args:
+            messages: The conversation so far (unused).
+            stop: Stop sequences (ignored).
+            run_manager: The callback manager (ignored).
+            **kwargs: Additional arguments (ignored).
+
+        Raises:
+            NotImplementedError: Always, to prove the async path is exercised.
+        """
+        raise NotImplementedError("blocking model is async-only")
+
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Signal that the LLM call is in-flight, then block until cancelled.
+
+        Args:
+            messages: The conversation so far (unused).
+            stop: Stop sequences (ignored).
+            run_manager: The callback manager (ignored).
+            **kwargs: Additional arguments (ignored).
+
+        Returns:
+            A chat result — never reached, since the call blocks forever.
+
+        Raises:
+            asyncio.CancelledError: When the run's task is cancelled mid-call.
+        """
+        self.entered.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.was_cancelled = True
+            raise
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="unreachable"))])
 
 
 def write_call(path: str, content: str, call_id: str = "call_write") -> AIMessage:
@@ -345,6 +428,7 @@ def install_scripted_graph(
     *,
     handler: Handler = writing_handler,
     verdicts: list[ReviewVerdict] | None = None,
+    model_factory: Callable[[], BaseChatModel] | None = None,
 ) -> None:
     """Patch the runner's graph builders to inject a scripted model and reviewer.
 
@@ -355,23 +439,28 @@ def install_scripted_graph(
 
     Args:
         monkeypatch: The pytest monkeypatch fixture.
-        handler: The scripted chat-model handler.
+        handler: The scripted chat-model handler for the default model.
         verdicts: The reviewer verdict script; defaults to a single pass.
+        model_factory: A factory returning the chat model to inject per graph
+            build; defaults to a :class:`ProgrammableChatModel` driven by
+            ``handler``. Supply a factory (e.g. returning a :class:`BlockingChatModel`)
+            to hold runs open for concurrency and cancellation tests.
     """
     from marketing_os.graph import graph as graph_mod
     from marketing_os.graph import runner as runner_mod
 
     script = list(verdicts) if verdicts else [PASS_VERDICT]
+    build_model = model_factory or (lambda: ProgrammableChatModel(handler=handler))
     real_campaign = graph_mod.build_campaign_graph
     real_single = graph_mod.build_single_stage_graph
 
     def campaign(settings: Settings, **kwargs: Any) -> Any:
-        kwargs.setdefault("model", ProgrammableChatModel(handler=handler))
+        kwargs.setdefault("model", build_model())
         kwargs.setdefault("reviewer", FakeReviewer(list(script)))
         return real_campaign(settings, **kwargs)
 
     def single(settings: Settings, stage_key: str, **kwargs: Any) -> Any:
-        kwargs.setdefault("model", ProgrammableChatModel(handler=handler))
+        kwargs.setdefault("model", build_model())
         kwargs.setdefault("reviewer", FakeReviewer(list(script)))
         return real_single(settings, stage_key, **kwargs)
 

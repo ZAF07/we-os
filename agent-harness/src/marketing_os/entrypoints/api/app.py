@@ -5,7 +5,10 @@ Endpoints:
   POST /campaigns                       -> scaffold a campaign goal from the template
   GET  /campaigns/{slug}/gate?customer= -> Stage 0 gate report
   GET  /campaigns/{slug}/deliverables   -> list written deliverables
-  POST /campaigns/{slug}/run            -> run the pipeline (or one stage), return results
+  POST /campaigns/{slug}/run            -> start a background run, return its run_id (202)
+  GET  /runs                            -> list in-flight runs
+  GET  /runs/{run_id}                   -> report a run's lifecycle status
+  POST /runs/{run_id}/cancel            -> cancel an in-flight run
   GET  /campaigns/{slug}/stream?customer=&stage= -> SSE progress stream
 
 Run with:  uvicorn marketing_os.entrypoints.api.app:app --reload
@@ -17,17 +20,20 @@ import json
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from marketing_os.adapters.observability import configure_logging, configure_tracing
+from marketing_os.adapters.observability import configure_logging, configure_tracing, new_run_id
 from marketing_os.config import Settings, load_settings
-from marketing_os.errors import GateError, MarketingOSError
+from marketing_os.errors import RunConflictError
 from marketing_os.governance import check_gate
+from marketing_os.graph.registry import CANCELLED, RUNNING, RunRegistry, read_run_status
 from marketing_os.graph.runner import arun_campaign, astream_campaign
+from marketing_os.schemas import CampaignResult
 
 
 @asynccontextmanager
@@ -57,6 +63,19 @@ def get_settings() -> Settings:
         The process-wide :class:`Settings` instance.
     """
     return load_settings()
+
+
+@lru_cache(maxsize=1)
+def get_registry() -> RunRegistry:
+    """Return the process-wide registry of active background runs.
+
+    The registry is a single in-memory instance for the process lifetime (tests
+    reset it with ``get_registry.cache_clear()``, mirroring :func:`get_settings`).
+
+    Returns:
+        The shared :class:`RunRegistry`.
+    """
+    return RunRegistry()
 
 
 class CreateCampaign(BaseModel):
@@ -168,47 +187,117 @@ def deliverables(slug: str) -> dict[str, object]:
     return {"slug": slug, "files": files}
 
 
-@app.post("/campaigns/{slug}/run")
+@app.post("/campaigns/{slug}/run", status_code=202)
 async def run(slug: str, body: RunCampaign) -> dict[str, object]:
-    """Run the pipeline (or one stage) and return the structured result.
+    """Start a detached background run and return its ``run_id`` immediately.
 
-    The run executes on the async graph path (ADR-0009) so it is an awaited
-    coroutine on the event loop and can be cancelled with its in-flight LLM calls.
+    The run is a first-class background job: it executes as an :class:`asyncio.Task`
+    on the async graph path (ADR-0009), held in the process run registry keyed by
+    slug. This endpoint no longer blocks on the pipeline — observe the run via
+    :func:`get_run_status` (``GET /runs/{run_id}``) or the stream endpoint. The
+    Stage 0 gate is checked synchronously so a misconfigured campaign fails fast
+    rather than spawning a job that would immediately halt.
 
     Args:
         slug: The campaign slug.
         body: The run request.
 
     Returns:
-        The campaign result payload.
+        The new run's id, slug, stage, and initial ``running`` status.
 
     Raises:
-        HTTPException: 409 if the gate failed, 422 for any other harness error.
+        HTTPException: 409 if the gate failed or the slug already has an active run.
     """
     settings = get_settings()
+    report = check_gate(settings, body.customer, slug)
+    if not report.ok:
+        raise HTTPException(
+            409, {"type": "gate", "message": "Stage 0 gate failed", "issues": report.all_issues}
+        )
+    run_id = new_run_id()
+
+    async def launch() -> CampaignResult:
+        """Execute the background run to completion on the async graph path.
+
+        Returns:
+            The structured campaign result.
+        """
+        return await arun_campaign(settings, body.customer, slug, stage=body.stage, run_id=run_id)
+
     try:
-        result = await arun_campaign(settings, body.customer, slug, stage=body.stage)
-    except GateError as exc:
-        raise HTTPException(409, _error_detail(exc)) from exc
-    except MarketingOSError as exc:
-        raise HTTPException(422, _error_detail(exc)) from exc
-    return result.model_dump()
+        get_registry().start(
+            run_id=run_id,
+            slug=slug,
+            stage=body.stage,
+            customer=body.customer,
+            launch=launch,
+        )
+    except RunConflictError as exc:
+        raise HTTPException(
+            409,
+            {"type": "slug_busy", "message": str(exc), "active_run_id": exc.active_run_id},
+        ) from exc
+    return {"run_id": run_id, "slug": slug, "stage": body.stage, "status": RUNNING}
 
 
-def _error_detail(exc: MarketingOSError) -> dict[str, object]:
-    """Build the structured error body for a failed run.
-
-    Args:
-        exc: The raised harness error, which may carry a ``detail`` payload with
-            the stage, discrepancies, and run-log path.
+@app.get("/runs")
+def list_active_runs() -> dict[str, object]:
+    """List the runs currently in flight across all campaigns.
 
     Returns:
-        The structured detail dict returned to the client.
+        The active runs, each with its ``run_id``, ``slug``, ``stage``, and
+        ``customer``.
     """
-    detail = getattr(exc, "detail", None)
-    if isinstance(detail, dict):
-        return detail
-    return {"message": str(exc)}
+    runs = [
+        {"run_id": run.run_id, "slug": run.slug, "stage": run.stage, "customer": run.customer}
+        for run in get_registry().active()
+    ]
+    return {"runs": runs}
+
+
+@app.get("/runs/{run_id}")
+def get_run_status(run_id: str) -> dict[str, object]:
+    """Report a run's lifecycle status across its five terminal and live states.
+
+    Resolves ``running`` from the live registry, or ``completed`` / ``failed`` /
+    ``cancelled`` / ``interrupted`` from the run's JSONL trace.
+
+    Args:
+        run_id: The run id to query.
+
+    Returns:
+        The run's id, slug, stage, and status.
+
+    Raises:
+        HTTPException: 404 if the run id is unknown (no live run and no trace).
+    """
+    status = read_run_status(get_settings(), get_registry(), run_id)
+    if status is None:
+        raise HTTPException(404, f"No run '{run_id}'")
+    return asdict(status)
+
+
+@app.post("/runs/{run_id}/cancel")
+async def cancel_run(run_id: str) -> dict[str, object]:
+    """Cancel an in-flight run, aborting its in-flight LLM call.
+
+    Cancelling the run's task lands a :class:`asyncio.CancelledError` inside the
+    specialist's awaited LLM call (ADR-0009); the trace ends with a terminal
+    ``run.summary outcome=cancelled`` event and the run leaves the live registry.
+
+    Args:
+        run_id: The id of the run to cancel.
+
+    Returns:
+        The cancelled run's id, slug, and ``cancelled`` status.
+
+    Raises:
+        HTTPException: 404 if no live run has that id (already finished or unknown).
+    """
+    cancelled = await get_registry().cancel(run_id)
+    if cancelled is None:
+        raise HTTPException(404, f"No active run '{run_id}'")
+    return {"run_id": run_id, "slug": cancelled.slug, "status": CANCELLED}
 
 
 @app.get("/campaigns/{slug}/runs")

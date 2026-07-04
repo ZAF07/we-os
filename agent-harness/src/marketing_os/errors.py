@@ -45,6 +45,26 @@ class GateError(MarketingOSError):
         self.missing: list[str] = missing or []
 
 
+class RunConflictError(MarketingOSError):
+    """A run was requested for a slug that already has an active run.
+
+    At most one run per slug may be active at a time (both full-pipeline and
+    single-stage runs write into ``campaigns/<slug>/``), so a second request is
+    rejected. Carries the ``run_id`` of the run already in flight.
+    """
+
+    def __init__(self, slug: str, active_run_id: str) -> None:
+        """Initialise the error.
+
+        Args:
+            slug: The campaign slug that already has an active run.
+            active_run_id: The id of the run already in flight for the slug.
+        """
+        super().__init__(f"Campaign '{slug}' already has an active run '{active_run_id}'.")
+        self.slug = slug
+        self.active_run_id = active_run_id
+
+
 class PipelineError(MarketingOSError):
     """A stage was started out of order or its prerequisite deliverable is absent."""
 
