@@ -74,11 +74,12 @@ def _resolve_web_backend(
 
     A caller-supplied ``web_backend`` is used as-is and never closed by the runner
     (the caller owns it). Otherwise the backend is gated on ``settings.enable_web``
-    (``MARKETING_OS_WEB=1``): when web access is enabled a
-    :class:`PlaywrightWebSearch` is created and owned by the runner (closed when the
-    run ends); when disabled the result is ``None`` so ``build_tools`` falls back to
-    :class:`NoopWebSearch`. The Playwright driver is launched lazily on first tool
-    call, so an owned-but-unused backend stays cheap.
+    (``MARKETING_OS_WEB=1``): when web access is enabled a fallback chain is built
+    from ``settings.web_backends`` (an ordered list of ``google`` / ``duckduckgo``
+    / ``noop``) and owned by the runner (closed when the run ends); when disabled
+    the result is ``None`` so ``build_tools`` falls back to :class:`NoopWebSearch`.
+    Each backend's Playwright driver is launched lazily on first tool call, so an
+    owned-but-unused chain stays cheap.
 
     Args:
         settings: The harness settings.
@@ -92,9 +93,9 @@ def _resolve_web_backend(
         return web_backend, False
     if not settings.enable_web:
         return None, False
-    from marketing_os.adapters.tools.websearch_playwright import PlaywrightWebSearch
+    from marketing_os.adapters.tools import build_web_backend
 
-    return PlaywrightWebSearch(), True
+    return build_web_backend(settings.web_backends), True
 
 
 def _raise_on_error(state: CampaignState, run_log: str | None) -> None:

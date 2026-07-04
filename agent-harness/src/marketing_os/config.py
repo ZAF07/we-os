@@ -18,6 +18,51 @@ from marketing_os.errors import ConfigError
 _CLAUDE_DIR_NAME = ".claude"
 
 
+class WebBackend(StrEnum):
+    """A selectable web-search backend for the fallback chain.
+
+    Attributes:
+        GOOGLE: The Google-scraping Playwright backend.
+        DUCKDUCKGO: The DuckDuckGo-scraping Playwright backend.
+        NOOP: The no-op backend reporting that web search is unavailable.
+    """
+
+    GOOGLE = "google"
+    DUCKDUCKGO = "duckduckgo"
+    NOOP = "noop"
+
+
+_DEFAULT_WEB_BACKENDS = (WebBackend.GOOGLE, WebBackend.DUCKDUCKGO)
+
+
+def _parse_web_backends(raw: str) -> list[WebBackend]:
+    """Parse the ordered web-backend selector into validated backends.
+
+    Args:
+        raw: The comma-separated ``MARKETING_OS_WEB_BACKENDS`` value.
+
+    Returns:
+        The selected backends in priority order, empty entries dropped; the
+        default order (Google then DuckDuckGo) when nothing usable is given.
+
+    Raises:
+        ConfigError: If the value names a backend that does not exist.
+    """
+    tokens = [item.strip().lower() for item in raw.split(",") if item.strip()]
+    if not tokens:
+        return list(_DEFAULT_WEB_BACKENDS)
+    backends: list[WebBackend] = []
+    for token in tokens:
+        try:
+            backends.append(WebBackend(token))
+        except ValueError as exc:
+            known = ", ".join(member.value for member in WebBackend)
+            raise ConfigError(
+                f"Unknown web backend '{token}' in MARKETING_OS_WEB_BACKENDS. Known: {known}."
+            ) from exc
+    return backends
+
+
 class Role(StrEnum):
     """A model role whose per-role overrides the settings may resolve.
 
@@ -102,6 +147,9 @@ class Settings:
         max_qa_iterations: The revision budget for the per-stage QA loop.
         stream: Whether the CLI streams progress events.
         enable_web: Whether web-search tools are wired for agents that declare them.
+        web_backends: The ordered web-search backends to try when web is enabled
+            (``google`` / ``duckduckgo`` / ``noop``); the resolver builds a
+            fallback chain in this order. Defaults to Google then DuckDuckGo.
         log_level: The console logging level (``DEBUG`` | ``INFO`` | ``WARNING`` | …).
         run_logs: Whether to write a per-run JSONL trace under ``logs/``.
         reviewer_thinking: Whether the QA reviewer runs in thinking mode. Off by
@@ -121,6 +169,9 @@ class Settings:
     )
     stream: bool = field(default_factory=lambda: os.environ.get("MARKETING_OS_STREAM", "1") != "0")
     enable_web: bool = field(default_factory=lambda: os.environ.get("MARKETING_OS_WEB", "0") == "1")
+    web_backends: list[WebBackend] = field(
+        default_factory=lambda: _parse_web_backends(os.environ.get("MARKETING_OS_WEB_BACKENDS", ""))
+    )
     log_level: str = field(default_factory=lambda: os.environ.get("MARKETING_OS_LOG_LEVEL", "INFO"))
     run_logs: bool = field(
         default_factory=lambda: os.environ.get("MARKETING_OS_RUN_LOGS", "1") != "0"

@@ -12,15 +12,23 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from marketing_os.adapters.tools import NoopWebSearch, PlaywrightWebSearch, build_tools
+from marketing_os.adapters.tools import (
+    FallbackWebSearch,
+    GoogleWebSearch,
+    NoopWebSearch,
+    PlaywrightWebSearch,
+    WebSearchTool,
+    build_tools,
+    build_web_backend,
+)
 from marketing_os.adapters.tools.sandbox import FilesystemSandbox
 from marketing_os.adapters.tools.websearch_playwright import (
     _decode_result_href,
     _format_results,
     _trim_text,
 )
-from marketing_os.config import Settings
-from marketing_os.errors import ToolError
+from marketing_os.config import Settings, WebBackend
+from marketing_os.errors import ConfigError, ToolError
 from marketing_os.graph.runner import _resolve_web_backend
 
 
@@ -57,10 +65,14 @@ class _FakePage:
         blocks: list[_FakeElement] | None = None,
         body_text: str = "",
         goto_error: Exception | None = None,
+        result_selector: str = ".result",
+        url: str = "https://search.test/",
     ) -> None:
         self._blocks = blocks or []
         self._body_text = body_text
         self._goto_error = goto_error
+        self._result_selector = result_selector
+        self.url = url
         self.visited: list[str] = []
         self.closed = False
 
@@ -73,7 +85,7 @@ class _FakePage:
             raise self._goto_error
 
     def query_selector_all(self, selector: str) -> list[_FakeElement]:
-        return self._blocks if selector == ".result" else []
+        return self._blocks if selector == self._result_selector else []
 
     def inner_text(self, selector: str) -> str:
         return self._body_text
@@ -90,6 +102,26 @@ def _result_block(title: str, href: str, snippet: str) -> _FakeElement:
             ".result__snippet": _FakeElement(text=snippet),
         }
     )
+
+
+def _google_block(title: str, href: str, snippet: str) -> _FakeElement:
+    """Build a fake Google ``div.g`` block with an anchor, title, and snippet."""
+    return _FakeElement(
+        children={
+            "a": _FakeElement(attrs={"href": href}),
+            "h3": _FakeElement(text=title),
+            "div.VwiC3b": _FakeElement(text=snippet),
+        }
+    )
+
+
+def _google_page(
+    blocks: list[_FakeElement] | None = None,
+    *,
+    url: str = "https://www.google.com/search?q=x",
+) -> _FakePage:
+    """Build a fake page shaped like a Google results page."""
+    return _FakePage(blocks=blocks, result_selector="div.g", url=url)
 
 
 def test_decode_result_href_unwraps_duckduckgo_redirect() -> None:
@@ -320,7 +352,7 @@ def test_resolve_web_backend_gates_on_enable_web(settings: Settings) -> None:
 
     settings.enable_web = True
     backend, owns = _resolve_web_backend(settings, None)
-    assert isinstance(backend, PlaywrightWebSearch)
+    assert isinstance(backend, FallbackWebSearch)
     assert owns is True
 
 
@@ -350,3 +382,213 @@ def test_build_tools_defaults_to_noop_when_no_backend(settings: Settings) -> Non
     web_search = next(t for t in tools if t.name == "web_search")
 
     assert "not configured" in web_search.invoke({"query": "beans"})
+
+
+# --- Google backend ---------------------------------------------------------
+
+
+def test_google_search_hits_google_and_parses_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = _google_page(
+        [
+            _google_block("First", "https://one.test", "Snippet one."),
+            _google_block("Second", "https://two.test", "Snippet two."),
+        ]
+    )
+    backend = GoogleWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+
+    out = backend.search("green beans", max_results=5)
+
+    assert "google.com/search" in page.visited[0]
+    assert "green+beans" in page.visited[0]
+    assert "https://one.test" in out and "https://two.test" in out
+    assert "First" in out and "Second" in out
+    assert page.closed is True
+
+
+def test_google_search_respects_max_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = _google_page([_google_block(f"R{i}", f"https://r{i}.test", "s") for i in range(5)])
+    backend = GoogleWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+
+    out = backend.search("q", max_results=2)
+
+    assert "R0" in out and "R1" in out
+    assert "R2" not in out
+
+
+def test_google_search_raises_tool_error_on_consent_wall(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A consent-wall redirect must surface as a recoverable ``ToolError``."""
+    page = _google_page([], url="https://consent.google.com/m?continue=...")
+    backend = GoogleWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+
+    with pytest.raises(ToolError):
+        backend.search("beans")
+    assert page.closed is True
+
+
+def test_google_search_raises_tool_error_on_captcha(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A bot-detection ``/sorry/`` redirect must surface as a recoverable ``ToolError``."""
+    page = _google_page(
+        [_google_block("X", "https://x.test", "s")],
+        url="https://www.google.com/sorry/index?continue=...",
+    )
+    backend = GoogleWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+
+    with pytest.raises(ToolError):
+        backend.search("beans")
+
+
+def test_google_search_raises_tool_error_on_zero_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Markup that yields no parseable results is recoverable, not a friendly empty."""
+    page = _google_page([])
+    backend = GoogleWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+
+    with pytest.raises(ToolError):
+        backend.search("beans")
+
+
+def test_google_fetch_reuses_playwright_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``fetch`` is inherited from the Playwright base — no Google-specific logic."""
+    page = _FakePage(body_text="  Hello   world  ")
+    backend = GoogleWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+
+    assert backend.fetch("https://example.com") == "Hello world"
+    assert page.visited == ["https://example.com"]
+
+
+# --- Fallback chain ---------------------------------------------------------
+
+
+class _StubBackend(WebSearchTool):
+    """A scripted backend that returns a string, raises, or reports empty."""
+
+    def __init__(self, *, result: str | None = None, error: Exception | None = None) -> None:
+        self._result = result
+        self._error = error
+        self.searched = False
+        self.closed = False
+
+    def search(self, query: str, max_results: int = 5) -> str:
+        self.searched = True
+        if self._error is not None:
+            raise self._error
+        assert self._result is not None
+        return self._result
+
+    def fetch(self, url: str) -> str:
+        if self._error is not None:
+            raise self._error
+        assert self._result is not None
+        return self._result
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_fallback_returns_first_successful_backend() -> None:
+    first = _StubBackend(result="hit from first")
+    second = _StubBackend(result="hit from second")
+    chain = FallbackWebSearch([first, second])
+
+    assert chain.search("q") == "hit from first"
+    assert second.searched is False
+
+
+def test_fallback_falls_through_on_tool_error() -> None:
+    first = _StubBackend(error=ToolError("google blocked"))
+    second = _StubBackend(result="hit from second")
+    chain = FallbackWebSearch([first, second])
+
+    assert chain.search("q") == "hit from second"
+    assert first.searched is True and second.searched is True
+
+
+def test_fallback_falls_through_on_empty_result() -> None:
+    first = _StubBackend(result='No web results found for "q".')
+    second = _StubBackend(result="hit from second")
+    chain = FallbackWebSearch([first, second])
+
+    assert chain.search("q") == "hit from second"
+
+
+def test_fallback_single_backend_returns_empty_as_today() -> None:
+    """A single configured backend behaves exactly as today: empty is not an error."""
+    only = _StubBackend(result='No web results found for "q".')
+    chain = FallbackWebSearch([only])
+
+    assert chain.search("q") == 'No web results found for "q".'
+
+
+def test_fallback_reraises_last_backend_tool_error() -> None:
+    first = _StubBackend(error=ToolError("first down"))
+    second = _StubBackend(error=ToolError("second down"))
+    chain = FallbackWebSearch([first, second])
+
+    with pytest.raises(ToolError):
+        chain.search("q")
+
+
+def test_fallback_close_cascades_to_all_backends() -> None:
+    first = _StubBackend(result="a")
+    second = _StubBackend(result="b")
+    FallbackWebSearch([first, second]).close()
+
+    assert first.closed is True and second.closed is True
+
+
+def test_fallback_fetch_delegates_and_falls_through() -> None:
+    first = _StubBackend(error=ToolError("cannot fetch"))
+    second = _StubBackend(result="page text")
+    chain = FallbackWebSearch([first, second])
+
+    assert chain.fetch("https://x.test") == "page text"
+
+
+# --- Backend registry + config-driven resolution ----------------------------
+
+
+def test_build_web_backend_composes_named_chain() -> None:
+    chain = build_web_backend([WebBackend.GOOGLE, WebBackend.DUCKDUCKGO])
+    assert isinstance(chain, FallbackWebSearch)
+    assert isinstance(chain.backends[0], GoogleWebSearch)
+    assert isinstance(chain.backends[1], PlaywrightWebSearch)
+
+
+def test_build_web_backend_rejects_empty_chain() -> None:
+    with pytest.raises(ConfigError):
+        build_web_backend([])
+
+
+def test_resolve_web_backend_builds_configured_chain(settings: Settings) -> None:
+    settings.enable_web = True
+    settings.web_backends = [WebBackend.GOOGLE, WebBackend.DUCKDUCKGO]
+    backend, owns = _resolve_web_backend(settings, None)
+
+    assert isinstance(backend, FallbackWebSearch)
+    assert isinstance(backend.backends[0], GoogleWebSearch)
+    assert owns is True
+
+
+def test_settings_parse_web_backends_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKETING_OS_WEB_BACKENDS", "duckduckgo, google , noop")
+    assert Settings().web_backends == [
+        WebBackend.DUCKDUCKGO,
+        WebBackend.GOOGLE,
+        WebBackend.NOOP,
+    ]
+
+
+def test_settings_defaults_web_backends_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MARKETING_OS_WEB_BACKENDS", raising=False)
+    assert Settings().web_backends == [WebBackend.GOOGLE, WebBackend.DUCKDUCKGO]
+
+
+def test_settings_rejects_unknown_web_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKETING_OS_WEB_BACKENDS", "google,bing")
+    with pytest.raises(ConfigError):
+        Settings()

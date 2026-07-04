@@ -41,6 +41,8 @@ _WHITESPACE = re.compile(r"[ \t\f\v]+")
 
 _T = TypeVar("_T")
 
+NO_RESULTS_PREFIX = "No web results found"
+
 
 def _decode_result_href(href: str) -> str:
     """Unwrap a DuckDuckGo HTML redirect link to the real destination URL.
@@ -76,7 +78,7 @@ def _format_results(query: str, items: list[dict[str, str]]) -> str:
         message when ``items`` is empty.
     """
     if not items:
-        return f'No web results found for "{query}".'
+        return f'{NO_RESULTS_PREFIX} for "{query}".'
     lines = [f'Web results for "{query}":', ""]
     for index, item in enumerate(items, start=1):
         lines.append(f"{index}. {item['title']}")
@@ -111,7 +113,14 @@ def _trim_text(text: str, max_chars: int = _FETCH_MAX_CHARS) -> str:
 
 
 class PlaywrightWebSearch(WebSearchTool):
-    """Browser-driven search and fetch backed by a headless Chromium."""
+    """Browser-driven DuckDuckGo search and fetch backed by a headless Chromium.
+
+    The browser lifecycle, threading model, and :meth:`fetch` are engine-agnostic;
+    only the search URL template and :meth:`_extract_results` (result-markup
+    parsing) are DuckDuckGo-specific. Subclasses target a different engine by
+    overriding those two, keeping the rest of the machinery — see
+    :class:`~marketing_os.adapters.tools.websearch_playwright.GoogleWebSearch`.
+    """
 
     def __init__(
         self,
@@ -232,23 +241,37 @@ class PlaywrightWebSearch(WebSearchTool):
         page = self._new_page()
         try:
             self._navigate(page, url)
-            items: list[dict[str, str]] = []
-            for block in page.query_selector_all(".result"):
-                anchor = block.query_selector("a.result__a")
-                if anchor is None:
-                    continue
-                title = (anchor.inner_text() or "").strip()
-                href = _decode_result_href(anchor.get_attribute("href") or "")
-                if not title or not href:
-                    continue
-                snippet_el = block.query_selector(".result__snippet")
-                snippet = (snippet_el.inner_text() or "").strip() if snippet_el else ""
-                items.append({"title": title, "url": href, "snippet": snippet})
-                if len(items) >= max_results:
-                    break
+            items = self._extract_results(page, query, max_results)
             return _format_results(query, items)
         finally:
             page.close()
+
+    def _extract_results(self, page: Any, query: str, max_results: int) -> list[dict[str, str]]:
+        """Parse DuckDuckGo HTML result blocks into source-attributed records.
+
+        Args:
+            page: The Playwright page positioned on the results page.
+            query: The search query the results are for.
+            max_results: The maximum number of results to return.
+
+        Returns:
+            Result records, each with ``title``, ``url``, and ``snippet`` keys.
+        """
+        items: list[dict[str, str]] = []
+        for block in page.query_selector_all(".result"):
+            anchor = block.query_selector("a.result__a")
+            if anchor is None:
+                continue
+            title = (anchor.inner_text() or "").strip()
+            href = _decode_result_href(anchor.get_attribute("href") or "")
+            if not title or not href:
+                continue
+            snippet_el = block.query_selector(".result__snippet")
+            snippet = (snippet_el.inner_text() or "").strip() if snippet_el else ""
+            items.append({"title": title, "url": href, "snippet": snippet})
+            if len(items) >= max_results:
+                break
+        return items
 
     def fetch(self, url: str) -> str:
         """Fetch a URL and return its readable text content.
@@ -308,3 +331,73 @@ class PlaywrightWebSearch(WebSearchTool):
         if self._playwright is not None:
             self._playwright.stop()
             self._playwright = None
+
+
+_GOOGLE_BLOCK_MARKERS = ("consent.google.com", "/sorry/", "/sorry?")
+
+
+class GoogleWebSearch(PlaywrightWebSearch):
+    """Browser-driven Google search, reusing the Playwright fetch and lifecycle.
+
+    Only the search URL template and result parsing differ from the DuckDuckGo
+    base: this backend queries ``google.com/search`` and reads Google's result
+    markup. Google's anti-automation responses — a consent interstitial, a
+    ``/sorry/`` CAPTCHA / bot-detection redirect, or markup that parses to zero
+    results — are all treated as recoverable and raised as :class:`ToolError` so
+    a backend fallback chain can move to the next engine and the run continues
+    (rather than dead-ending or crashing).
+    """
+
+    def __init__(self, *, headless: bool = True, timeout_ms: int = 20_000) -> None:
+        """Configure the backend to search Google.
+
+        Args:
+            headless: Whether to launch the browser headless.
+            timeout_ms: The per-navigation timeout in milliseconds.
+        """
+        super().__init__(
+            search_engine_url="https://www.google.com/search?q={query}",
+            headless=headless,
+            timeout_ms=timeout_ms,
+        )
+
+    def _extract_results(self, page: Any, query: str, max_results: int) -> list[dict[str, str]]:
+        """Parse Google result blocks, raising ``ToolError`` on blocked or empty pages.
+
+        Args:
+            page: The Playwright page positioned on the results page.
+            query: The search query the results are for.
+            max_results: The maximum number of results to return.
+
+        Returns:
+            Result records, each with ``title``, ``url``, and ``snippet`` keys.
+
+        Raises:
+            ToolError: If Google served a consent or CAPTCHA page, or the markup
+                yielded no parseable results — all recoverable, feeding a fallback.
+        """
+        landing = getattr(page, "url", "") or ""
+        if any(marker in landing for marker in _GOOGLE_BLOCK_MARKERS):
+            raise ToolError(
+                f"Google blocked the search for '{query}' (consent or CAPTCHA): {landing}"
+            )
+        items: list[dict[str, str]] = []
+        for block in page.query_selector_all("div.g"):
+            anchor = block.query_selector("a")
+            if anchor is None:
+                continue
+            href = (anchor.get_attribute("href") or "").strip()
+            title_el = block.query_selector("h3")
+            title = (title_el.inner_text() or "").strip() if title_el else ""
+            if not title or not href.startswith("http"):
+                continue
+            snippet_el = block.query_selector("div.VwiC3b")
+            snippet = (snippet_el.inner_text() or "").strip() if snippet_el else ""
+            items.append({"title": title, "url": href, "snippet": snippet})
+            if len(items) >= max_results:
+                break
+        if not items:
+            raise ToolError(
+                f"Google returned no parseable results for '{query}' (markup change or soft block)."
+            )
+        return items
