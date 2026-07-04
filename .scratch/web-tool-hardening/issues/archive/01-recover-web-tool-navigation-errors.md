@@ -72,3 +72,8 @@ not bare `Exception`, so genuine harness defects still surface.
 - [ ] The repro above goes green.
 - [ ] Offline tests cover the wrapping (fake backend raising the Playwright error types), no live browser needed.
 - [ ] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`, `uv run pytest` all pass.
+
+## Completion
+
+- Completed: 2026-07-04
+- Commit: `e50ffe7a2a2e0e85f7bf47e2ad92dfc6f213189b`
