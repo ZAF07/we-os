@@ -20,6 +20,7 @@ from marketing_os.adapters.tools.websearch_playwright import (
     _trim_text,
 )
 from marketing_os.config import Settings
+from marketing_os.errors import ToolError
 from marketing_os.graph.runner import _resolve_web_backend
 
 
@@ -55,9 +56,11 @@ class _FakePage:
         *,
         blocks: list[_FakeElement] | None = None,
         body_text: str = "",
+        goto_error: Exception | None = None,
     ) -> None:
         self._blocks = blocks or []
         self._body_text = body_text
+        self._goto_error = goto_error
         self.visited: list[str] = []
         self.closed = False
 
@@ -66,6 +69,8 @@ class _FakePage:
 
     def goto(self, url: str, wait_until: str | None = None) -> None:
         self.visited.append(url)
+        if self._goto_error is not None:
+            raise self._goto_error
 
     def query_selector_all(self, selector: str) -> list[_FakeElement]:
         return self._blocks if selector == ".result" else []
@@ -163,6 +168,108 @@ def test_fetch_returns_trimmed_body_text(monkeypatch: pytest.MonkeyPatch) -> Non
     assert out == "Hello world\n\nagain"
     assert page.visited == ["https://example.com"]
     assert page.closed is True
+
+
+def test_fetch_wraps_navigation_failure_as_tool_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A browser navigation failure must surface as a recoverable ``ToolError``.
+
+    LLMs regularly pick dead or hallucinated URLs; Playwright raises a raw
+    ``Error`` (for example ``ERR_NAME_NOT_RESOLVED``) that must be translated at
+    the backend seam so ``recover_tool_errors`` returns it to the specialist
+    instead of killing the run.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+
+    url = "https://definitely-not-a-real-domain-x9q2.invalid/"
+    page = _FakePage(goto_error=PlaywrightError("net::ERR_NAME_NOT_RESOLVED"))
+    backend = PlaywrightWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+
+    with pytest.raises(ToolError) as excinfo:
+        backend.fetch(url)
+
+    assert url in str(excinfo.value)
+    assert page.closed is True
+
+
+def test_search_wraps_navigation_failure_as_tool_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A search navigation failure must surface as a recoverable ``ToolError``."""
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+    page = _FakePage(goto_error=PlaywrightTimeoutError("Timeout 20000ms exceeded"))
+    backend = PlaywrightWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+
+    with pytest.raises(ToolError):
+        backend.search("green beans")
+
+    assert page.closed is True
+
+
+def test_fetch_wrapped_error_recovers_through_web_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ``WebFetch`` tool re-raises the ``ToolError`` for the middleware to catch.
+
+    This is the issue's repro: ``web_fetch`` on a non-resolving URL must raise
+    ``ToolError`` (which ``recover_tool_errors`` converts into an error
+    tool-result) rather than a raw Playwright error that is fatal to the run.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+
+    from marketing_os.adapters.tools.websearch import web_tools
+
+    url = "https://definitely-not-a-real-domain-x9q2.invalid/"
+    page = _FakePage(goto_error=PlaywrightError("net::ERR_NAME_NOT_RESOLVED"))
+    backend = PlaywrightWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+
+    web_fetch = web_tools(backend)["WebFetch"]
+
+    with pytest.raises(ToolError):
+        web_fetch.invoke({"url": url})
+
+
+def test_navigation_failure_recovers_into_error_tool_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wrapped navigation failure comes back as an error ``ToolMessage``.
+
+    This closes the chain the issue cares about: the ``ToolError`` the backend
+    raises must be turned into a recoverable error tool-result by
+    ``recover_tool_errors`` so the specialist retries a different source and the
+    graph run continues, instead of the exception escaping the tool node.
+    """
+    from langchain.agents.middleware import ToolCallRequest
+    from playwright.sync_api import Error as PlaywrightError
+
+    from marketing_os.adapters.tools.websearch import web_tools
+    from marketing_os.agents.middleware import recover_tool_errors
+
+    url = "https://definitely-not-a-real-domain-x9q2.invalid/"
+    page = _FakePage(goto_error=PlaywrightError("net::ERR_NAME_NOT_RESOLVED"))
+    backend = PlaywrightWebSearch()
+    monkeypatch.setattr(backend, "_new_page", lambda: page)
+    web_fetch = web_tools(backend)["WebFetch"]
+
+    request = ToolCallRequest(
+        tool_call={"id": "call-1", "name": "web_fetch", "args": {"url": url}},
+        tool=web_fetch,
+        state={},
+        runtime=None,
+    )
+
+    result = recover_tool_errors.wrap_tool_call(
+        request, lambda req: web_fetch.invoke(req.tool_call["args"])
+    )
+
+    assert result.status == "error"
+    assert url in result.content
+    assert result.tool_call_id == "call-1"
 
 
 def test_search_confines_playwright_work_to_one_dedicated_thread(

@@ -34,6 +34,7 @@ from typing import Any, TypeVar
 from urllib.parse import parse_qs, quote_plus, urlparse
 
 from marketing_os.adapters.tools.websearch import WebSearchTool
+from marketing_os.errors import ToolError
 
 _FETCH_MAX_CHARS = 8_000
 _WHITESPACE = re.compile(r"[ \t\f\v]+")
@@ -175,6 +176,30 @@ class PlaywrightWebSearch(WebSearchTool):
         page.set_default_timeout(self.timeout_ms)
         return page
 
+    def _navigate(self, page: Any, url: str) -> None:
+        """Navigate a page to a URL, translating browser failures to ``ToolError``.
+
+        Navigation is the one browser step that fails on routine bad input —
+        dead or hallucinated URLs, DNS misses, timeouts, TLS and HTTP-level
+        aborts — which Playwright surfaces as a raw ``Error``. Wrapping it as a
+        ``ToolError`` lets ``recover_tool_errors`` hand the failure back to the
+        specialist as an error tool-result so it retries a different source,
+        instead of the exception killing the whole run.
+
+        Args:
+            page: The Playwright page to drive.
+            url: The URL to navigate to.
+
+        Raises:
+            ToolError: If Playwright fails to navigate to ``url``.
+        """
+        from playwright.sync_api import Error as PlaywrightError
+
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+        except PlaywrightError as exc:
+            raise ToolError(f"Could not load {url}: {exc}") from exc
+
     def search(self, query: str, max_results: int = 5) -> str:
         """Run a search and return a readable, source-attributed result list.
 
@@ -187,6 +212,9 @@ class PlaywrightWebSearch(WebSearchTool):
 
         Returns:
             A readable, source-attributed result string.
+
+        Raises:
+            ToolError: If the browser cannot load the search results page.
         """
         return self._run_on_worker(self._search_on_worker, query, max_results)
 
@@ -203,7 +231,7 @@ class PlaywrightWebSearch(WebSearchTool):
         url = self.search_engine_url.format(query=quote_plus(query))
         page = self._new_page()
         try:
-            page.goto(url, wait_until="domcontentloaded")
+            self._navigate(page, url)
             items: list[dict[str, str]] = []
             for block in page.query_selector_all(".result"):
                 anchor = block.query_selector("a.result__a")
@@ -233,6 +261,9 @@ class PlaywrightWebSearch(WebSearchTool):
 
         Returns:
             The trimmed readable text of the page.
+
+        Raises:
+            ToolError: If the browser cannot load the URL.
         """
         return self._run_on_worker(self._fetch_on_worker, url)
 
@@ -247,7 +278,7 @@ class PlaywrightWebSearch(WebSearchTool):
         """
         page = self._new_page()
         try:
-            page.goto(url, wait_until="domcontentloaded")
+            self._navigate(page, url)
             text = page.inner_text("body") or ""
         finally:
             page.close()
