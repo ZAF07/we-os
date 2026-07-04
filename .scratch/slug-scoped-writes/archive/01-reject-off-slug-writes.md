@@ -16,15 +16,20 @@ Keep the guard specific: the raised `ToolError` message should name both the slu
 
 ## Acceptance criteria
 
-- [ ] A `write_file` call whose path is not under `campaigns/<run-slug>/` is rejected with a `ToolError` (not written to disk) rather than succeeding silently.
-- [ ] The rejection is recoverable: the specialist receives an error tool-result via `recover_tool_errors` and can retry, and a subsequent correctly-slugged write succeeds and is picked up by the review node.
-- [ ] The error message names the offending slug and the correct run slug and tells the model to use the run slug verbatim.
-- [ ] A correctly-slugged write under `campaigns/<run-slug>/` still succeeds unchanged (existing happy-path, save-retry, and QA-loop tests keep passing).
-- [ ] Writes outside `campaigns/**` remain rejected as before (existing write-prefix guard is not weakened).
-- [ ] New tests cover: off-slug write rejected + recovered, and correct-slug write unaffected. Add a graph-level test alongside `test_bad_path_tool_error_is_recoverable_not_fatal` and a sandbox-level unit test for the slug-scoped write.
-- [ ] The "Known limitation (deliberately deferred)" note in `docs/adr/0006-...md` is updated to record that off-slug writes are now guarded (with the mechanism used), rather than left as a follow-up.
-- [ ] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`, and `uv run pytest` all pass, and the result is reported explicitly.
+- [x] A `write_file` call whose path is not under `campaigns/<run-slug>/` is rejected with a `ToolError` (not written to disk) rather than succeeding silently.
+- [x] The rejection is recoverable: the specialist receives an error tool-result via `recover_tool_errors` and can retry, and a subsequent correctly-slugged write succeeds and is picked up by the review node.
+- [x] The error message names the offending slug and the correct run slug and tells the model to use the run slug verbatim.
+- [x] A correctly-slugged write under `campaigns/<run-slug>/` still succeeds unchanged (existing happy-path, save-retry, and QA-loop tests keep passing).
+- [x] Writes outside `campaigns/**` remain rejected as before (existing write-prefix guard is not weakened).
+- [x] New tests cover: off-slug write rejected + recovered, and correct-slug write unaffected. Add a graph-level test alongside `test_bad_path_tool_error_is_recoverable_not_fatal` and a sandbox-level unit test for the slug-scoped write.
+- [x] The "Known limitation (deliberately deferred)" note in `docs/adr/0006-...md` is updated to record that off-slug writes are now guarded (with the mechanism used), rather than left as a follow-up.
+- [x] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`, and `uv run pytest` all pass, and the result is reported explicitly.
 
 ## Blocked by
 
 - None - can start immediately.
+
+## Completion
+
+- Completed: 2026-07-04
+- Commit: `9ca01f7cbae8a9c77ec38b0995c9f5bb60856e8c`
