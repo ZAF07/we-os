@@ -41,7 +41,7 @@ class _CrashingReviewer:
     that killed ``coast-coffee-test-four``) escaping a graph node mid-stream.
     """
 
-    def review(self, stage_key: str, deliverable_text: str) -> ReviewVerdict:
+    async def areview(self, stage_key: str, deliverable_text: str) -> ReviewVerdict:
         """Raise instead of returning a verdict.
 
         Args:

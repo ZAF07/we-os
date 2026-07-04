@@ -11,7 +11,15 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
+from conftest import (
+    PASS_VERDICT,
+    FakeReviewer,
+    ProgrammableChatModel,
+    deliverable_from,
+    write_call,
+)
 from marketing_os.adapters.tools import (
     FallbackWebSearch,
     GoogleWebSearch,
@@ -29,6 +37,7 @@ from marketing_os.adapters.tools.websearch_playwright import (
 )
 from marketing_os.config import Settings, WebBackend
 from marketing_os.errors import ConfigError, ToolError
+from marketing_os.graph.graph import build_single_stage_graph
 from marketing_os.graph.runner import _resolve_web_backend
 
 
@@ -374,6 +383,56 @@ def test_build_tools_uses_backend_for_web_capabilities(
     web_search = next(t for t in tools if t.name == "web_search")
 
     assert "https://hit.test" in web_search.invoke({"query": "beans"})
+
+
+async def test_sync_web_tool_runs_under_async_specialist_node(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sync Playwright web tool still works when driven by an async node.
+
+    Closes ADR-0009's AC2 end to end: the specialist node is now ``async`` while
+    the web backend stays the thread-confined sync Playwright backend (ADR-0007).
+    LangGraph dispatches the sync tool to a worker thread while the node awaits on
+    the event loop, so the tool must run off the main thread and the stage must
+    complete normally.
+    """
+    page_thread_idents: list[int] = []
+
+    def fake_new_page() -> _FakePage:
+        page_thread_idents.append(threading.get_ident())
+        return _FakePage(blocks=[_result_block("Hit", "https://hit.test", "why")])
+
+    backend = PlaywrightWebSearch()
+    monkeypatch.setattr(backend, "_new_page", fake_new_page)
+
+    def handler(messages: list[BaseMessage], index: int) -> AIMessage:
+        last = messages[-1]
+        if isinstance(last, ToolMessage):
+            if "hit.test" in str(last.content):
+                return write_call(deliverable_from(messages), "# Deliverable\n\nFrom the web.")
+            return AIMessage(content="Saved. Done.")
+        return AIMessage(
+            content="",
+            tool_calls=[{"name": "web_search", "args": {"query": "beans"}, "id": "c1"}],
+        )
+
+    graph = build_single_stage_graph(
+        settings,
+        "research",
+        model=ProgrammableChatModel(handler=handler),
+        reviewer=FakeReviewer([PASS_VERDICT]),
+        web_backend=backend,
+    )
+    state = await graph.ainvoke(
+        {"customer": "acme", "slug": "acme"},
+        config={"configurable": {"thread_id": "web-async"}, "recursion_limit": 50},
+    )
+    backend.close()
+
+    assert state["error"] is None
+    assert (settings.campaigns_dir / "acme" / "research.md").is_file()
+    assert page_thread_idents, "the web backend was never invoked under the async node"
+    assert threading.get_ident() not in page_thread_idents
 
 
 def test_build_tools_defaults_to_noop_when_no_backend(settings: Settings) -> None:

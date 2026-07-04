@@ -5,15 +5,24 @@ Customer DNA gate, the mandatory decision pipeline, the specialist agents, and a
 per-stage self-critique loop) as a compiled LangGraph ``StateGraph`` built on
 LangChain chat models.
 
+The specialist and review nodes run on the async graph path (ADR-0009), so a run
+is driven with ``ainvoke``/``astream`` on the event loop and can be cancelled with
+its in-flight LLM calls. The :func:`marketing_os.graph.runner.run_campaign` helper
+wraps this for synchronous callers.
+
 Public surface::
+
+    import asyncio
 
     from marketing_os import load_settings, build_campaign_graph
 
     settings = load_settings()
     graph = build_campaign_graph(settings)
-    result = graph.invoke(
-        {"customer": "coast-coffee", "slug": "coast-coffee"},
-        config={"configurable": {"thread_id": "coast-coffee"}},
+    result = asyncio.run(
+        graph.ainvoke(
+            {"customer": "coast-coffee", "slug": "coast-coffee"},
+            config={"configurable": {"thread_id": "coast-coffee"}},
+        )
     )
 """
 
