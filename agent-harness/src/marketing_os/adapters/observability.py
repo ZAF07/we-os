@@ -16,9 +16,11 @@ recorded, but raw prompts and full deliverable text are not.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +31,8 @@ from marketing_os.config import Settings
 _LOGGER_NAME = "marketing_os"
 _TRACING_ENV_VARS = ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2")
 _DEFAULT_PROJECT = "marketing-os"
+_TERMINAL_EVENT = "run.summary"
+_TAIL_POLL_SECONDS = 0.25
 
 
 def get_logger(name: str = _LOGGER_NAME) -> logging.Logger:
@@ -204,3 +208,53 @@ class RunTrace:
             *exc: Unused exception information.
         """
         self.close()
+
+
+async def tail_trace(
+    path: Path,
+    *,
+    is_live: Callable[[], bool],
+    poll_interval: float = _TAIL_POLL_SECONDS,
+    terminal_event: str = _TERMINAL_EVENT,
+) -> AsyncIterator[dict[str, Any]]:
+    """Follow a run's JSONL trace, yielding each event as it is appended.
+
+    The reader counterpart of :class:`RunTrace`. Replays every event already written
+    from the top of the file (so a late joiner sees the run from the start), then
+    polls for appended lines and yields them as they arrive. The stream closes after
+    the terminal ``run.summary`` event, or once the run is no longer live and the
+    file has been fully drained — an interrupted run (a trace with no terminal
+    summary and no live task) therefore replays and closes rather than polling
+    forever.
+
+    Only complete, newline-terminated lines are yielded, so a line still mid-write by
+    the run is never emitted half-formed. Liveness is sampled *before* each read, so a
+    run that finishes between reads is drained one final time before the stream ends;
+    :class:`RunTrace` flushes and closes each event before the run deregisters, so the
+    terminal summary is always on disk by the time ``is_live`` reports ``False``.
+
+    Args:
+        path: The run's ``.jsonl`` trace path. It may not exist yet for a run that has
+            only just started; the tailer waits for it to appear while the run is live.
+        is_live: Predicate returning whether the run is still executing.
+        poll_interval: Seconds to sleep between reads while the run is live.
+        terminal_event: The ``event`` value whose arrival closes the stream.
+
+    Yields:
+        Each trace event, in file order.
+    """
+    emitted = 0
+    while True:
+        was_live = is_live()
+        if path.is_file():
+            lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+            complete = [line for line in lines if line.endswith("\n")]
+            for line in complete[emitted:]:
+                emitted += 1
+                event = json.loads(line)
+                yield event
+                if event.get("event") == terminal_event:
+                    return
+        if not was_live:
+            return
+        await asyncio.sleep(poll_interval)

@@ -232,6 +232,30 @@ def read_run_status(settings: Settings, registry: RunRegistry, run_id: str) -> R
     return RunStatus(run_id=run_id, slug=slug, status=status)
 
 
+def resolve_trace_path(settings: Settings, registry: RunRegistry, run_id: str) -> Path | None:
+    """Return the JSONL trace path to tail for a run, or ``None`` if unknown.
+
+    Observing attaches by tailing this file. A **live** run's path is derived from
+    its slug even when the file does not exist yet — the task may not have written
+    its first event — so a client attaching immediately after ``POST /run`` is not
+    turned away with a spurious 404; the tailer waits for the file to appear. A run
+    that is no longer live is located by its on-disk trace. A run id that is neither
+    live nor traced is unknown.
+
+    Args:
+        settings: The harness settings locating the ``logs/`` tree.
+        registry: The live run registry.
+        run_id: The run id to resolve a trace path for.
+
+    Returns:
+        The trace path to tail, or ``None`` when the run id is unknown.
+    """
+    live = registry.get(run_id)
+    if live is not None:
+        return settings.logs_dir / live.slug / f"{run_id}.jsonl"
+    return _find_trace(settings, run_id)
+
+
 def _find_trace(settings: Settings, run_id: str) -> Path | None:
     """Locate a run's JSONL trace across every slug's log directory.
 

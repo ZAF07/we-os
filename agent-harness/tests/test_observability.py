@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
+from pathlib import Path
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 from conftest import FakeReviewer, ProgrammableChatModel, write_call
+from marketing_os.adapters.observability import tail_trace
 from marketing_os.config import Settings
 from marketing_os.errors import GuardrailError
 from marketing_os.graph import nodes, runner
@@ -174,3 +177,101 @@ def test_emit_logs_events(caplog: pytest.LogCaptureFixture) -> None:
     messages = [record.getMessage() for record in caplog.records]
     assert any("stage.review" in message for message in messages)
     assert any("rubric_point" in message or "[x]" in message for message in messages)
+
+
+def _write_trace(path: Path, events: list[dict]) -> None:
+    """Write a JSONL trace of newline-terminated events.
+
+    Args:
+        path: The trace file to (over)write.
+        events: The events to serialise, one JSON object per line.
+    """
+    path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+
+
+def _append_event(path: Path, event: dict) -> None:
+    """Append one newline-terminated event line to a trace.
+
+    Args:
+        path: The trace file to append to.
+        event: The event to serialise.
+    """
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event) + "\n")
+
+
+async def test_tail_trace_replays_finished_run_and_stops_at_summary(tmp_path: Path) -> None:
+    trace = tmp_path / "run.jsonl"
+    _write_trace(
+        trace,
+        [
+            {"event": "stage.start", "stage": "research"},
+            {"event": "stage.done", "stage": "research"},
+            {"event": "run.summary", "outcome": "ok"},
+        ],
+    )
+
+    events = [event async for event in tail_trace(trace, is_live=lambda: False, poll_interval=0.01)]
+
+    assert [event["event"] for event in events] == ["stage.start", "stage.done", "run.summary"]
+
+
+async def test_tail_trace_replays_then_follows_appended_events(tmp_path: Path) -> None:
+    trace = tmp_path / "run.jsonl"
+    _write_trace(trace, [{"event": "stage.start", "stage": "research"}])
+    live = {"running": True}
+
+    async def append_the_rest() -> None:
+        """Append later events while the tailer is following, then end the run."""
+        await asyncio.sleep(0.02)
+        _append_event(trace, {"event": "stage.done", "stage": "research"})
+        await asyncio.sleep(0.02)
+        _append_event(trace, {"event": "run.summary", "outcome": "ok"})
+        live["running"] = False
+
+    appender = asyncio.create_task(append_the_rest())
+    events = [
+        event
+        async for event in tail_trace(trace, is_live=lambda: live["running"], poll_interval=0.01)
+    ]
+    await appender
+
+    assert [event["event"] for event in events] == ["stage.start", "stage.done", "run.summary"]
+
+
+async def test_tail_trace_closes_on_interrupted_run_with_no_summary(tmp_path: Path) -> None:
+    trace = tmp_path / "run.jsonl"
+    _write_trace(trace, [{"event": "stage.start", "stage": "research"}])
+
+    events = [event async for event in tail_trace(trace, is_live=lambda: False, poll_interval=0.01)]
+
+    assert [event["event"] for event in events] == ["stage.start"]
+
+
+async def test_tail_trace_waits_for_a_late_created_trace_file(tmp_path: Path) -> None:
+    trace = tmp_path / "run.jsonl"
+    live = {"running": True}
+
+    async def create_the_trace_later() -> None:
+        """Create the trace only after the tailer has started waiting for it."""
+        await asyncio.sleep(0.02)
+        _write_trace(trace, [{"event": "run.summary", "outcome": "ok"}])
+        live["running"] = False
+
+    creator = asyncio.create_task(create_the_trace_later())
+    events = [
+        event
+        async for event in tail_trace(trace, is_live=lambda: live["running"], poll_interval=0.01)
+    ]
+    await creator
+
+    assert [event["event"] for event in events] == ["run.summary"]
+
+
+async def test_tail_trace_never_emits_a_partial_final_line(tmp_path: Path) -> None:
+    trace = tmp_path / "run.jsonl"
+    trace.write_text('{"event": "stage.start"}\n{"event": "run.sum', encoding="utf-8")
+
+    events = [event async for event in tail_trace(trace, is_live=lambda: False, poll_interval=0.01)]
+
+    assert [event["event"] for event in events] == ["stage.start"]
