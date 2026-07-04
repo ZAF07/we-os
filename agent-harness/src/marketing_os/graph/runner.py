@@ -222,8 +222,35 @@ def _config(customer: str, slug: str, stage: str | None) -> dict[str, Any]:
     )
 
 
+def _emit_summary(
+    trace: RunTrace | None,
+    run_log: str | None,
+    *,
+    outcome: str,
+    error: Any,
+    results: list[Any],
+    usage: dict[str, int],
+) -> None:
+    """Write one terminal ``run.summary`` line to the trace and console log.
+
+    Args:
+        trace: The open trace, or ``None``.
+        run_log: The repo-relative trace path, if any.
+        outcome: The terminal outcome, ``"ok"`` or ``"error"``.
+        error: The structured error payload, or ``None`` on success.
+        results: The per-stage results to record.
+        usage: The token usage to record.
+    """
+    if trace is not None:
+        trace.summary(outcome=outcome, error=error, results=results, usage=usage)
+    if error is None:
+        _LOGGER.info("run.summary outcome=%s run_log=%s", outcome, run_log)
+    else:
+        _LOGGER.info("run.summary outcome=%s error=%s run_log=%s", outcome, error, run_log)
+
+
 def _write_summary(trace: RunTrace | None, state: CampaignState, run_log: str | None) -> None:
-    """Write the terminal summary line to the trace and log the outcome.
+    """Write the terminal summary line from the final state.
 
     Args:
         trace: The open trace, or ``None``.
@@ -231,15 +258,37 @@ def _write_summary(trace: RunTrace | None, state: CampaignState, run_log: str | 
         run_log: The repo-relative trace path, if any.
     """
     error = state.get("error")
-    outcome = "error" if error else "ok"
-    if trace is not None:
-        trace.summary(
-            outcome=outcome,
-            error=error,
-            results=state.get("results", []),
-            usage=state.get("usage", {}),
-        )
-    _LOGGER.info("run.summary outcome=%s run_log=%s", outcome, run_log)
+    _emit_summary(
+        trace,
+        run_log,
+        outcome="error" if error else "ok",
+        error=error,
+        results=state.get("results", []),
+        usage=state.get("usage", {}),
+    )
+
+
+def _write_error_summary(trace: RunTrace | None, exc: BaseException, run_log: str | None) -> None:
+    """Write a terminal error summary for a run killed by an escaping exception.
+
+    Used on the crash path where the graph stream raised an unexpected exception
+    (anything outside the :class:`MarketingOSError` hierarchy) before a terminal
+    event could be written. The final state is unreliable after such a crash, so
+    the outcome is derived from the exception itself rather than from state.
+
+    Args:
+        trace: The open trace, or ``None``.
+        exc: The exception that escaped the graph stream.
+        run_log: The repo-relative trace path, if any.
+    """
+    _emit_summary(
+        trace,
+        run_log,
+        outcome="error",
+        error={"type": "crash", "message": repr(exc)},
+        results=[],
+        usage={},
+    )
 
 
 def run_campaign(
@@ -294,6 +343,9 @@ def run_campaign(
                 on_event(chunk)
         state: CampaignState = graph.get_state(config).values
         _write_summary(trace, state, run_log)
+    except Exception as exc:
+        _write_error_summary(trace, exc, run_log)
+        raise
     finally:
         if trace is not None:
             trace.close()
@@ -351,6 +403,9 @@ async def astream_campaign(
             yield chunk
         final = (await graph.aget_state(config)).values
         _write_summary(trace, final, run_log)
+    except Exception as exc:
+        _write_error_summary(trace, exc, run_log)
+        raise
     finally:
         if trace is not None:
             trace.close()
