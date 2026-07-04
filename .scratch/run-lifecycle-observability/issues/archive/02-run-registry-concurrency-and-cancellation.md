@@ -30,7 +30,7 @@ unique `run_id` (see the `Run` term in `CONTEXT.md`). The slug names the durable
 **campaign**; the run_id names one attempt. **At most one run per slug may be active at
 a time.**
 
-- **Start / observe are split.** `POST /run` *starts* a detached background run and
+- **Start / observe are split.** `POST /run` _starts_ a detached background run and
   returns its `run_id` immediately (202). It no longer blocks on the pipeline and no
   longer returns the final result synchronously. Observing a run is a **separate**
   operation — see the sibling issue `04-observe-running-run-via-trace-tailing.md`.
@@ -130,6 +130,7 @@ all three new routes.
 ## Completion
 
 - Completed: 2026-07-04
+- Commit: `758b5e5e5b3d0fef0b3b5f9851a15227d0b101e6`
 - Forward dependency (unchanged): once persistent checkpointing lands (backfill
   issue 07), cancel-as-abandon must explicitly clear the slug's checkpoint thread,
   else "start clean" silently becomes "resume."
