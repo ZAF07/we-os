@@ -27,6 +27,7 @@ from marketing_os.adapters.tools import (
     GoogleWebSearch,
     NoopWebSearch,
     PlaywrightWebSearch,
+    TavilyWebSearch,
     WebSearchTool,
     build_tools,
     build_web_backend,
@@ -840,6 +841,55 @@ def test_build_web_backend_rejects_empty_chain() -> None:
         build_web_backend([])
 
 
+def test_build_web_backend_constructs_tavily_when_key_present() -> None:
+    chain = build_web_backend(
+        [WebBackend.TAVILY, WebBackend.GOOGLE],
+        tavily_api_key="tvly-secret",
+        tavily_search_depth="advanced",
+    )
+    assert isinstance(chain.backends[0], TavilyWebSearch)
+    assert chain.backends[0]._search_depth == "advanced"
+    assert isinstance(chain.backends[1], GoogleWebSearch)
+    chain.close()
+
+
+def test_build_web_backend_skips_tavily_and_warns_when_key_missing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING"):
+        chain = build_web_backend(
+            [WebBackend.TAVILY, WebBackend.GOOGLE, WebBackend.DUCKDUCKGO],
+            tavily_api_key=None,
+        )
+
+    assert not any(isinstance(backend, TavilyWebSearch) for backend in chain.backends)
+    assert isinstance(chain.backends[0], GoogleWebSearch)
+    assert isinstance(chain.backends[1], PlaywrightWebSearch)
+    assert "MARKETING_OS_TAVILY_API_KEY" in caplog.text
+
+
+def test_build_web_backend_raises_when_only_tavily_and_no_key() -> None:
+    with pytest.raises(ConfigError):
+        build_web_backend([WebBackend.TAVILY], tavily_api_key=None)
+
+
+def test_fallback_propagates_non_tool_error_without_falling_through() -> None:
+    """A terminal ``ConfigError`` (invalid key) stops the run, it does not advance.
+
+    ``FallbackWebSearch._run_chain`` catches only :class:`ToolError`, so a
+    :class:`ConfigError` raised by a non-final backend (Tavily rejecting the key)
+    propagates out unchanged and the fallback chain never reaches Google — the
+    run stops loudly rather than silently burning the campaign on scraping.
+    """
+    first = _StubBackend(error=ConfigError("tavily rejected the key"))
+    second = _StubBackend(result="hit from second")
+    chain = FallbackWebSearch([first, second])
+
+    with pytest.raises(ConfigError):
+        chain.search("q")
+    assert second.searched is False
+
+
 def test_resolve_web_backend_builds_configured_chain(settings: Settings) -> None:
     settings.enable_web = True
     settings.web_backends = [WebBackend.GOOGLE, WebBackend.DUCKDUCKGO]
@@ -861,10 +911,58 @@ def test_settings_parse_web_backends_from_env(monkeypatch: pytest.MonkeyPatch) -
 
 def test_settings_defaults_web_backends_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MARKETING_OS_WEB_BACKENDS", raising=False)
-    assert Settings().web_backends == [WebBackend.GOOGLE, WebBackend.DUCKDUCKGO]
+    assert Settings().web_backends == [
+        WebBackend.TAVILY,
+        WebBackend.GOOGLE,
+        WebBackend.DUCKDUCKGO,
+    ]
 
 
 def test_settings_rejects_unknown_web_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MARKETING_OS_WEB_BACKENDS", "google,bing")
     with pytest.raises(ConfigError):
         Settings()
+
+
+# --- Tavily config ----------------------------------------------------------
+
+
+def test_settings_parses_tavily_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKETING_OS_WEB_BACKENDS", "tavily,google,duckduckgo")
+    assert Settings().web_backends == [
+        WebBackend.TAVILY,
+        WebBackend.GOOGLE,
+        WebBackend.DUCKDUCKGO,
+    ]
+
+
+def test_settings_reads_tavily_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKETING_OS_TAVILY_API_KEY", "tvly-secret")
+    assert Settings().tavily_api_key == "tvly-secret"
+
+
+def test_settings_tavily_api_key_is_none_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MARKETING_OS_TAVILY_API_KEY", raising=False)
+    assert Settings().tavily_api_key is None
+
+
+def test_settings_tavily_search_depth_defaults_to_basic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MARKETING_OS_TAVILY_SEARCH_DEPTH", raising=False)
+    assert Settings().tavily_search_depth == "basic"
+
+
+def test_settings_tavily_search_depth_accepts_advanced(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKETING_OS_TAVILY_SEARCH_DEPTH", "ADVANCED")
+    assert Settings().tavily_search_depth == "advanced"
+
+
+def test_settings_rejects_unknown_search_depth(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKETING_OS_TAVILY_SEARCH_DEPTH", "deep")
+    with pytest.raises(ConfigError):
+        Settings()
+
+
+def test_default_web_backends_lead_with_tavily(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tavily is the primary backend by default, ahead of the Playwright chain."""
+    monkeypatch.delenv("MARKETING_OS_WEB_BACKENDS", raising=False)
+    assert Settings().web_backends[0] == WebBackend.TAVILY

@@ -1,6 +1,6 @@
 # Config: `WebBackend.TAVILY` enum member + Tavily `Settings` fields
 
-Status: ready-for-agent
+Status: completed
 
 ## Parent
 
@@ -27,22 +27,39 @@ backend with no registered factory in the meantime).
 
 ## Acceptance criteria
 
-- [ ] `WebBackend.TAVILY` exists with value `"tavily"` and is parseable by
+- [x] `WebBackend.TAVILY` exists with value `"tavily"` and is parseable by
       `_parse_web_backends` (`MARKETING_OS_WEB_BACKENDS=tavily,google,duckduckgo`
       resolves without error).
-- [ ] `Settings.tavily_api_key` reads `MARKETING_OS_TAVILY_API_KEY`, defaulting
+- [x] `Settings.tavily_api_key` reads `MARKETING_OS_TAVILY_API_KEY`, defaulting
       to unset without error.
-- [ ] `Settings.tavily_search_depth` reads `MARKETING_OS_TAVILY_SEARCH_DEPTH`,
+- [x] `Settings.tavily_search_depth` reads `MARKETING_OS_TAVILY_SEARCH_DEPTH`,
       defaults to `basic`, accepts `advanced`, and raises `ConfigError` on any
       other value.
-- [ ] `_DEFAULT_WEB_BACKENDS` is unchanged; the existing default chain still
+- [x] `_DEFAULT_WEB_BACKENDS` is unchanged; the existing default chain still
       builds green.
-- [ ] Credentials are read via `config.py` only; nothing secret in code.
-- [ ] Tests cover the enum member, both new fields, defaults, and the
+- [x] Credentials are read via `config.py` only; nothing secret in code.
+- [x] Tests cover the enum member, both new fields, defaults, and the
       depth-validation error path.
-- [ ] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`,
+- [x] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`,
       `uv run pytest` all pass.
 
 ## Blocked by
 
 None - can start immediately.
+
+## Completion
+
+- Completed: 2026-07-15
+- Commit: <to be filled in manually>
+
+Evidence: `config.py` adds `WebBackend.TAVILY = "tavily"`, `Settings.tavily_api_key`
+(`MARKETING_OS_TAVILY_API_KEY`, `None` when unset), and `Settings.tavily_search_depth`
+(`MARKETING_OS_TAVILY_SEARCH_DEPTH`, default `basic`, accepts `advanced`, raises
+`ConfigError` otherwise via `_parse_search_depth`). Tests in
+`tests/test_websearch.py` ("Tavily config" block) cover parsing, defaults, and
+the depth-validation error path.
+
+Note on AC "`_DEFAULT_WEB_BACKENDS` is unchanged": this held at the issue-02
+boundary — the config-only slice did not flip the default, so nothing broke
+mid-sequence. The default-order flip to `tavily,google,duckduckgo` is delivered
+by issue 03 as planned; both slices are completed together. All gates pass.

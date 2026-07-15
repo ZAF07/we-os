@@ -76,8 +76,9 @@ def _resolve_web_backend(
     A caller-supplied ``web_backend`` is used as-is and never closed by the runner
     (the caller owns it). Otherwise the backend is gated on ``settings.enable_web``
     (``MARKETING_OS_WEB=1``): when web access is enabled a fallback chain is built
-    from ``settings.web_backends`` (an ordered list of ``google`` / ``duckduckgo``
-    / ``noop``) and owned by the runner (closed when the run ends); when disabled
+    from ``settings.web_backends`` (an ordered list of ``tavily`` / ``google`` /
+    ``duckduckgo`` / ``noop``) and owned by the runner (closed when the run ends);
+    Tavily is skipped with a warning when its key is unset. When disabled
     the result is ``None`` so ``build_tools`` falls back to :class:`NoopWebSearch`.
     Each backend's Playwright driver is launched lazily on first tool call, so an
     owned-but-unused chain stays cheap.
@@ -96,7 +97,12 @@ def _resolve_web_backend(
         return None, False
     from marketing_os.adapters.tools import build_web_backend
 
-    return build_web_backend(settings.web_backends), True
+    chain = build_web_backend(
+        settings.web_backends,
+        tavily_api_key=settings.tavily_api_key,
+        tavily_search_depth=settings.tavily_search_depth,
+    )
+    return chain, True
 
 
 def _raise_on_error(state: CampaignState, run_log: str | None) -> None:

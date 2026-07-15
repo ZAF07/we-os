@@ -1,6 +1,6 @@
 # Fallback build: construct Tavily, skip-and-warn, promote to primary backend
 
-Status: ready-for-agent
+Status: completed
 
 ## Parent
 
@@ -34,21 +34,21 @@ already propagates because the chain only catches `ToolError` (decision 5).
 
 ## Acceptance criteria
 
-- [ ] `MARKETING_OS_WEB_BACKENDS` unset → default chain is
+- [x] `MARKETING_OS_WEB_BACKENDS` unset → default chain is
       `tavily,google,duckduckgo` and builds successfully when a key is present.
-- [ ] Missing `MARKETING_OS_TAVILY_API_KEY` → Tavily omitted from the chain, a
+- [x] Missing `MARKETING_OS_TAVILY_API_KEY` → Tavily omitted from the chain, a
       warning is logged, and the chain is built from the remaining Playwright
       backends (run proceeds).
-- [ ] Recoverable `ToolError` from the Tavily backend advances the chain to
+- [x] Recoverable `ToolError` from the Tavily backend advances the chain to
       Google/DuckDuckGo (wiring test with a fake Tavily backend).
-- [ ] Empty Tavily results advance the chain via the existing empty-result
+- [x] Empty Tavily results advance the chain via the existing empty-result
       detection.
-- [ ] Terminal `ConfigError` (invalid-key backend) propagates out of the chain
+- [x] Terminal `ConfigError` (invalid-key backend) propagates out of the chain
       and stops the run — it does **not** fall through.
-- [ ] `TavilyWebSearch` is exported from `adapters/tools/__init__.py`.
-- [ ] Wiring tests cover: advance-on-recoverable, re-raise-on-terminal, and
+- [x] `TavilyWebSearch` is exported from `adapters/tools/__init__.py`.
+- [x] Wiring tests cover: advance-on-recoverable, re-raise-on-terminal, and
       omit-and-warn-on-missing-key — all offline.
-- [ ] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`,
+- [x] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`,
       `uv run pytest` all pass.
 
 ## Blocked by
@@ -56,3 +56,21 @@ already propagates because the chain only catches `ToolError` (decision 5).
 - `.scratch/tavily-websearch/issues/01-tavily-adapter.md` (needs `TavilyWebSearch`)
 - `.scratch/tavily-websearch/issues/02-config-enum-and-settings.md` (needs
   `WebBackend.TAVILY` + the `Settings` fields)
+
+## Completion
+
+- Completed: 2026-07-15
+- Commit: <to be filled in manually>
+
+Evidence: `websearch_fallback.py` `build_web_backend` constructs `TavilyWebSearch`
+inline from `tavily_api_key`/`tavily_search_depth`, skips-and-warns when the key
+is absent (logs a `MARKETING_OS_TAVILY_API_KEY` warning and falls through), and
+raises `ConfigError` when the chain resolves empty. `config.py` flips
+`_DEFAULT_WEB_BACKENDS` to `(TAVILY, GOOGLE, DUCKDUCKGO)`; `runner.py` threads the
+two Tavily settings through `_resolve_web_backend`. `TavilyWebSearch` is exported
+from `adapters/tools/__init__.py`. Wiring tests in `tests/test_websearch.py`:
+constructs-tavily-when-key-present, skips-and-warns-when-key-missing (caplog),
+raises-when-only-tavily-and-no-key, and propagates-non-`ToolError`-without-falling-through.
+Verified end-to-end: the running resolver builds `[TavilyWebSearch, GoogleWebSearch,
+PlaywrightWebSearch]` with a key, and `[GoogleWebSearch, PlaywrightWebSearch]` with
+a logged warning when the key is absent. All gates pass.

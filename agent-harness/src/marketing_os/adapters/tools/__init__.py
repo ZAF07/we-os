@@ -15,6 +15,7 @@ from marketing_os.adapters.tools.websearch_playwright import (
     GoogleWebSearch,
     PlaywrightWebSearch,
 )
+from marketing_os.adapters.tools.websearch_tavily import TavilyWebSearch
 
 __all__ = [
     "FilesystemSandbox",
@@ -22,6 +23,7 @@ __all__ = [
     "NoopWebSearch",
     "PlaywrightWebSearch",
     "GoogleWebSearch",
+    "TavilyWebSearch",
     "FallbackWebSearch",
     "build_web_backend",
     "build_tools",
