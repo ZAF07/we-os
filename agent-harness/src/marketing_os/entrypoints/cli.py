@@ -18,6 +18,7 @@ from typing import Any
 
 from marketing_os.adapters.observability import configure_logging, configure_tracing
 from marketing_os.config import load_settings
+from marketing_os.entrypoints.env import load_env
 from marketing_os.errors import GateError, MarketingOSError
 from marketing_os.governance import check_gate
 from marketing_os.governance.gate import GateReport
@@ -165,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         The process exit code.
     """
+    load_env()
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

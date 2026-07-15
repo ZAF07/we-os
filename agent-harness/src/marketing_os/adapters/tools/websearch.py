@@ -1,17 +1,76 @@
 """Web search/fetch tool interface, a default no-op stub, and ``@tool`` adapters.
 
 Web access is pluggable: implement :class:`WebSearchTool` (see
-``websearch_playwright.py`` for the Playwright skeleton) and pass it to
-:func:`web_tools`. Until a real backend is wired in, :class:`NoopWebSearch` is
-used so ``market-research`` and ``performance-marketing`` run without crashing —
-they are simply told that search is off.
+``websearch_playwright.py`` for the Playwright skeleton and ``websearch_tavily.py``
+for the JSON-API backend) and pass it to :func:`web_tools`. Until a real backend
+is wired in, :class:`NoopWebSearch` is used so ``market-research`` and
+``performance-marketing`` run without crashing — they are simply told that search
+is off.
+
+The rendering helpers (:func:`_format_results`, :func:`_trim_text`) and the
+shared ``NO_RESULTS_PREFIX`` live here rather than in any one backend so every
+backend renders to an identical, source-attributed structure — the agent sees
+the same shape regardless of which backend answered — and no backend depends on
+another's module (removing one is a delete, not a rewrite).
 """
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 
 from langchain_core.tools import BaseTool, tool
+
+_FETCH_MAX_CHARS = 8_000
+_WHITESPACE = re.compile(r"[ \t\f\v]+")
+
+NO_RESULTS_PREFIX = "No web results found"
+
+
+def _format_results(query: str, items: list[dict[str, str]]) -> str:
+    """Render search results as a readable, source-attributed list.
+
+    Args:
+        query: The query the results are for, echoed in the header.
+        items: Result records, each with ``title``, ``url``, and ``snippet`` keys.
+
+    Returns:
+        A numbered, source-attributed result list, or an explicit no-results
+        message when ``items`` is empty.
+    """
+    if not items:
+        return f'{NO_RESULTS_PREFIX} for "{query}".'
+    lines = [f'Web results for "{query}":', ""]
+    for index, item in enumerate(items, start=1):
+        lines.append(f"{index}. {item['title']}")
+        lines.append(f"   {item['url']}")
+        if item.get("snippet"):
+            lines.append(f"   {item['snippet']}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def _trim_text(text: str, max_chars: int = _FETCH_MAX_CHARS) -> str:
+    """Collapse whitespace and cap fetched page text to a readable length.
+
+    Args:
+        text: The raw page text.
+        max_chars: The maximum number of characters to keep.
+
+    Returns:
+        The whitespace-normalised text, truncated with an explicit marker when it
+        exceeds ``max_chars``.
+    """
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = _WHITESPACE.sub(" ", raw_line).strip()
+        if line == "" and (not lines or lines[-1] == ""):
+            continue
+        lines.append(line)
+    collapsed = "\n".join(lines).strip()
+    if len(collapsed) <= max_chars:
+        return collapsed
+    return collapsed[:max_chars].rstrip() + "\n\n[...truncated]"
 
 
 class WebSearchTool(ABC):

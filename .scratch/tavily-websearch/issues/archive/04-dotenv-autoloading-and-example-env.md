@@ -1,6 +1,6 @@
 # `.env` auto-loading at both entrypoints + `example.env`
 
-Status: ready-for-agent
+Status: completed
 
 ## Parent
 
@@ -31,19 +31,36 @@ Make a local `.env` "just work" so the new `MARKETING_OS_TAVILY_API_KEY` secret
 
 ## Acceptance criteria
 
-- [ ] `python-dotenv` is declared in `pyproject.toml`.
-- [ ] `load_dotenv()` runs once, early, in both `cli.py` and `api/app.py`, before
+- [x] `python-dotenv` is declared in `pyproject.toml`.
+- [x] `load_dotenv()` runs once, early, in both `cli.py` and `api/app.py`, before
       settings are read; it is **not** called inside `config.py`.
-- [ ] A `.env` containing `MARKETING_OS_TAVILY_API_KEY=...` is picked up by a run
+- [x] A `.env` containing `MARKETING_OS_TAVILY_API_KEY=...` is picked up by a run
       started from either entrypoint without manual `source`.
-- [ ] An env var already set in the process environment is **not** overridden by
+- [x] An env var already set in the process environment is **not** overridden by
       a conflicting `.env` value.
-- [ ] A missing `.env` file is a silent no-op (no error, run proceeds).
-- [ ] `example.env` is present at `agent-harness/example.env` and lists every
+- [x] A missing `.env` file is a silent no-op (no error, run proceeds).
+- [x] `example.env` is present at `agent-harness/example.env` and lists every
       relevant variable with accurate names/defaults.
-- [ ] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`,
+- [x] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`,
       `uv run pytest` all pass.
 
 ## Blocked by
 
 None - can start immediately.
+
+## Completion
+
+- Completed: 2026-07-15
+- Commit: `280d9b141b4e1df9b7e96036cc352e12ac4d7638`
+
+Evidence: `python-dotenv>=1.0` declared in `pyproject.toml`. New
+`entrypoints/env.py` `load_env()` calls `load_dotenv(find_dotenv(usecwd=True),
+override=False)` — resolves `.env` from the CWD upward, never overrides existing
+env, missing `.env` is a no-op. Called once early in `cli.py` `main()` (before
+`load_settings`) and at module import in `api/app.py` (before any `get_settings`,
+which is only invoked inside functions). Not loaded in `config.py`. Three tests in
+`tests/test_entrypoint_env.py` cover picked-up / no-override / missing-no-op.
+`example.env` present at `agent-harness/example.env`, updated to reflect that
+`.env` now auto-loads and that `tavily,google,duckduckgo` is the built-in default.
+Verified end-to-end: a `.env` with `MARKETING_OS_TAVILY_API_KEY` is picked up by
+`load_env()` without manual `source`. All gates pass.

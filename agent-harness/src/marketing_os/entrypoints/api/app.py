@@ -34,6 +34,7 @@ from marketing_os.adapters.observability import (
     tail_trace,
 )
 from marketing_os.config import Settings, load_settings
+from marketing_os.entrypoints.env import load_env
 from marketing_os.errors import RunConflictError
 from marketing_os.governance import check_gate
 from marketing_os.graph.registry import (
@@ -45,6 +46,8 @@ from marketing_os.graph.registry import (
 )
 from marketing_os.graph.runner import arun_campaign
 from marketing_os.schemas import CampaignResult
+
+load_env()
 
 
 @asynccontextmanager

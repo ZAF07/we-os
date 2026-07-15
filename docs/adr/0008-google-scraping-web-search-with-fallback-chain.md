@@ -1,5 +1,11 @@
 # 0008 — Scrape Google for web search, behind a priority-ordered fallback chain
 
+> **Update ([ADR-0011](0011-tavily-primary-web-backend.md)):** Google is no longer
+> the *primary* engine — Tavily's JSON API is, and the Playwright scrapers
+> (Google → DuckDuckGo) are demoted to fallback (default order
+> `tavily,google,duckduckgo`). The scraping-behind-a-fallback-chain mechanism
+> below still stands for the fallback tier; only "Google first" is superseded.
+
 Web search scrapes `google.com/search` with the existing Playwright browser (`GoogleWebSearch`) rather than calling an official search API, and backends are composed into a config-ordered `FallbackWebSearch` chain (default `google,duckduckgo`) instead of merging results. This looks fragile on purpose — it is a deliberate choice for search freedom and agent site-navigation, with the chain absorbing the fragility.
 
 ## Context

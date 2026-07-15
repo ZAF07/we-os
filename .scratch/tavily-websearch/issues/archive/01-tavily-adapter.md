@@ -1,6 +1,6 @@
 # Tavily web backend adapter (`TavilyWebSearch`) + offline tests
 
-Status: ready-for-agent
+Status: completed
 
 ## Parent
 
@@ -16,6 +16,7 @@ A self-contained `TavilyWebSearch` implementing the existing `WebSearchTool` ABC
 Playwright.
 
 `search(query, max_results)`:
+
 - Over-fetch up to Tavily's max (**20**) in one `/search` request (1 credit flat),
   `include_answer` **off**, `search_depth` from an injected depth value.
 - Rank the returned results by Tavily's `score` **descending**, keep the **top
@@ -28,10 +29,12 @@ Playwright.
   inventing a new shape.
 
 `fetch(url)`:
+
 - Return readable text via Tavily **`/extract`**, using an injected
   `extract_depth` value (same value drives both depths).
 
 Failure map (decision 5 in the PRD) — this is the heart of the slice:
+
 - **429 / 432 / 433 / 5xx / network error / timeout → recoverable `ToolError`**
   (the fallback chain catches `ToolError` and advances).
 - **empty `results[]` → return the shared empty/no-results string** (the chain's
@@ -49,24 +52,38 @@ direct consumer.
 
 ## Acceptance criteria
 
-- [ ] `TavilyWebSearch.search` over-fetches up to 20, ranks by `score` desc,
+- [x] `TavilyWebSearch.search` over-fetches up to 20, ranks by `score` desc,
       keeps the top 10, renders in the existing title/url/snippet format, and
       returns `min(max_results, 10)` results.
-- [ ] `score` never appears in rendered output.
-- [ ] `TavilyWebSearch.fetch` returns readable text via Tavily `/extract`.
-- [ ] 429 / 432 / 433 / 5xx / network / timeout raise recoverable `ToolError`.
-- [ ] Empty `results[]` returns the shared no-results string (same
+- [x] `score` never appears in rendered output.
+- [x] `TavilyWebSearch.fetch` returns readable text via Tavily `/extract`.
+- [x] 429 / 432 / 433 / 5xx / network / timeout raise recoverable `ToolError`.
+- [x] Empty `results[]` returns the shared no-results string (same
       `NO_RESULTS_PREFIX` the chain detects).
-- [ ] 401 / 403 raise `ConfigError` (not `ToolError`).
-- [ ] `httpx.Client` is dependency-injected; no live API calls in the default
+- [x] 401 / 403 raise `ConfigError` (not `ToolError`).
+- [x] `httpx.Client` is dependency-injected; no live API calls in the default
       `pytest` run.
-- [ ] `include_answer` is off; `search_depth` / `extract_depth` come from the
+- [x] `include_answer` is off; `search_depth` / `extract_depth` come from the
       injected depth value.
-- [ ] `httpx` is declared explicitly in `pyproject.toml`.
-- [ ] Offline tests against a faked httpx layer cover every branch above.
-- [ ] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`,
+- [x] `httpx` is declared explicitly in `pyproject.toml`.
+- [x] Offline tests against a faked httpx layer cover every branch above.
+- [x] `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`,
       `uv run pytest` all pass.
 
 ## Blocked by
 
 None - can start immediately.
+
+## Completion
+
+- Completed: 2026-07-15
+- Commit: `280d9b141b4e1df9b7e96036cc352e12ac4d7638`
+
+Evidence: `adapters/tools/websearch_tavily.py` (`TavilyWebSearch` over an injected
+`httpx.Client`); shared render helpers moved into `websearch.py` so Tavily does
+not import the Playwright module (decoupling per PRD decisions 1–2). 20 offline
+tests in `tests/test_websearch_tavily.py` cover over-fetch=20 → rank-by-score →
+top-10 → `min(max_results,10)`, score-never-printed, `/extract` fetch, and the
+full failure map (429/432/433/5xx/network/timeout → `ToolError`; empty →
+no-results string; 401/403 → `ConfigError`). `httpx>=0.28` declared in
+`pyproject.toml`. All gates pass.

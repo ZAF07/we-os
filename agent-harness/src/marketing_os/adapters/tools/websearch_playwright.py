@@ -26,22 +26,20 @@ thread.
 
 from __future__ import annotations
 
-import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, TypeVar
 from urllib.parse import parse_qs, quote_plus, urlparse
 
-from marketing_os.adapters.tools.websearch import WebSearchTool
+from marketing_os.adapters.tools.websearch import (
+    WebSearchTool,
+    _format_results,
+    _trim_text,
+)
 from marketing_os.errors import ToolError
 
-_FETCH_MAX_CHARS = 8_000
-_WHITESPACE = re.compile(r"[ \t\f\v]+")
-
 _T = TypeVar("_T")
-
-NO_RESULTS_PREFIX = "No web results found"
 
 
 def _decode_result_href(href: str) -> str:
@@ -64,52 +62,6 @@ def _decode_result_href(href: str) -> str:
         if targets:
             return targets[0]
     return href
-
-
-def _format_results(query: str, items: list[dict[str, str]]) -> str:
-    """Render search results as a readable, source-attributed list.
-
-    Args:
-        query: The query the results are for, echoed in the header.
-        items: Result records, each with ``title``, ``url``, and ``snippet`` keys.
-
-    Returns:
-        A numbered, source-attributed result list, or an explicit no-results
-        message when ``items`` is empty.
-    """
-    if not items:
-        return f'{NO_RESULTS_PREFIX} for "{query}".'
-    lines = [f'Web results for "{query}":', ""]
-    for index, item in enumerate(items, start=1):
-        lines.append(f"{index}. {item['title']}")
-        lines.append(f"   {item['url']}")
-        if item.get("snippet"):
-            lines.append(f"   {item['snippet']}")
-        lines.append("")
-    return "\n".join(lines).rstrip()
-
-
-def _trim_text(text: str, max_chars: int = _FETCH_MAX_CHARS) -> str:
-    """Collapse whitespace and cap fetched page text to a readable length.
-
-    Args:
-        text: The raw page text.
-        max_chars: The maximum number of characters to keep.
-
-    Returns:
-        The whitespace-normalised text, truncated with an explicit marker when it
-        exceeds ``max_chars``.
-    """
-    lines: list[str] = []
-    for raw_line in text.splitlines():
-        line = _WHITESPACE.sub(" ", raw_line).strip()
-        if line == "" and (not lines or lines[-1] == ""):
-            continue
-        lines.append(line)
-    collapsed = "\n".join(lines).strip()
-    if len(collapsed) <= max_chars:
-        return collapsed
-    return collapsed[:max_chars].rstrip() + "\n\n[...truncated]"
 
 
 class PlaywrightWebSearch(WebSearchTool):

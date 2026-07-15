@@ -14,14 +14,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from marketing_os.adapters.tools.websearch import NoopWebSearch, WebSearchTool
-from marketing_os.adapters.tools.websearch_playwright import (
+from marketing_os.adapters.observability import get_logger
+from marketing_os.adapters.tools.websearch import (
     NO_RESULTS_PREFIX,
+    NoopWebSearch,
+    WebSearchTool,
+)
+from marketing_os.adapters.tools.websearch_playwright import (
     GoogleWebSearch,
     PlaywrightWebSearch,
 )
+from marketing_os.adapters.tools.websearch_tavily import TavilyWebSearch
 from marketing_os.config import WebBackend
 from marketing_os.errors import ConfigError, ToolError
+
+_logger = get_logger(__name__)
 
 
 def _is_empty_result(text: str) -> bool:
@@ -149,30 +156,57 @@ _BACKEND_FACTORIES: dict[WebBackend, Callable[[], WebSearchTool]] = {
 }
 
 
-def build_web_backend(identifiers: list[WebBackend]) -> FallbackWebSearch:
+def build_web_backend(
+    identifiers: list[WebBackend],
+    *,
+    tavily_api_key: str | None = None,
+    tavily_search_depth: str = "basic",
+) -> FallbackWebSearch:
     """Build a fallback chain from an ordered list of backends.
 
     The identifiers are already validated (they are :class:`WebBackend` members,
-    parsed at config load); this only guards against an enum member that has no
-    registered factory, i.e. internal registry drift.
+    parsed at config load). The Tavily backend is constructed inline from its
+    settings — the zero-arg factory registry covers only the stateless Playwright
+    and no-op backends. When Tavily is requested but no key is configured it is
+    **skipped with a warning** and the chain falls through to the remaining
+    backends, so a fresh checkout with no Tavily account still runs.
 
     Args:
         identifiers: Backends in priority order.
+        tavily_api_key: The Tavily API key, or ``None`` to skip the Tavily
+            backend with a warning.
+        tavily_search_depth: The Tavily depth passed to the Tavily backend.
 
     Returns:
         A :class:`FallbackWebSearch` wrapping the named backends in order.
 
     Raises:
-        ConfigError: If ``identifiers`` is empty or names a backend with no
-            registered factory.
+        ConfigError: If ``identifiers`` is empty, names a backend with no
+            registered factory, or resolves to an empty chain (for example, only
+            Tavily was requested but no key is configured).
     """
     if not identifiers:
         known = ", ".join(member.value for member in WebBackend)
         raise ConfigError(f"No web backends configured. Set MARKETING_OS_WEB_BACKENDS to: {known}.")
     backends: list[WebSearchTool] = []
     for identifier in identifiers:
+        if identifier is WebBackend.TAVILY:
+            if not tavily_api_key:
+                _logger.warning(
+                    "Tavily is configured as a web backend but MARKETING_OS_TAVILY_API_KEY "
+                    "is not set; skipping Tavily and falling through to the remaining backends."
+                )
+                continue
+            backends.append(TavilyWebSearch(tavily_api_key, search_depth=tavily_search_depth))
+            continue
         factory = _BACKEND_FACTORIES.get(identifier)
         if factory is None:
             raise ConfigError(f"No factory registered for web backend '{identifier}'.")
         backends.append(factory())
+    if not backends:
+        raise ConfigError(
+            "No usable web backends after resolving the configured chain "
+            f"({', '.join(member.value for member in identifiers)}); "
+            "set MARKETING_OS_TAVILY_API_KEY or configure a Playwright backend."
+        )
     return FallbackWebSearch(backends)

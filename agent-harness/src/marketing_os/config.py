@@ -22,17 +22,47 @@ class WebBackend(StrEnum):
     """A selectable web-search backend for the fallback chain.
 
     Attributes:
+        TAVILY: The Tavily JSON-API retrieval backend.
         GOOGLE: The Google-scraping Playwright backend.
         DUCKDUCKGO: The DuckDuckGo-scraping Playwright backend.
         NOOP: The no-op backend reporting that web search is unavailable.
     """
 
+    TAVILY = "tavily"
     GOOGLE = "google"
     DUCKDUCKGO = "duckduckgo"
     NOOP = "noop"
 
 
-_DEFAULT_WEB_BACKENDS = (WebBackend.GOOGLE, WebBackend.DUCKDUCKGO)
+_DEFAULT_WEB_BACKENDS = (WebBackend.TAVILY, WebBackend.GOOGLE, WebBackend.DUCKDUCKGO)
+
+_VALID_SEARCH_DEPTHS = ("basic", "advanced")
+_DEFAULT_SEARCH_DEPTH = "basic"
+
+
+def _parse_search_depth(raw: str) -> str:
+    """Validate the Tavily search-depth selector.
+
+    Args:
+        raw: The ``MARKETING_OS_TAVILY_SEARCH_DEPTH`` value.
+
+    Returns:
+        The lowercased depth (``basic`` or ``advanced``); the default when the
+        value is empty.
+
+    Raises:
+        ConfigError: If the value is neither ``basic`` nor ``advanced``.
+    """
+    token = raw.strip().lower()
+    if not token:
+        return _DEFAULT_SEARCH_DEPTH
+    if token not in _VALID_SEARCH_DEPTHS:
+        known = ", ".join(_VALID_SEARCH_DEPTHS)
+        raise ConfigError(
+            f"Unknown Tavily search depth '{token}' in MARKETING_OS_TAVILY_SEARCH_DEPTH. "
+            f"Known: {known}."
+        )
+    return token
 
 
 def _parse_web_backends(raw: str) -> list[WebBackend]:
@@ -148,8 +178,13 @@ class Settings:
         stream: Whether the CLI streams progress events.
         enable_web: Whether web-search tools are wired for agents that declare them.
         web_backends: The ordered web-search backends to try when web is enabled
-            (``google`` / ``duckduckgo`` / ``noop``); the resolver builds a
-            fallback chain in this order. Defaults to Google then DuckDuckGo.
+            (``tavily`` / ``google`` / ``duckduckgo`` / ``noop``); the resolver
+            builds a fallback chain in this order. Defaults to Tavily, then
+            Google, then DuckDuckGo.
+        tavily_api_key: The Tavily API key, or ``None`` when unset; the fallback
+            builder skips the Tavily backend and warns when it is absent.
+        tavily_search_depth: The Tavily depth (``basic`` | ``advanced``) driving
+            both ``search_depth`` and ``extract_depth``. Defaults to ``basic``.
         log_level: The console logging level (``DEBUG`` | ``INFO`` | ``WARNING`` | …).
         run_logs: Whether to write a per-run JSONL trace under ``logs/``.
         reviewer_thinking: Whether the QA reviewer runs in thinking mode. Off by
@@ -171,6 +206,14 @@ class Settings:
     enable_web: bool = field(default_factory=lambda: os.environ.get("MARKETING_OS_WEB", "0") == "1")
     web_backends: list[WebBackend] = field(
         default_factory=lambda: _parse_web_backends(os.environ.get("MARKETING_OS_WEB_BACKENDS", ""))
+    )
+    tavily_api_key: str | None = field(
+        default_factory=lambda: os.environ.get("MARKETING_OS_TAVILY_API_KEY") or None
+    )
+    tavily_search_depth: str = field(
+        default_factory=lambda: _parse_search_depth(
+            os.environ.get("MARKETING_OS_TAVILY_SEARCH_DEPTH", "")
+        )
     )
     log_level: str = field(default_factory=lambda: os.environ.get("MARKETING_OS_LOG_LEVEL", "INFO"))
     run_logs: bool = field(
