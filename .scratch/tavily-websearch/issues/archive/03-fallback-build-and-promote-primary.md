@@ -60,7 +60,7 @@ already propagates because the chain only catches `ToolError` (decision 5).
 ## Completion
 
 - Completed: 2026-07-15
-- Commit: <to be filled in manually>
+- Commit: `280d9b141b4e1df9b7e96036cc352e12ac4d7638`
 
 Evidence: `websearch_fallback.py` `build_web_backend` constructs `TavilyWebSearch`
 inline from `tavily_api_key`/`tavily_search_depth`, skips-and-warns when the key

@@ -16,6 +16,7 @@ A self-contained `TavilyWebSearch` implementing the existing `WebSearchTool` ABC
 Playwright.
 
 `search(query, max_results)`:
+
 - Over-fetch up to Tavily's max (**20**) in one `/search` request (1 credit flat),
   `include_answer` **off**, `search_depth` from an injected depth value.
 - Rank the returned results by Tavily's `score` **descending**, keep the **top
@@ -28,10 +29,12 @@ Playwright.
   inventing a new shape.
 
 `fetch(url)`:
+
 - Return readable text via Tavily **`/extract`**, using an injected
   `extract_depth` value (same value drives both depths).
 
 Failure map (decision 5 in the PRD) — this is the heart of the slice:
+
 - **429 / 432 / 433 / 5xx / network error / timeout → recoverable `ToolError`**
   (the fallback chain catches `ToolError` and advances).
 - **empty `results[]` → return the shared empty/no-results string** (the chain's
@@ -74,7 +77,7 @@ None - can start immediately.
 ## Completion
 
 - Completed: 2026-07-15
-- Commit: <to be filled in manually>
+- Commit: `280d9b141b4e1df9b7e96036cc352e12ac4d7638`
 
 Evidence: `adapters/tools/websearch_tavily.py` (`TavilyWebSearch` over an injected
 `httpx.Client`); shared render helpers moved into `websearch.py` so Tavily does

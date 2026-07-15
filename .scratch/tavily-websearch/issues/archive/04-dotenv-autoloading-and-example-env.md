@@ -51,7 +51,7 @@ None - can start immediately.
 ## Completion
 
 - Completed: 2026-07-15
-- Commit: <to be filled in manually>
+- Commit: `280d9b141b4e1df9b7e96036cc352e12ac4d7638`
 
 Evidence: `python-dotenv>=1.0` declared in `pyproject.toml`. New
 `entrypoints/env.py` `load_env()` calls `load_dotenv(find_dotenv(usecwd=True),

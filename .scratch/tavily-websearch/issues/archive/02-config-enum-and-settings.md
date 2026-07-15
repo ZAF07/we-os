@@ -50,7 +50,7 @@ None - can start immediately.
 ## Completion
 
 - Completed: 2026-07-15
-- Commit: <to be filled in manually>
+- Commit: `280d9b141b4e1df9b7e96036cc352e12ac4d7638`
 
 Evidence: `config.py` adds `WebBackend.TAVILY = "tavily"`, `Settings.tavily_api_key`
 (`MARKETING_OS_TAVILY_API_KEY`, `None` when unset), and `Settings.tavily_search_depth`
