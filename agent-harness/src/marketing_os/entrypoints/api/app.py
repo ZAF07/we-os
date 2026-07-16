@@ -30,12 +30,14 @@ from pydantic import BaseModel
 from marketing_os.adapters.observability import (
     configure_logging,
     configure_tracing,
+    list_run_ids,
     new_run_id,
+    read_events,
     tail_trace,
 )
 from marketing_os.config import Settings, load_settings
 from marketing_os.entrypoints.env import load_env
-from marketing_os.errors import RunConflictError
+from marketing_os.errors import GateError, MarketingOSError, RunConflictError
 from marketing_os.governance import check_gate
 from marketing_os.graph.registry import (
     CANCELLED,
@@ -67,6 +69,22 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Marketing OS", version="0.2.0", lifespan=_lifespan)
+
+
+def _http_error(exc: MarketingOSError) -> HTTPException:
+    """Map a harness error to an HTTP error using the error's own presentation.
+
+    The status code and structured payload come from the exception itself
+    (``http_status`` and ``detail``), so the taxonomy is not re-spelled at each
+    endpoint.
+
+    Args:
+        exc: The harness error to translate.
+
+    Returns:
+        The HTTP exception carrying the error's status and detail payload.
+    """
+    return HTTPException(exc.http_status, exc.detail or {"message": str(exc)})
 
 
 @lru_cache(maxsize=1)
@@ -225,9 +243,7 @@ async def run(slug: str, body: RunCampaign) -> dict[str, object]:
     settings = get_settings()
     report = check_gate(settings, body.customer, slug)
     if not report.ok:
-        raise HTTPException(
-            409, {"type": "gate", "message": "Stage 0 gate failed", "issues": report.all_issues}
-        )
+        raise _http_error(GateError("Stage 0 gate failed", missing=report.all_issues))
     run_id = new_run_id()
 
     async def launch() -> CampaignResult:
@@ -247,10 +263,7 @@ async def run(slug: str, body: RunCampaign) -> dict[str, object]:
             launch=launch,
         )
     except RunConflictError as exc:
-        raise HTTPException(
-            409,
-            {"type": "slug_busy", "message": str(exc), "active_run_id": exc.active_run_id},
-        ) from exc
+        raise _http_error(exc) from exc
     return {"run_id": run_id, "slug": slug, "stage": body.stage, "status": RUNNING}
 
 
@@ -325,11 +338,7 @@ def list_runs(slug: str) -> dict[str, object]:
         The campaign slug and the available run ids (newest first).
     """
     settings = get_settings()
-    runs_dir = settings.logs_dir / slug
-    if not runs_dir.is_dir():
-        return {"slug": slug, "runs": []}
-    runs = sorted((f.stem for f in runs_dir.glob("*.jsonl")), reverse=True)
-    return {"slug": slug, "runs": runs}
+    return {"slug": slug, "runs": list_run_ids(settings.logs_dir, slug)}
 
 
 @app.get("/campaigns/{slug}/runs/{run_id}")
@@ -350,8 +359,7 @@ def get_run(slug: str, run_id: str) -> dict[str, object]:
     path = settings.logs_dir / slug / f"{run_id}.jsonl"
     if not path.is_file():
         raise HTTPException(404, f"No run '{run_id}' for campaign '{slug}'")
-    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
-    return {"slug": slug, "run_id": run_id, "events": events}
+    return {"slug": slug, "run_id": run_id, "events": read_events(path)}
 
 
 @app.get("/runs/{run_id}/stream")

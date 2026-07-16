@@ -23,6 +23,7 @@ import httpx
 from marketing_os.adapters.tools.websearch import (
     WebSearchTool,
     _format_results,
+    _shape_result,
     _trim_text,
 )
 from marketing_os.errors import ConfigError, ToolError
@@ -83,6 +84,27 @@ class TavilyWebSearch(WebSearchTool):
         self._owns_client = client is None
         self._client = client if client is not None else httpx.Client(timeout=timeout)
 
+    @classmethod
+    def from_settings(
+        cls, api_key: str | None, *, search_depth: str = "basic"
+    ) -> TavilyWebSearch | None:
+        """Build a Tavily backend from settings, or ``None`` when no key is set.
+
+        The "no key → skip this backend" decision lives here rather than at the
+        chain builder, so the single fact "Tavily needs a key" is owned by the
+        Tavily backend. The builder skips (and warns) when this returns ``None``.
+
+        Args:
+            api_key: The Tavily API key, or ``None``/empty when unconfigured.
+            search_depth: The Tavily depth to construct the backend with.
+
+        Returns:
+            A configured :class:`TavilyWebSearch`, or ``None`` when no key is set.
+        """
+        if not api_key:
+            return None
+        return cls(api_key, search_depth=search_depth)
+
     def search(self, query: str, max_results: int = 5) -> str:
         """Search Tavily and return the top results in the shared format.
 
@@ -117,12 +139,16 @@ class TavilyWebSearch(WebSearchTool):
         working_set = ranked[:_WORKING_SET]
         limit = min(max_results, _WORKING_SET)
         items = [
-            {
-                "title": (result.get("title") or "").strip(),
-                "url": (result.get("url") or "").strip(),
-                "snippet": (result.get("content") or "").strip(),
-            }
+            record
             for result in working_set[:limit]
+            if (
+                record := _shape_result(
+                    result.get("title") or "",
+                    result.get("url") or "",
+                    result.get("content") or "",
+                )
+            )
+            is not None
         ]
         return _format_results(query, items)
 

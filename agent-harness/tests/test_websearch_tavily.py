@@ -27,6 +27,18 @@ def _backend(handler: _Handler, *, search_depth: str = "basic") -> TavilyWebSear
     return TavilyWebSearch("tvly-test-key", search_depth=search_depth, client=client)
 
 
+def test_from_settings_returns_none_without_a_key() -> None:
+    assert TavilyWebSearch.from_settings(None) is None
+    assert TavilyWebSearch.from_settings("") is None
+
+
+def test_from_settings_builds_backend_with_a_key() -> None:
+    backend = TavilyWebSearch.from_settings("tvly-secret", search_depth="advanced")
+    assert isinstance(backend, TavilyWebSearch)
+    assert backend._search_depth == "advanced"
+    backend.close()
+
+
 def _search_results(count: int) -> list[dict[str, object]]:
     """Build ``count`` Tavily search records with ascending scores.
 

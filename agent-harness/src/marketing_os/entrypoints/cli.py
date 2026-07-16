@@ -19,7 +19,7 @@ from typing import Any
 from marketing_os.adapters.observability import configure_logging, configure_tracing
 from marketing_os.config import load_settings
 from marketing_os.entrypoints.env import load_env
-from marketing_os.errors import GateError, MarketingOSError
+from marketing_os.errors import GateError, GuardrailError, MarketingOSError
 from marketing_os.governance import check_gate
 from marketing_os.governance.gate import GateReport
 
@@ -181,18 +181,22 @@ def main(argv: list[str] | None = None) -> int:
         return exit_code
     except GateError as exc:
         print(f"\nGate error: {exc}", file=sys.stderr)
-        return 1
-    except MarketingOSError as exc:
+        return exc.exit_code
+    except GuardrailError as exc:
         print(f"\nError: {exc}", file=sys.stderr)
-        for discrepancy in getattr(exc, "detail", {}).get("discrepancies", []):
+        for discrepancy in exc.discrepancies:
             print(
                 f"  - [{discrepancy.get('rubric_point')}] {discrepancy.get('problem')}",
                 file=sys.stderr,
             )
-        run_log = getattr(exc, "run_log", None)
-        if run_log:
-            print(f"Run log: {run_log}", file=sys.stderr)
-        return 1
+        if exc.run_log:
+            print(f"Run log: {exc.run_log}", file=sys.stderr)
+        return exc.exit_code
+    except MarketingOSError as exc:
+        print(f"\nError: {exc}", file=sys.stderr)
+        if exc.run_log:
+            print(f"Run log: {exc.run_log}", file=sys.stderr)
+        return exc.exit_code
 
 
 if __name__ == "__main__":

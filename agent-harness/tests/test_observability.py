@@ -12,7 +12,13 @@ import pytest
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 from conftest import FakeReviewer, ProgrammableChatModel, write_call
-from marketing_os.adapters.observability import tail_trace
+from marketing_os.adapters.observability import (
+    find_trace,
+    list_run_ids,
+    read_events,
+    tail_trace,
+    terminal_summary,
+)
 from marketing_os.config import Settings
 from marketing_os.errors import GuardrailError
 from marketing_os.graph import nodes, runner
@@ -198,6 +204,43 @@ def _append_event(path: Path, event: dict) -> None:
     """
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event) + "\n")
+
+
+def test_read_events_parses_lines_and_missing_file_is_empty(tmp_path: Path) -> None:
+    trace = tmp_path / "run.jsonl"
+    assert read_events(trace) == []
+    _write_trace(
+        trace,
+        [{"event": "stage.start", "stage": "research"}, {"event": "run.summary", "outcome": "ok"}],
+    )
+    events = read_events(trace)
+    assert [event["event"] for event in events] == ["stage.start", "run.summary"]
+
+
+def test_terminal_summary_returns_last_run_summary(tmp_path: Path) -> None:
+    trace = tmp_path / "run.jsonl"
+    assert terminal_summary(trace) is None
+    _write_trace(
+        trace,
+        [{"event": "stage.start"}, {"event": "run.summary", "outcome": "error"}],
+    )
+    summary = terminal_summary(trace)
+    assert summary is not None and summary["outcome"] == "error"
+
+
+def test_find_trace_and_list_run_ids_span_slug_dirs(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    assert find_trace(logs, "missing") is None
+    assert list_run_ids(logs, "acme") == []
+    (logs / "acme").mkdir(parents=True)
+    _write_trace(logs / "acme" / "20260716T090000Z-aaaa.jsonl", [{"event": "run.summary"}])
+    _write_trace(logs / "acme" / "20260716T100000Z-bbbb.jsonl", [{"event": "run.summary"}])
+    found = find_trace(logs, "20260716T100000Z-bbbb")
+    assert found is not None and found.parent.name == "acme"
+    assert list_run_ids(logs, "acme") == [
+        "20260716T100000Z-bbbb",
+        "20260716T090000Z-aaaa",
+    ]
 
 
 async def test_tail_trace_replays_finished_run_and_stops_at_summary(tmp_path: Path) -> None:

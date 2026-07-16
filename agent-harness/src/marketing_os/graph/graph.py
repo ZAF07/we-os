@@ -18,11 +18,11 @@ from langgraph.graph.state import CompiledStateGraph
 from marketing_os.adapters.models import get_model
 from marketing_os.adapters.review import LLMReviewer
 from marketing_os.adapters.tools import FilesystemSandbox, WebSearchTool, build_tools
-from marketing_os.agents.loader import AgentSpec, load_agent
-from marketing_os.agents.specialist import DIRECTOR_BODY, build_specialist
+from marketing_os.agents.spec_source import SpecSource
+from marketing_os.agents.specialist import build_specialist
 from marketing_os.config import Role, Settings
 from marketing_os.governance import load_governance
-from marketing_os.governance.pipeline import DIRECTOR, PIPELINE, PIPELINE_BY_KEY, Stage
+from marketing_os.governance.pipeline import PIPELINE, PIPELINE_BY_KEY, Stage
 from marketing_os.graph.nodes import (
     make_enter_node,
     make_gate_node,
@@ -35,27 +35,13 @@ from marketing_os.graph.state import CampaignState
 from marketing_os.ports import Reviewer
 
 
-def _director_spec() -> AgentSpec:
-    """Return the inline specialist definition for the Director-owned stage.
-
-    Returns:
-        The :class:`AgentSpec` for the campaign-strategy stage, which has no file
-        under ``.claude/agents/`` because the Director owns it directly.
-    """
-    return AgentSpec(
-        name=DIRECTOR,
-        description="Marketing Director — campaign strategy, budget, KPIs.",
-        tools=["Read", "Grep", "Glob", "Write"],
-        body=DIRECTOR_BODY,
-    )
-
-
 def _build_stage_agent(
     settings: Settings,
     stage: Stage,
     model: BaseChatModel,
     governance: str,
     web_backend: WebSearchTool | None,
+    spec_source: SpecSource,
 ) -> Runnable:
     """Build the specialist agent for one stage.
 
@@ -65,11 +51,12 @@ def _build_stage_agent(
         model: The chat model the specialist reasons with.
         governance: The governance preamble baked into the system prompt.
         web_backend: The web backend for stages whose agent declares web tools.
+        spec_source: The source resolving the stage's specialist definition.
 
     Returns:
         The compiled specialist agent for the stage.
     """
-    spec = _director_spec() if stage.agent == DIRECTOR else load_agent(settings, stage.agent)
+    spec = spec_source.spec_for(stage.agent)
     sandbox = FilesystemSandbox(settings.root, write_prefixes=["campaigns"])
     tools = build_tools(spec.tools, sandbox=sandbox, web_backend=web_backend)
     return build_specialist(spec, model=model, tools=tools, governance=governance)
@@ -163,6 +150,7 @@ def build_campaign_graph(
     reviewer = reviewer or LLMReviewer(
         get_model(settings, role=Role.REVIEWER, thinking=settings.reviewer_thinking), settings
     )
+    spec_source = SpecSource(settings)
     builder = StateGraph(CampaignState)
     builder.add_node("gate", make_gate_node(settings))
     builder.add_edge(START, "gate")
@@ -170,7 +158,7 @@ def build_campaign_graph(
     entries: list[str] = []
     for index, stage in enumerate(PIPELINE):
         advance_target = f"{PIPELINE[index + 1].key}__enter" if index + 1 < len(PIPELINE) else END
-        agent = _build_stage_agent(settings, stage, model, governance, web_backend)
+        agent = _build_stage_agent(settings, stage, model, governance, web_backend, spec_source)
         entries.append(_add_stage(builder, settings, stage, agent, reviewer, advance_target))
 
     builder.add_conditional_edges("gate", _route_after_gate, {"continue": entries[0], "end": END})
@@ -208,10 +196,11 @@ def build_single_stage_graph(
     reviewer = reviewer or LLMReviewer(
         get_model(settings, role=Role.REVIEWER, thinking=settings.reviewer_thinking), settings
     )
+    spec_source = SpecSource(settings)
     builder = StateGraph(CampaignState)
     builder.add_node("gate", make_gate_node(settings))
     builder.add_edge(START, "gate")
-    agent = _build_stage_agent(settings, stage, model, governance, web_backend)
+    agent = _build_stage_agent(settings, stage, model, governance, web_backend, spec_source)
     entry = _add_stage(builder, settings, stage, agent, reviewer, END)
     builder.add_conditional_edges("gate", _route_after_gate, {"continue": entry, "end": END})
     return _compile(builder, checkpointer)

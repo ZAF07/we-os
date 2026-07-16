@@ -34,6 +34,7 @@ from marketing_os.adapters.tools import (
     websearch_playwright,
 )
 from marketing_os.adapters.tools.sandbox import FilesystemSandbox
+from marketing_os.adapters.tools.websearch import _shape_result
 from marketing_os.adapters.tools.websearch_playwright import (
     _decode_result_href,
     _format_results,
@@ -824,6 +825,19 @@ def test_fallback_fetch_delegates_and_falls_through() -> None:
     chain = FallbackWebSearch([first, second])
 
     assert chain.fetch("https://x.test") == "page text"
+
+
+# --- Shared result shaping ---------------------------------------------------
+
+
+def test_shape_result_strips_fields_and_skips_unusable() -> None:
+    assert _shape_result("  Title  ", "  https://x.test ", "  snip ") == {
+        "title": "Title",
+        "url": "https://x.test",
+        "snippet": "snip",
+    }
+    assert _shape_result("", "https://x.test") is None
+    assert _shape_result("Title", "   ") is None
 
 
 # --- Backend registry + config-driven resolution ----------------------------

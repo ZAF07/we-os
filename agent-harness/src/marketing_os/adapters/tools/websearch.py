@@ -27,6 +27,30 @@ _WHITESPACE = re.compile(r"[ \t\f\v]+")
 NO_RESULTS_PREFIX = "No web results found"
 
 
+def _shape_result(title: str, url: str, snippet: str = "") -> dict[str, str] | None:
+    """Strip a raw result's fields into the shared source-attributed record shape.
+
+    Every backend parses a different source (DuckDuckGo/Google DOM, Tavily JSON)
+    but renders to one record shape, so the strip-and-skip is shared here rather
+    than copied into each backend's parse.
+
+    Args:
+        title: The raw result title.
+        url: The raw result URL.
+        snippet: The raw result snippet, if any.
+
+    Returns:
+        A ``{title, url, snippet}`` record with each field stripped, or ``None``
+        when the title or URL is empty after stripping (an unusable result the
+        caller should skip).
+    """
+    clean_title = title.strip()
+    clean_url = url.strip()
+    if not clean_title or not clean_url:
+        return None
+    return {"title": clean_title, "url": clean_url, "snippet": snippet.strip()}
+
+
 def _format_results(query: str, items: list[dict[str, str]]) -> str:
     """Render search results as a readable, source-attributed list.
 

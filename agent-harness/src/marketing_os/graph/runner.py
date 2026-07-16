@@ -22,7 +22,7 @@ from marketing_os.adapters.observability import (
 )
 from marketing_os.adapters.tools import WebSearchTool
 from marketing_os.config import Settings
-from marketing_os.errors import GateError, GuardrailError, MarketingOSError, PipelineError
+from marketing_os.errors import exception_from_state_error
 from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
 from marketing_os.graph.state import CampaignState
 from marketing_os.schemas import CampaignResult, StageResult, Usage
@@ -106,10 +106,10 @@ def _resolve_web_backend(
 
 
 def _raise_on_error(state: CampaignState, run_log: str | None) -> None:
-    """Translate a halting state error into the typed exception hierarchy.
+    """Raise the typed exception for a halting state error, if the run halted.
 
-    The raised exception carries a structured ``detail`` dict (and the ``run_log``
-    path) so the API can return the failure reason to the client.
+    The mapping from the state-error dict to the typed exception (with its
+    structured ``detail`` payload) lives in :func:`exception_from_state_error`.
 
     Args:
         state: The final campaign state.
@@ -123,40 +123,7 @@ def _raise_on_error(state: CampaignState, run_log: str | None) -> None:
     error = state.get("error")
     if not error:
         return
-    kind = error.get("type")
-    stage = error.get("stage")
-    if kind == "gate":
-        issues = [str(issue) for issue in error.get("issues", [])]
-        message = "Stage 0 gate failed: " + "; ".join(issues)
-        exc: MarketingOSError = GateError(message, missing=issues)
-        detail: dict[str, Any] = {"message": message, "issues": issues}
-    elif kind == "pipeline":
-        message = (
-            f"Stage '{stage}' cannot start: prerequisite "
-            f"'{error.get('prerequisite')}' does not exist."
-        )
-        exc = PipelineError(message)
-        detail = {"message": message, "prerequisite": error.get("prerequisite")}
-    elif kind == "save":
-        message = f"Stage '{stage}' did not save its deliverable to {error.get('deliverable')}."
-        exc = PipelineError(message)
-        detail = {"message": message, "deliverable": error.get("deliverable")}
-    elif kind == "guardrail":
-        message = f"Stage '{stage}' failed QA and could not be reconciled."
-        exc = GuardrailError(message, discrepancies=error.get("discrepancies", []))
-        detail = {
-            "message": message,
-            "summary": error.get("summary"),
-            "discrepancies": error.get("discrepancies", []),
-        }
-    else:
-        message = f"Run halted: {error}"
-        exc = PipelineError(message)
-        detail = {"message": message}
-    detail.update({"type": kind, "stage": stage, "run_log": run_log})
-    exc.detail = detail
-    exc.run_log = run_log
-    raise exc
+    raise exception_from_state_error(error, run_log)
 
 
 def _to_result(

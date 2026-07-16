@@ -16,13 +16,12 @@ Durable run state is future work (see ``.scratch/backfill`` issue 07).
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from marketing_os.adapters.observability import get_logger
+from marketing_os.adapters.observability import find_trace, get_logger, terminal_summary
 from marketing_os.config import Settings
 from marketing_os.errors import RunConflictError
 from marketing_os.schemas import CampaignResult
@@ -35,7 +34,6 @@ FAILED = "failed"
 CANCELLED = "cancelled"
 INTERRUPTED = "interrupted"
 
-_TERMINAL_EVENT = "run.summary"
 _OUTCOME_TO_STATUS = {"ok": COMPLETED, "error": FAILED, "cancelled": CANCELLED}
 
 
@@ -221,11 +219,11 @@ def read_run_status(settings: Settings, registry: RunRegistry, run_id: str) -> R
     live = registry.get(run_id)
     if live is not None:
         return RunStatus(run_id=run_id, slug=live.slug, status=RUNNING, stage=live.stage)
-    trace = _find_trace(settings, run_id)
+    trace = find_trace(settings.logs_dir, run_id)
     if trace is None:
         return None
     slug = trace.parent.name
-    summary = _terminal_summary(trace)
+    summary = terminal_summary(trace)
     if summary is None:
         return RunStatus(run_id=run_id, slug=slug, status=INTERRUPTED)
     status = _OUTCOME_TO_STATUS.get(str(summary.get("outcome")), INTERRUPTED)
@@ -253,40 +251,4 @@ def resolve_trace_path(settings: Settings, registry: RunRegistry, run_id: str) -
     live = registry.get(run_id)
     if live is not None:
         return settings.logs_dir / live.slug / f"{run_id}.jsonl"
-    return _find_trace(settings, run_id)
-
-
-def _find_trace(settings: Settings, run_id: str) -> Path | None:
-    """Locate a run's JSONL trace across every slug's log directory.
-
-    Args:
-        settings: The harness settings locating the ``logs/`` tree.
-        run_id: The run id (trace filename without extension).
-
-    Returns:
-        The trace path, or ``None`` when no slug has a trace for the run id.
-    """
-    if not settings.logs_dir.is_dir():
-        return None
-    for path in settings.logs_dir.glob(f"*/{run_id}.jsonl"):
-        return path
-    return None
-
-
-def _terminal_summary(trace: Path) -> dict | None:
-    """Return the last ``run.summary`` event recorded in a trace, if any.
-
-    Args:
-        trace: The trace file to scan.
-
-    Returns:
-        The terminal summary event, or ``None`` when the trace has no summary.
-    """
-    summary: dict | None = None
-    for line in trace.read_text(encoding="utf-8").splitlines():
-        if not line:
-            continue
-        event = json.loads(line)
-        if event.get("event") == _TERMINAL_EVENT:
-            summary = event
-    return summary
+    return find_trace(settings.logs_dir, run_id)

@@ -191,13 +191,14 @@ def build_web_backend(
     backends: list[WebSearchTool] = []
     for identifier in identifiers:
         if identifier is WebBackend.TAVILY:
-            if not tavily_api_key:
+            tavily = TavilyWebSearch.from_settings(tavily_api_key, search_depth=tavily_search_depth)
+            if tavily is None:
                 _logger.warning(
                     "Tavily is configured as a web backend but MARKETING_OS_TAVILY_API_KEY "
                     "is not set; skipping Tavily and falling through to the remaining backends."
                 )
                 continue
-            backends.append(TavilyWebSearch(tavily_api_key, search_depth=tavily_search_depth))
+            backends.append(tavily)
             continue
         factory = _BACKEND_FACTORIES.get(identifier)
         if factory is None:

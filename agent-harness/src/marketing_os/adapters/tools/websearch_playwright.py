@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, quote_plus, urlparse
 from marketing_os.adapters.tools.websearch import (
     WebSearchTool,
     _format_results,
+    _shape_result,
     _trim_text,
 )
 from marketing_os.errors import ToolError
@@ -220,13 +221,13 @@ class PlaywrightWebSearch(WebSearchTool):
             anchor = block.query_selector("a.result__a")
             if anchor is None:
                 continue
-            title = (anchor.inner_text() or "").strip()
             href = _decode_result_href(anchor.get_attribute("href") or "")
-            if not title or not href:
-                continue
             snippet_el = block.query_selector(".result__snippet")
-            snippet = (snippet_el.inner_text() or "").strip() if snippet_el else ""
-            items.append({"title": title, "url": href, "snippet": snippet})
+            snippet = snippet_el.inner_text() or "" if snippet_el else ""
+            record = _shape_result(anchor.inner_text() or "", href, snippet)
+            if record is None:
+                continue
+            items.append(record)
             if len(items) >= max_results:
                 break
         return items
@@ -364,13 +365,16 @@ class GoogleWebSearch(PlaywrightWebSearch):
             if anchor is None:
                 continue
             href = (anchor.get_attribute("href") or "").strip()
-            title_el = block.query_selector("h3")
-            title = (title_el.inner_text() or "").strip() if title_el else ""
-            if not title or not href.startswith("http"):
+            if not href.startswith("http"):
                 continue
+            title_el = block.query_selector("h3")
+            title = title_el.inner_text() or "" if title_el else ""
             snippet_el = block.query_selector("div.VwiC3b")
-            snippet = (snippet_el.inner_text() or "").strip() if snippet_el else ""
-            items.append({"title": title, "url": href, "snippet": snippet})
+            snippet = snippet_el.inner_text() or "" if snippet_el else ""
+            record = _shape_result(title, href, snippet)
+            if record is None:
+                continue
+            items.append(record)
             if len(items) >= max_results:
                 break
         if not items:
