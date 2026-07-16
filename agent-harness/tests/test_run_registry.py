@@ -193,6 +193,50 @@ async def test_cancel_aborts_in_flight_call_writes_cancelled_summary_and_deregis
     assert not (settings.campaigns_dir / "acme" / "research.md").is_file()
 
 
+async def test_build_time_failure_writes_error_summary_and_resolves_failed(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that fails during graph build still ends with a terminal error status.
+
+    Reproduces issue 05: an exception from graph construction (e.g. a missing
+    provider key raised by ``get_model``) must not vanish. The run should write a
+    terminal ``run.summary outcome=error`` to its trace so a later status query
+    resolves to ``failed`` rather than 404.
+    """
+    from marketing_os.graph import runner as runner_mod
+
+    def boom(*_args: Any, **_kwargs: Any) -> Any:
+        """Simulate a graph-build failure such as missing provider credentials."""
+        raise RuntimeError("Missing credentials. Please set OPENAI_API_KEY.")
+
+    monkeypatch.setattr(runner_mod, "build_single_stage_graph", boom)
+    registry = RunRegistry()
+    run_id = new_run_id()
+
+    async def launch() -> CampaignResult:
+        """Run the research stage on the real async path with a failing graph build.
+
+        Returns:
+            The structured campaign result (never reached; the build fails).
+        """
+        return await arun_campaign(settings, "acme", "acme", stage="research", run_id=run_id)
+
+    run = registry.start(
+        run_id=run_id, slug="acme", stage="research", customer="acme", launch=launch
+    )
+    with pytest.raises(RuntimeError):
+        await run.task
+
+    trace = settings.logs_dir / "acme" / f"{run_id}.jsonl"
+    events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines() if line]
+    summaries = [event for event in events if event.get("event") == "run.summary"]
+    assert summaries and summaries[-1]["outcome"] == "error"
+
+    status = read_run_status(settings, RunRegistry(), run_id)
+    assert status is not None, "build-time failure resolved to 404 instead of a status"
+    assert status.status == "failed"
+
+
 async def test_cancel_unknown_run_returns_none() -> None:
     registry = RunRegistry()
     assert await registry.cancel("does-not-exist") is None

@@ -329,16 +329,18 @@ async def arun_campaign(
         PipelineError: If a prerequisite was missing or a deliverable never saved.
         GuardrailError: If a deliverable failed QA within the revision budget.
     """
-    backend, owns_backend = _resolve_web_backend(settings, web_backend)
-    graph = _select_graph(settings, stage, web_backend=backend, checkpointer=checkpointer)
-    config = _config(customer, slug, stage)
-    inbound = {"customer": customer, "slug": slug}
     trace = _open_trace(settings, slug, run_id or new_run_id())
     run_log = _rel_log(settings, trace)
     _LOGGER.info(
         "run.start customer=%s slug=%s stage=%s run_log=%s", customer, slug, stage, run_log
     )
+    backend: WebSearchTool | None = None
+    owns_backend = False
     try:
+        backend, owns_backend = _resolve_web_backend(settings, web_backend)
+        graph = _select_graph(settings, stage, web_backend=backend, checkpointer=checkpointer)
+        config = _config(customer, slug, stage)
+        inbound = {"customer": customer, "slug": slug}
         async for mode, chunk in graph.astream(
             inbound, config=config, stream_mode=["custom", "updates"]
         ):
@@ -442,16 +444,18 @@ async def astream_campaign(
     Yields:
         Event dictionaries with an ``event`` key and event-specific fields.
     """
-    backend, owns_backend = _resolve_web_backend(settings, web_backend)
-    graph = _select_graph(settings, stage, web_backend=backend, checkpointer=checkpointer)
-    config = _config(customer, slug, stage)
     run_id = new_run_id()
     trace = _open_trace(settings, slug, run_id)
     run_log = _rel_log(settings, trace)
     _LOGGER.info(
         "run.start customer=%s slug=%s stage=%s run_log=%s", customer, slug, stage, run_log
     )
+    backend: WebSearchTool | None = None
+    owns_backend = False
     try:
+        backend, owns_backend = _resolve_web_backend(settings, web_backend)
+        graph = _select_graph(settings, stage, web_backend=backend, checkpointer=checkpointer)
+        config = _config(customer, slug, stage)
         async for mode, chunk in graph.astream(
             {"customer": customer, "slug": slug},
             config=config,
