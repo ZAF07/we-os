@@ -14,6 +14,7 @@ The tracer-bullet foundation the whole frontend hangs off. A single Next.js app 
 End-to-end behavior: the operator opens the app, sees the left nav rail (Home, Campaigns, Calendar, Brand, Performance) with the "Marketing OS" mark, and can navigate to each route (stub content for now). The active nav item highlights; Workspace highlights Campaigns. Below desktop width the nav collapses to a drawer and content reflows.
 
 Scope of this slice:
+
 - Next.js App Router + TS strict + ESLint/Prettier; pnpm.
 - Tailwind + shadcn/ui, re-themed to the mockup's tokens: indigo `#4F46E5`, the slate scale, status colors, radii; Instrument Sans via `next/font/google`; `lucide-react` for icons.
 - App shell: `layout` with the nav rail + content area; real routes `/`, `/campaigns`, `/campaigns/[slug]`, `/calendar`, `/brand`, `/performance`, `/onboarding`, `/campaigns/new` (all stubs).
@@ -51,4 +52,4 @@ None - can start immediately.
 ## Completion
 
 - Completed: 2026-07-16
-- Commit: <to be filled in manually>
+- Commit: `5151e8f0dcaf505eead1ccdc67e022c8f475316d`
