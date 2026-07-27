@@ -92,3 +92,4 @@ Each stage requires the prior stage's deliverable to exist; no stage bypasses an
 - `templates/` — Customer DNA and campaign-goal templates.
 - `.claude/` — agents, rules, skills, permissions (the interactive configuration).
 - `agent-harness/` — the LangGraph runtime enforcing the same governance.
+- `web/` — the Next.js operator UI + BFF (see [ADR-0012](docs/adr/0012-nextjs-frontend-and-bff-in-monolith.md)). Milestone 1 is a mock-fixture clone of the approved design; it makes no engine calls, and its 8 operator stage names are UI-only until the FE↔engine stage mapping is resolved at wiring time.
