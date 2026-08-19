@@ -1,6 +1,6 @@
 # Add tests for CLI, HTTP API, and integrations
 
-Status: ready-for-agent
+Status: completed
 
 The graph, gate, pipeline, reviewer, loader, models, and observability layers are covered by hermetic tests (scripted model + fake reviewer, no network). Several surfaces are not covered at all.
 
