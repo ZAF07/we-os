@@ -66,12 +66,15 @@ class _CrashingReviewer:
 def _patch_graph(monkeypatch: pytest.MonkeyPatch, reviewer: Reviewer) -> None:
     """Force the runner to build a single-stage graph wired with fakes."""
 
-    def fake_select(settings: Settings, stage: str | None, *, web_backend, checkpointer):
+    def fake_select(
+        settings: Settings, stage: str | None, *, web_backend, checkpointer, document_store=None
+    ):
         return build_single_stage_graph(
             settings,
             stage or "research",
             model=ProgrammableChatModel(handler=_writing_handler),
             reviewer=reviewer,
+            document_store=document_store,
         )
 
     monkeypatch.setattr(runner, "_select_graph", fake_select)

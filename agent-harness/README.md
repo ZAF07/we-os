@@ -73,7 +73,7 @@ uv run marketing-os new-campaign <customer> [--slug S] [--stage research] [--pro
 ```
 
 `new-campaign` runs the gate, then the pipeline (research → brand-strategy →
-campaign-strategy → creative-brief → asset-prompts → performance-plan), streaming
+campaign-strategy → performance-plan → creative-brief → asset-prompts), streaming
 each stage and its QA iterations and writing deliverables under `campaigns/<slug>/`.
 
 ## HTTP API

@@ -1,0 +1,1562 @@
+openapi: 3.0.3
+info:
+  title: we-OS API
+  version: 0.1.0
+  contact:
+    name: we-OS engineering
+    url: https://github.com/ZAF07/we-os
+  description: |
+    The frozen contract between the we-OS frontend and the engine. The frontend
+    codes against this document (served by a mock server) while the engine is
+    built behind it; changes are deliberate and visible to both sides.
+
+    ## Tenancy
+
+    Identity is carried as a Bearer JWT issued by the managed IdP. The tenant —
+    exactly one business — is derived from the **verified** claim on every
+    request. **No operation accepts a tenant, business, or customer identity as
+    a parameter.** A request without a valid token receives a 401
+    `unauthenticated` error. A request whose token is valid but whose target
+    resource belongs to a different tenant receives a 404 `not_found` — the
+    refusal is indistinguishable from the resource not existing, so nothing
+    leaks across the tenant boundary.
+
+    ## Stages, phases, and lifecycle
+
+    The API speaks **engine stages** (`research` … `asset-prompts`, in the
+    mandatory order with the performance plan before the creative brief). Each
+    stage also reports the operator **Phase** it belongs to (`Research`,
+    `Strategy`, `Plan`, `Produce`) so the frontend renders its designed stepper
+    without the engine adopting UI vocabulary. `Brief` is the campaign goal (a
+    Stage 0 input), and `Approve` / `Publish` / `Measure` are campaign
+    **lifecycle status**, carried on the separate `status` field — never
+    stages.
+
+    ## Errors
+
+    Every error is a typed object carrying its own HTTP status and structured
+    detail. Notable variants: `gate_failed` (409) names every missing Required
+    field; `quota_exhausted` (402) is returned by any operation that would
+    trigger billable work once the tenant's allowance is spent; `run_conflict`
+    (409) carries the id of the run already in flight.
+servers:
+  - url: http://localhost:4010
+    description: Local mock server (Prism)
+  - url: /api/v1
+    description: The engine, mounted behind the BFF
+security:
+  - bearerAuth: []
+tags:
+  - name: session
+    description: The signed-in user and their business.
+  - name: questionnaire
+    description: The admin-curated question set that authors the Brand DNA.
+  - name: brand-dna
+    description: The tenant's Brand DNA — read, completeness, and answers.
+  - name: campaigns
+    description: Campaigns and their goals.
+  - name: runs
+    description: Pipeline runs — start, observe, approve, revise, cancel.
+  - name: deliverables
+    description: Stage deliverables — content, versions, staleness.
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Service health
+      description: Liveness only — carries no tenant data and needs no identity.
+      security: []
+      tags: [session]
+      responses:
+        "200":
+          description: The service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+              example:
+                status: ok
+
+  /me:
+    get:
+      operationId: getMe
+      summary: The signed-in user and the business their tenant represents
+      description: Resolves the verified identity claim — never a caller-supplied id — to its tenant.
+      tags: [session]
+      responses:
+        "200":
+          description: The verified identity and its tenant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+              example:
+                user_id: usr_9f2c
+                email: sam@coastcoffee.example
+                business_name: Coast Coffee
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /questionnaire:
+    get:
+      operationId: getQuestionnaire
+      summary: The current published question set
+      description: |
+        The single artifact that drives the onboarding wizard, the shape of the
+        rendered Brand DNA, and what the DNA Gate enforces as Required. Each
+        question asks only for a fact the business owner uniquely knows.
+      tags: [questionnaire]
+      responses:
+        "200":
+          description: The published question-set version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Questionnaire"
+              example:
+                version: 3
+                published_at: "2026-08-01T09:00:00Z"
+                questions:
+                  - id: q_business_name
+                    field: Business name
+                    text: What is your business called?
+                    why_we_ask: Every recommendation is grounded in your business, starting with its name.
+                    help_text: Use the name your customers know you by.
+                    input_type: text
+                    required: true
+                  - id: q_price_point
+                    field: Price point
+                    text: What do your main products or services cost?
+                    why_we_ask: Positioning and channel choices differ for premium and value offers.
+                    help_text: Rough ranges are fine, e.g. "$6–9 per drink".
+                    input_type: text
+                    required: true
+                  - id: q_segments
+                    field: Audience segments
+                    text: Who buys from you? Describe each distinct group and rank them.
+                    why_we_ask: A campaign targets one specific segment, never everyone.
+                    help_text: 2–4 groups, most important first.
+                    input_type: list
+                    required: true
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /brand-dna:
+    get:
+      operationId: getBrandDna
+      summary: Read the tenant's Brand DNA
+      description: |
+        The structured answers are the source of truth; the markdown is the
+        canonical projection agents read. The DNA is human-authored via the
+        Questionnaire — never drafted, scraped, or guessed by a model.
+      tags: [brand-dna]
+      responses:
+        "200":
+          description: The Brand DNA in both forms.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandDna"
+              example:
+                questionnaire_version: 3
+                updated_at: "2026-08-12T10:30:00Z"
+                markdown: |
+                  # Brand DNA — Coast Coffee
+
+                  ## Business
+                  - **Business name:** Coast Coffee
+                  - **Price point:** $6–9 per drink, $18–24 per bag
+                answers:
+                  - question_id: q_business_name
+                    answer: Coast Coffee
+                  - question_id: q_price_point
+                    answer: $6–9 per drink, $18–24 per bag
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /brand-dna/completeness:
+    get:
+      operationId: getBrandDnaCompleteness
+      summary: The DNA completeness report
+      description: |
+        What stands between the business and starting work. Required fields are
+        derived from the published question set, so publishing a new version
+        changes this report (never silently — unanswered new questions are
+        listed) and the DNA Gate with it.
+      tags: [brand-dna]
+      responses:
+        "200":
+          description: The completeness report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DnaCompleteness"
+              examples:
+                complete:
+                  summary: Ready to run campaigns
+                  value:
+                    complete: true
+                    questionnaire_version: 3
+                    required_total: 12
+                    required_answered: 12
+                    missing: []
+                    unanswered_new_questions: []
+                incomplete:
+                  summary: Missing Required fields
+                  value:
+                    complete: false
+                    questionnaire_version: 3
+                    required_total: 12
+                    required_answered: 9
+                    missing:
+                      - question_id: q_price_point
+                        field: Price point
+                        label: What do your main products or services cost?
+                      - question_id: q_geography
+                        field: Geography / service area
+                        label: Where do you serve customers?
+                      - question_id: q_budget_range
+                        field: Budget range
+                        label: What can you spend on marketing in a typical month?
+                    unanswered_new_questions: [q_languages]
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /brand-dna/answers:
+    post:
+      operationId: answerBrandDnaQuestions
+      summary: Answer questionnaire questions
+      description: |
+        Upserts answers (the wizard saves partway and resumes; any answer can be
+        edited later). Returns the updated completeness report so the wizard
+        can show progress without a second request.
+      tags: [brand-dna]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DnaAnswersUpsert"
+            example:
+              answers:
+                - question_id: q_price_point
+                  answer: $6–9 per drink, $18–24 per bag
+      responses:
+        "200":
+          description: The updated completeness report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DnaCompleteness"
+              example:
+                complete: false
+                questionnaire_version: 3
+                required_total: 12
+                required_answered: 10
+                missing:
+                  - question_id: q_geography
+                    field: Geography / service area
+                    label: Where do you serve customers?
+                  - question_id: q_budget_range
+                    field: Budget range
+                    label: What can you spend on marketing in a typical month?
+                unanswered_new_questions: []
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /campaigns:
+    get:
+      operationId: listCampaigns
+      summary: List the tenant's campaigns
+      description: Everything in flight, with lifecycle status and stage progress separated.
+      tags: [campaigns]
+      responses:
+        "200":
+          description: Every campaign with its lifecycle status and stage progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignList"
+              example:
+                campaigns:
+                  - id: cmp_spring
+                    name: Spring refill push
+                    status: awaiting_approval
+                    stage_progress:
+                      completed: 1
+                      total: 6
+                      current_stage_key: brand-strategy
+                    blocked_reason: Brand strategy is waiting for your approval.
+                    updated_at: "2026-08-19T16:04:00Z"
+                  - id: cmp_winter
+                    name: Winter warmers
+                    status: draft
+                    stage_progress:
+                      completed: 0
+                      total: 6
+                      current_stage_key: null
+                    blocked_reason: null
+                    updated_at: "2026-08-02T09:12:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      operationId: createCampaign
+      summary: Create a campaign
+      description: |
+        The goal states one measurable business objective, a timeframe, the
+        campaign budget (media/ad spend), the audience segment it targets, and
+        all three KPI tiers. Channels are **not** part of the goal — we-OS
+        chooses them in the performance plan.
+      tags: [campaigns]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignCreate"
+            example:
+              name: Spring refill push
+              objective: 120 refill subscriptions in 8 weeks
+              timeframe:
+                start_date: "2026-09-01"
+                end_date: "2026-10-27"
+              budget:
+                amount: 4000
+                currency: SGD
+              audience_segment: Weekday regulars
+              kpis:
+                business: 120 refill subscriptions
+                marketing: 2.5% landing-page conversion
+                creative: 30% hook rate on launch video
+      responses:
+        "201":
+          description: The created campaign, in `draft`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+              examples:
+                draft:
+                  $ref: "#/components/examples/CampaignDraft"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /campaigns/{campaignId}:
+    parameters:
+      - $ref: "#/components/parameters/CampaignId"
+    get:
+      operationId: getCampaign
+      summary: Read a campaign
+      description: The campaign, its goal fields, lifecycle status, and per-stage state.
+      tags: [campaigns]
+      responses:
+        "200":
+          description: The campaign, its goal, and every stage's state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+              examples:
+                awaiting-approval:
+                  $ref: "#/components/examples/CampaignAwaitingApproval"
+                draft:
+                  $ref: "#/components/examples/CampaignDraft"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /campaigns/{campaignId}/archive:
+    post:
+      operationId: archiveCampaign
+      summary: Archive a campaign
+      description: Archiving is a lifecycle change; the campaign and its deliverables stay readable.
+      tags: [campaigns]
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "200":
+          description: The archived campaign.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+              examples:
+                archived:
+                  $ref: "#/components/examples/CampaignArchived"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /campaigns/{campaignId}/runs:
+    parameters:
+      - $ref: "#/components/parameters/CampaignId"
+    get:
+      operationId: listRuns
+      summary: List a campaign's runs
+      description: Run history, newest first — one entry per execution attempt.
+      tags: [runs]
+      responses:
+        "200":
+          description: The campaign's runs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunList"
+              example:
+                runs:
+                  - run_id: run_01j8
+                    campaign_id: cmp_spring
+                    status: awaiting_approval
+                    current_stage_key: brand-strategy
+                    awaiting_approval_stage_key: brand-strategy
+                    started_at: "2026-08-19T15:58:00Z"
+                    finished_at: null
+                  - run_id: run_01j2
+                    campaign_id: cmp_spring
+                    status: cancelled
+                    current_stage_key: research
+                    awaiting_approval_stage_key: null
+                    started_at: "2026-08-18T11:20:00Z"
+                    finished_at: "2026-08-18T11:24:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: startRun
+      summary: Start a run
+      description: |
+        Refused with `gate_failed` (naming every missing Required field) when
+        the Brand DNA or campaign goal is incomplete, with `run_conflict` when
+        the campaign already has an active run, and with `quota_exhausted` when
+        the tenant's allowance is spent. The run executes detached: close the
+        tab and come back, or a deploy restarts the service, and the run is
+        still there.
+      tags: [runs]
+      responses:
+        "202":
+          description: The run has started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+              example:
+                run_id: run_01j8
+                campaign_id: cmp_spring
+                status: running
+                current_stage_key: research
+                awaiting_approval_stage_key: null
+                started_at: "2026-08-19T15:58:00Z"
+                finished_at: null
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "402":
+          $ref: "#/components/responses/QuotaExhausted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The gate failed, or a run is already active for this campaign.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/GateFailedError"
+                  - $ref: "#/components/schemas/RunConflictError"
+              examples:
+                gate-failed:
+                  summary: Brand DNA incomplete
+                  value:
+                    type: gate_failed
+                    status: 409
+                    message: "The DNA Gate failed: 2 Required fields are missing."
+                    missing_fields:
+                      - question_id: q_price_point
+                        field: Price point
+                        label: What do your main products or services cost?
+                      - question_id: q_budget_range
+                        field: Budget range
+                        label: What can you spend on marketing in a typical month?
+                run-conflict:
+                  summary: A run is already active
+                  value:
+                    type: run_conflict
+                    status: 409
+                    message: Campaign 'cmp_spring' already has an active run.
+                    active_run_id: run_01j8
+
+  /runs/{runId}:
+    get:
+      operationId: getRun
+      summary: Read a run's status
+      description: Where the attempt has got to — live, halted at a gate, or terminal.
+      tags: [runs]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: The run and where it has got to.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+              examples:
+                running:
+                  summary: Executing a stage
+                  value:
+                    run_id: run_01j8
+                    campaign_id: cmp_spring
+                    status: running
+                    current_stage_key: research
+                    awaiting_approval_stage_key: null
+                    started_at: "2026-08-19T15:58:00Z"
+                    finished_at: null
+                awaiting-approval:
+                  summary: Halted at an Approval Gate
+                  value:
+                    run_id: run_01j8
+                    campaign_id: cmp_spring
+                    status: awaiting_approval
+                    current_stage_key: brand-strategy
+                    awaiting_approval_stage_key: brand-strategy
+                    started_at: "2026-08-19T15:58:00Z"
+                    finished_at: null
+                completed:
+                  summary: Finished the pipeline
+                  value:
+                    run_id: run_01j8
+                    campaign_id: cmp_spring
+                    status: completed
+                    current_stage_key: asset-prompts
+                    awaiting_approval_stage_key: null
+                    started_at: "2026-08-19T15:58:00Z"
+                    finished_at: "2026-08-19T16:41:00Z"
+                failed:
+                  summary: Halted on an error the operator can act on
+                  value:
+                    run_id: run_01j8
+                    campaign_id: cmp_spring
+                    status: failed
+                    current_stage_key: performance-plan
+                    awaiting_approval_stage_key: null
+                    started_at: "2026-08-19T15:58:00Z"
+                    finished_at: "2026-08-19T16:12:00Z"
+                    failure:
+                      type: guardrail
+                      message: The performance plan could not meet the quality bar within the revision budget.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs/{runId}/events:
+    get:
+      operationId: streamRunEvents
+      summary: Live progress stream
+      description: |
+        Server-Sent Events. Replays the events already recorded, then follows
+        live until the terminal `run.summary` event. Event `data:` payloads are
+        JSON objects with an `event` name (`gate.passed`, `stage.start`,
+        `stage.review`, `stage.done`, `stage.awaiting_approval`, `run.summary`,
+        …) and event-specific fields.
+      tags: [runs]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                data: {"event":"stage.start","stage":"research"}
+
+                data: {"event":"stage.done","stage":"research"}
+
+                data: {"event":"stage.awaiting_approval","stage":"brand-strategy"}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs/{runId}/cancel:
+    post:
+      operationId: cancelRun
+      summary: Cancel a run
+      description: |
+        Cancelling abandons the attempt: the next run of the campaign starts
+        clean from stage 1 rather than resuming.
+      tags: [runs]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: The cancelled run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+              example:
+                run_id: run_01j8
+                campaign_id: cmp_spring
+                status: cancelled
+                current_stage_key: research
+                awaiting_approval_stage_key: null
+                started_at: "2026-08-19T15:58:00Z"
+                finished_at: "2026-08-19T16:02:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs/{runId}/approve:
+    post:
+      operationId: approveStage
+      summary: Approve the stage waiting at the gate
+      description: |
+        Approves the named stage's deliverable and resumes the run
+        automatically — saying yes is one action.
+      tags: [runs]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveStage"
+            example:
+              stage_key: brand-strategy
+      responses:
+        "200":
+          description: The run, resumed past the approved stage.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+              example:
+                run_id: run_01j8
+                campaign_id: cmp_spring
+                status: running
+                current_stage_key: campaign-strategy
+                awaiting_approval_stage_key: null
+                started_at: "2026-08-19T15:58:00Z"
+                finished_at: null
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The named stage is not awaiting approval.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                type: stage_not_awaiting_approval
+                status: 409
+                message: Stage 'brand-strategy' is not awaiting approval.
+
+  /runs/{runId}/revise:
+    post:
+      operationId: reviseStage
+      summary: Send the waiting stage back with feedback
+      description: |
+        Produces a **new version** of the deliverable carrying this feedback;
+        the prior version is preserved, never overwritten. Refused with
+        `revision_limit_reached` once the per-deliverable cap is hit and with
+        `quota_exhausted` when the allowance is spent.
+      tags: [runs]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviseStage"
+            example:
+              stage_key: brand-strategy
+              feedback: The positioning leans premium, but our price point is mid-market. Anchor it to convenience instead.
+      responses:
+        "202":
+          description: The run, re-working the stage with the feedback applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+              example:
+                run_id: run_01j8
+                campaign_id: cmp_spring
+                status: running
+                current_stage_key: brand-strategy
+                awaiting_approval_stage_key: null
+                started_at: "2026-08-19T15:58:00Z"
+                finished_at: null
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "402":
+          $ref: "#/components/responses/QuotaExhausted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The stage is not awaiting approval, or its revision cap is spent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                not-awaiting:
+                  summary: Nothing to revise
+                  value:
+                    type: stage_not_awaiting_approval
+                    status: 409
+                    message: Stage 'brand-strategy' is not awaiting approval.
+                revision-limit:
+                  summary: Per-deliverable cap reached
+                  value:
+                    type: revision_limit_reached
+                    status: 409
+                    message: "Deliverable 'brand-strategy' has reached its revision limit (5)."
+
+  /campaigns/{campaignId}/deliverables:
+    get:
+      operationId: listDeliverables
+      summary: List a campaign's deliverables
+      description: Everything the pipeline has produced so far, with staleness at a glance.
+      tags: [deliverables]
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "200":
+          description: Each produced deliverable with its latest version and staleness.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliverableList"
+              example:
+                deliverables:
+                  - stage_key: research
+                    latest_version: 1
+                    stale: false
+                    updated_at: "2026-08-19T16:01:00Z"
+                  - stage_key: brand-strategy
+                    latest_version: 2
+                    stale: false
+                    updated_at: "2026-08-19T16:20:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /campaigns/{campaignId}/deliverables/{stageKey}:
+    get:
+      operationId: getDeliverable
+      summary: Read a deliverable (latest version)
+      description: |
+        The full markdown content, so the operator judges the work itself at an
+        Approval Gate — never just a summary.
+      tags: [deliverables]
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+        - $ref: "#/components/parameters/StageKey"
+      responses:
+        "200":
+          description: The latest version of the deliverable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deliverable"
+              examples:
+                latest:
+                  $ref: "#/components/examples/DeliverableLatest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /campaigns/{campaignId}/deliverables/{stageKey}/versions:
+    get:
+      operationId: listDeliverableVersions
+      summary: List a deliverable's versions
+      description: |
+        Newest first. Each version records the feedback that produced it and
+        the version it supersedes, so the history explains itself months later.
+      tags: [deliverables]
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+        - $ref: "#/components/parameters/StageKey"
+      responses:
+        "200":
+          description: The version history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliverableVersionList"
+              example:
+                versions:
+                  - version: 2
+                    created_at: "2026-08-19T16:20:00Z"
+                    feedback: The positioning leans premium, but our price point is mid-market. Anchor it to convenience instead.
+                    supersedes_version: 1
+                  - version: 1
+                    created_at: "2026-08-19T16:04:00Z"
+                    feedback: null
+                    supersedes_version: null
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /campaigns/{campaignId}/deliverables/{stageKey}/versions/{version}:
+    get:
+      operationId: getDeliverableVersion
+      summary: Read a specific version of a deliverable
+      description: A historical version, with the feedback that produced it, for comparison.
+      tags: [deliverables]
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+        - $ref: "#/components/parameters/StageKey"
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: The requested version, with the feedback that produced it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deliverable"
+              example:
+                campaign_id: cmp_spring
+                stage_key: brand-strategy
+                version: 2
+                latest: true
+                stale: false
+                created_at: "2026-08-19T16:20:00Z"
+                feedback: The positioning leans premium, but our price point is mid-market. Anchor it to convenience instead.
+                supersedes_version: 1
+                content: |
+                  # Brand Strategy — Spring refill push
+
+                  ## Positioning
+                  The dependable everyday ritual: specialty-grade coffee at a
+                  mid-market price, thirty seconds from the office lobby.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        A JWT from the managed IdP. The BFF verifies it for rendering and
+        forwards it; the engine verifies it independently and derives the
+        tenant from the verified claim.
+
+  parameters:
+    CampaignId:
+      name: campaignId
+      in: path
+      required: true
+      description: The campaign id (always scoped to the caller's tenant).
+      schema:
+        type: string
+      example: cmp_spring
+    RunId:
+      name: runId
+      in: path
+      required: true
+      description: The run id (always scoped to the caller's tenant).
+      schema:
+        type: string
+      example: run_01j8
+    StageKey:
+      name: stageKey
+      in: path
+      required: true
+      description: The engine stage key.
+      schema:
+        $ref: "#/components/schemas/StageKey"
+      example: brand-strategy
+
+  responses:
+    Unauthenticated:
+      description: The request carries no valid identity.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            type: unauthenticated
+            status: 401
+            message: Sign in to continue.
+    NotFound:
+      description: |
+        No such resource in the caller's tenant. Cross-tenant access resolves
+        here too — a foreign id is indistinguishable from a missing one.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            type: not_found
+            status: 404
+            message: No such campaign.
+    ValidationFailed:
+      description: The request body is malformed or incomplete.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            type: validation
+            status: 422
+            message: "kpis.creative is required: every campaign defines all three KPI tiers."
+    QuotaExhausted:
+      description: The tenant's allowance is spent; billable work is refused before it starts.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/QuotaExhaustedError"
+          example:
+            type: quota_exhausted
+            status: 402
+            message: Your allowance is used up. Work resumes when it renews.
+            used: 100
+            allowance: 100
+
+  schemas:
+    Me:
+      type: object
+      required: [user_id, email, business_name]
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+          format: email
+        business_name:
+          type: string
+          description: The business this tenant represents — one tenant, one business.
+
+    Questionnaire:
+      type: object
+      required: [version, published_at, questions]
+      properties:
+        version:
+          type: integer
+          description: The published question-set version the wizard and the DNA Gate share.
+        published_at:
+          type: string
+          format: date-time
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Question"
+
+    Question:
+      type: object
+      required: [id, field, text, why_we_ask, help_text, input_type, required]
+      properties:
+        id:
+          type: string
+          description: Stable question id; answers reference it.
+        field:
+          type: string
+          description: The Brand DNA field this question populates.
+        text:
+          type: string
+        why_we_ask:
+          type: string
+          description: Shown to the operator so every question explains itself.
+        help_text:
+          type: string
+          description: What a good answer looks like.
+        input_type:
+          type: string
+          enum: [text, textarea, number, currency, url, select, multi_select, list]
+        required:
+          type: boolean
+          description: Required answers feed the DNA Gate; recommended ones sharpen the work.
+        options:
+          type: array
+          description: Choices for select and multi_select inputs.
+          items:
+            type: string
+
+    BrandDna:
+      type: object
+      required: [questionnaire_version, updated_at, markdown, answers]
+      properties:
+        questionnaire_version:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        markdown:
+          type: string
+          description: The canonical markdown projection agents read.
+        answers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DnaAnswer"
+
+    DnaAnswer:
+      type: object
+      required: [question_id, answer]
+      properties:
+        question_id:
+          type: string
+        answer:
+          type: string
+
+    DnaAnswersUpsert:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/DnaAnswer"
+
+    DnaCompleteness:
+      type: object
+      required:
+        [complete, questionnaire_version, required_total, required_answered, missing, unanswered_new_questions]
+      properties:
+        complete:
+          type: boolean
+        questionnaire_version:
+          type: integer
+        required_total:
+          type: integer
+        required_answered:
+          type: integer
+        missing:
+          type: array
+          description: Every unanswered Required field, named exactly.
+          items:
+            $ref: "#/components/schemas/MissingField"
+        unanswered_new_questions:
+          type: array
+          description: |
+            Question ids added by a newer question-set version that this
+            tenant's DNA predates — surfaced as a prompt, never a silent block.
+          items:
+            type: string
+
+    MissingField:
+      type: object
+      required: [question_id, field, label]
+      properties:
+        question_id:
+          type: string
+        field:
+          type: string
+        label:
+          type: string
+
+    Timeframe:
+      type: object
+      required: [start_date, end_date]
+      properties:
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+        currency:
+          type: string
+          description: ISO 4217 code.
+
+    KpiTiers:
+      type: object
+      description: All three tiers are required — a campaign without them has no definition of success.
+      required: [business, marketing, creative]
+      properties:
+        business:
+          type: string
+          description: Revenue, leads, bookings, retention.
+        marketing:
+          type: string
+          description: CTR, CPC, CPM, conversion rate.
+        creative:
+          type: string
+          description: Hook rate, watch time, engagement rate.
+
+    CampaignCreate:
+      type: object
+      required: [name, objective, timeframe, budget, audience_segment, kpis]
+      properties:
+        name:
+          type: string
+        objective:
+          type: string
+          description: One measurable business objective.
+        timeframe:
+          $ref: "#/components/schemas/Timeframe"
+        budget:
+          $ref: "#/components/schemas/Money"
+        audience_segment:
+          type: string
+          description: One of the audience segments named in the Brand DNA.
+        kpis:
+          $ref: "#/components/schemas/KpiTiers"
+
+    CampaignStatus:
+      type: string
+      description: Campaign lifecycle — a separate axis from stage progress.
+      enum: [draft, running, awaiting_approval, approved, published, measuring, archived]
+
+    StageKey:
+      type: string
+      description: The engine stages, in mandatory order.
+      enum: [research, brand-strategy, campaign-strategy, performance-plan, creative-brief, asset-prompts]
+
+    NullableStageKey:
+      type: string
+      nullable: true
+      description: An engine stage key, or null.
+      enum:
+        - research
+        - brand-strategy
+        - campaign-strategy
+        - performance-plan
+        - creative-brief
+        - asset-prompts
+        - null
+
+    Phase:
+      type: string
+      description: |
+        The operator-facing grouping a stage belongs to. `Brief` is the campaign
+        goal (input, not a stage); `Approve`/`Publish`/`Measure` are lifecycle.
+      enum: [Research, Strategy, Plan, Produce]
+
+    StageState:
+      type: string
+      enum: [pending, running, awaiting_approval, completed, failed, stale]
+
+    ApprovalPolicy:
+      type: string
+      description: "`human` stages halt at an Approval Gate; `auto` stages advance on QA pass."
+      enum: [auto, human]
+
+    Stage:
+      type: object
+      required: [key, phase, state, approval_policy]
+      properties:
+        key:
+          $ref: "#/components/schemas/StageKey"
+        phase:
+          $ref: "#/components/schemas/Phase"
+        state:
+          $ref: "#/components/schemas/StageState"
+        approval_policy:
+          $ref: "#/components/schemas/ApprovalPolicy"
+
+    Campaign:
+      type: object
+      required: [id, name, objective, timeframe, budget, audience_segment, kpis, status, stages, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        objective:
+          type: string
+        timeframe:
+          $ref: "#/components/schemas/Timeframe"
+        budget:
+          $ref: "#/components/schemas/Money"
+        audience_segment:
+          type: string
+        kpis:
+          $ref: "#/components/schemas/KpiTiers"
+        status:
+          $ref: "#/components/schemas/CampaignStatus"
+        stages:
+          type: array
+          description: All six engine stages in pipeline order, each with its Phase, state, and approval policy.
+          items:
+            $ref: "#/components/schemas/Stage"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    StageProgress:
+      type: object
+      required: [completed, total, current_stage_key]
+      properties:
+        completed:
+          type: integer
+        total:
+          type: integer
+        current_stage_key:
+          $ref: "#/components/schemas/NullableStageKey"
+
+    CampaignSummary:
+      type: object
+      required: [id, name, status, stage_progress, blocked_reason, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          $ref: "#/components/schemas/CampaignStatus"
+        stage_progress:
+          $ref: "#/components/schemas/StageProgress"
+        blocked_reason:
+          type: string
+          nullable: true
+          description: What is blocking the campaign, in operator language, or null.
+        updated_at:
+          type: string
+          format: date-time
+
+    CampaignList:
+      type: object
+      required: [campaigns]
+      properties:
+        campaigns:
+          type: array
+          items:
+            $ref: "#/components/schemas/CampaignSummary"
+
+    RunStatus:
+      type: string
+      enum: [running, awaiting_approval, completed, failed, cancelled, interrupted]
+
+    RunFailure:
+      type: object
+      required: [type, message]
+      properties:
+        type:
+          type: string
+          description: The engine failure class (gate, pipeline, save, guardrail, crash).
+        message:
+          type: string
+          description: What went wrong, in language the operator can act on.
+
+    Run:
+      type: object
+      required: [run_id, campaign_id, status, current_stage_key, awaiting_approval_stage_key, started_at, finished_at]
+      properties:
+        run_id:
+          type: string
+        campaign_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/RunStatus"
+        current_stage_key:
+          $ref: "#/components/schemas/NullableStageKey"
+        awaiting_approval_stage_key:
+          description: Set exactly when the run is halted at an Approval Gate.
+          allOf:
+            - $ref: "#/components/schemas/NullableStageKey"
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        failure:
+          $ref: "#/components/schemas/RunFailure"
+
+    RunList:
+      type: object
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Run"
+
+    ApproveStage:
+      type: object
+      required: [stage_key]
+      properties:
+        stage_key:
+          $ref: "#/components/schemas/StageKey"
+
+    ReviseStage:
+      type: object
+      required: [stage_key, feedback]
+      properties:
+        stage_key:
+          $ref: "#/components/schemas/StageKey"
+        feedback:
+          type: string
+          minLength: 1
+          description: Recorded on the new version it produces.
+
+    DeliverableSummary:
+      type: object
+      required: [stage_key, latest_version, stale, updated_at]
+      properties:
+        stage_key:
+          $ref: "#/components/schemas/StageKey"
+        latest_version:
+          type: integer
+        stale:
+          type: boolean
+          description: True when an upstream decision was re-opened after this was produced.
+        updated_at:
+          type: string
+          format: date-time
+
+    DeliverableList:
+      type: object
+      required: [deliverables]
+      properties:
+        deliverables:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeliverableSummary"
+
+    Deliverable:
+      type: object
+      required: [campaign_id, stage_key, version, latest, stale, created_at, feedback, supersedes_version, content]
+      properties:
+        campaign_id:
+          type: string
+        stage_key:
+          $ref: "#/components/schemas/StageKey"
+        version:
+          type: integer
+        latest:
+          type: boolean
+        stale:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        feedback:
+          type: string
+          nullable: true
+          description: The operator feedback that produced this version; null for version 1.
+        supersedes_version:
+          type: integer
+          nullable: true
+        content:
+          type: string
+          description: The full deliverable markdown.
+
+    DeliverableVersionSummary:
+      type: object
+      required: [version, created_at, feedback, supersedes_version]
+      properties:
+        version:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        feedback:
+          type: string
+          nullable: true
+        supersedes_version:
+          type: integer
+          nullable: true
+
+    DeliverableVersionList:
+      type: object
+      required: [versions]
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeliverableVersionSummary"
+
+    Error:
+      type: object
+      required: [type, status, message]
+      properties:
+        type:
+          type: string
+          enum:
+            - unauthenticated
+            - not_found
+            - validation
+            - gate_failed
+            - quota_exhausted
+            - run_conflict
+            - stage_not_awaiting_approval
+            - revision_limit_reached
+            - internal
+        status:
+          type: integer
+          description: The HTTP status this error carries.
+        message:
+          type: string
+
+    GateFailedError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          required: [missing_fields]
+          properties:
+            missing_fields:
+              type: array
+              description: Every missing Required field, named exactly.
+              items:
+                $ref: "#/components/schemas/MissingField"
+
+    QuotaExhaustedError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          required: [used, allowance]
+          properties:
+            used:
+              type: number
+            allowance:
+              type: number
+
+    RunConflictError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          required: [active_run_id]
+          properties:
+            active_run_id:
+              type: string
+
+  examples:
+    CampaignDraft:
+      summary: A freshly created campaign
+      value:
+        id: cmp_spring
+        name: Spring refill push
+        objective: 120 refill subscriptions in 8 weeks
+        timeframe:
+          start_date: "2026-09-01"
+          end_date: "2026-10-27"
+        budget:
+          amount: 4000
+          currency: SGD
+        audience_segment: Weekday regulars
+        kpis:
+          business: 120 refill subscriptions
+          marketing: 2.5% landing-page conversion
+          creative: 30% hook rate on launch video
+        status: draft
+        stages:
+          - {key: research, phase: Research, state: pending, approval_policy: auto}
+          - {key: brand-strategy, phase: Strategy, state: pending, approval_policy: human}
+          - {key: campaign-strategy, phase: Strategy, state: pending, approval_policy: human}
+          - {key: performance-plan, phase: Plan, state: pending, approval_policy: human}
+          - {key: creative-brief, phase: Produce, state: pending, approval_policy: human}
+          - {key: asset-prompts, phase: Produce, state: pending, approval_policy: human}
+        created_at: "2026-08-19T15:40:00Z"
+        updated_at: "2026-08-19T15:40:00Z"
+    CampaignAwaitingApproval:
+      summary: Halted at the brand-strategy Approval Gate
+      value:
+        id: cmp_spring
+        name: Spring refill push
+        objective: 120 refill subscriptions in 8 weeks
+        timeframe:
+          start_date: "2026-09-01"
+          end_date: "2026-10-27"
+        budget:
+          amount: 4000
+          currency: SGD
+        audience_segment: Weekday regulars
+        kpis:
+          business: 120 refill subscriptions
+          marketing: 2.5% landing-page conversion
+          creative: 30% hook rate on launch video
+        status: awaiting_approval
+        stages:
+          - {key: research, phase: Research, state: completed, approval_policy: auto}
+          - {key: brand-strategy, phase: Strategy, state: awaiting_approval, approval_policy: human}
+          - {key: campaign-strategy, phase: Strategy, state: pending, approval_policy: human}
+          - {key: performance-plan, phase: Plan, state: pending, approval_policy: human}
+          - {key: creative-brief, phase: Produce, state: pending, approval_policy: human}
+          - {key: asset-prompts, phase: Produce, state: pending, approval_policy: human}
+        created_at: "2026-08-19T15:40:00Z"
+        updated_at: "2026-08-19T16:04:00Z"
+    CampaignArchived:
+      summary: An archived campaign
+      value:
+        id: cmp_winter
+        name: Winter warmers
+        objective: 60 gift-box orders in December
+        timeframe:
+          start_date: "2026-11-24"
+          end_date: "2026-12-24"
+        budget:
+          amount: 2500
+          currency: SGD
+        audience_segment: Gift shoppers
+        kpis:
+          business: 60 gift-box orders
+          marketing: 2% landing-page conversion
+          creative: 25% hook rate
+        status: archived
+        stages:
+          - {key: research, phase: Research, state: completed, approval_policy: auto}
+          - {key: brand-strategy, phase: Strategy, state: completed, approval_policy: human}
+          - {key: campaign-strategy, phase: Strategy, state: completed, approval_policy: human}
+          - {key: performance-plan, phase: Plan, state: completed, approval_policy: human}
+          - {key: creative-brief, phase: Produce, state: completed, approval_policy: human}
+          - {key: asset-prompts, phase: Produce, state: completed, approval_policy: human}
+        created_at: "2026-07-01T09:00:00Z"
+        updated_at: "2026-08-02T09:12:00Z"
+    DeliverableLatest:
+      summary: The latest brand strategy
+      value:
+        campaign_id: cmp_spring
+        stage_key: brand-strategy
+        version: 2
+        latest: true
+        stale: false
+        created_at: "2026-08-19T16:20:00Z"
+        feedback: The positioning leans premium, but our price point is mid-market. Anchor it to convenience instead.
+        supersedes_version: 1
+        content: |
+          # Brand Strategy — Spring refill push
+
+          ## Positioning
+          The dependable everyday ritual: specialty-grade coffee at a
+          mid-market price, thirty seconds from the office lobby.
+
+          ## Messaging
+          - "Your third place, on the way to the second."
+          - Grounded in DNA: weekday regulars value speed and consistency
+            (Brand DNA § Audience segments).

@@ -29,7 +29,7 @@ or `openai` to swap backends with no code change.
 |---|---|---|---|
 | 1 | Scaffold a campaign | create `campaigns/<slug>/goal.md` from the template to fill in | `POST /campaigns` |
 | 2 | Check the gate | confirm DNA + goal are complete before spending tokens | `GET /campaigns/{slug}/gate` |
-| 3 | Run the pipeline | produce the deliverables (research → … → performance plan) | `POST /campaigns/{slug}/run` or `GET …/stream` |
+| 3 | Run the pipeline | produce the deliverables (research → … → asset prompts) | `POST /campaigns/{slug}/run` or `GET …/stream` |
 | 4 | Fetch results | read the written deliverables | `GET /campaigns/{slug}/deliverables` |
 
 Brand DNA (`customers/<name>/dna.md`) is authored once by a human and reused

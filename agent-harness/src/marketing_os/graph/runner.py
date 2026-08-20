@@ -25,6 +25,7 @@ from marketing_os.config import Settings
 from marketing_os.errors import exception_from_state_error
 from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
 from marketing_os.graph.state import CampaignState
+from marketing_os.ports import DocumentStore
 from marketing_os.schemas import CampaignResult, StageResult, Usage
 
 _LOGGER = get_logger("marketing_os.runner")
@@ -49,6 +50,7 @@ def _select_graph(
     *,
     web_backend: WebSearchTool | None,
     checkpointer: BaseCheckpointSaver | None,
+    document_store: DocumentStore | None,
 ) -> Any:
     """Build the campaign or single-stage graph for a run.
 
@@ -57,15 +59,26 @@ def _select_graph(
         stage: The single stage to run, or ``None`` for the full pipeline.
         web_backend: The web backend for agents that declare web tools.
         checkpointer: An optional checkpointer.
+        document_store: The store tenant documents resolve through, or ``None``
+            for the filesystem default.
 
     Returns:
         The compiled graph to run.
     """
     if stage:
         return build_single_stage_graph(
-            settings, stage, web_backend=web_backend, checkpointer=checkpointer
+            settings,
+            stage,
+            web_backend=web_backend,
+            checkpointer=checkpointer,
+            document_store=document_store,
         )
-    return build_campaign_graph(settings, web_backend=web_backend, checkpointer=checkpointer)
+    return build_campaign_graph(
+        settings,
+        web_backend=web_backend,
+        checkpointer=checkpointer,
+        document_store=document_store,
+    )
 
 
 def _resolve_web_backend(
@@ -298,6 +311,7 @@ async def arun_campaign(
     on_event: Callable[[dict[str, Any]], None] | None = None,
     web_backend: WebSearchTool | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
+    document_store: DocumentStore | None = None,
 ) -> CampaignResult:
     """Run a campaign (or a single stage) to completion on the async graph path.
 
@@ -320,6 +334,8 @@ async def arun_campaign(
         on_event: An optional callback invoked with each progress event.
         web_backend: The web backend for agents that declare web tools.
         checkpointer: An optional checkpointer.
+        document_store: The store tenant documents resolve through, or ``None``
+            for the filesystem default.
 
     Returns:
         The structured campaign result.
@@ -338,7 +354,13 @@ async def arun_campaign(
     owns_backend = False
     try:
         backend, owns_backend = _resolve_web_backend(settings, web_backend)
-        graph = _select_graph(settings, stage, web_backend=backend, checkpointer=checkpointer)
+        graph = _select_graph(
+            settings,
+            stage,
+            web_backend=backend,
+            checkpointer=checkpointer,
+            document_store=document_store,
+        )
         config = _config(customer, slug, stage)
         inbound = {"customer": customer, "slug": slug}
         async for mode, chunk in graph.astream(
@@ -377,6 +399,7 @@ def run_campaign(
     on_event: Callable[[dict[str, Any]], None] | None = None,
     web_backend: WebSearchTool | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
+    document_store: DocumentStore | None = None,
 ) -> CampaignResult:
     """Run a campaign (or a single stage) to completion, blocking until done.
 
@@ -395,6 +418,8 @@ def run_campaign(
         on_event: An optional callback invoked with each progress event.
         web_backend: The web backend for agents that declare web tools.
         checkpointer: An optional checkpointer.
+        document_store: The store tenant documents resolve through, or ``None``
+            for the filesystem default.
 
     Returns:
         The structured campaign result.
@@ -414,6 +439,7 @@ def run_campaign(
             on_event=on_event,
             web_backend=web_backend,
             checkpointer=checkpointer,
+            document_store=document_store,
         )
     )
 
@@ -426,6 +452,7 @@ async def astream_campaign(
     stage: str | None = None,
     web_backend: WebSearchTool | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
+    document_store: DocumentStore | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Stream a campaign run as semantic progress events.
 
@@ -440,6 +467,8 @@ async def astream_campaign(
         stage: The single stage to run, or ``None`` for the full pipeline.
         web_backend: The web backend for agents that declare web tools.
         checkpointer: An optional checkpointer.
+        document_store: The store tenant documents resolve through, or ``None``
+            for the filesystem default.
 
     Yields:
         Event dictionaries with an ``event`` key and event-specific fields.
@@ -454,7 +483,13 @@ async def astream_campaign(
     owns_backend = False
     try:
         backend, owns_backend = _resolve_web_backend(settings, web_backend)
-        graph = _select_graph(settings, stage, web_backend=backend, checkpointer=checkpointer)
+        graph = _select_graph(
+            settings,
+            stage,
+            web_backend=backend,
+            checkpointer=checkpointer,
+            document_store=document_store,
+        )
         config = _config(customer, slug, stage)
         async for mode, chunk in graph.astream(
             {"customer": customer, "slug": slug},

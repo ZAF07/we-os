@@ -111,6 +111,12 @@ class GuardrailError(MarketingOSError):
         self.discrepancies = discrepancies or []
 
 
+class DocumentNotFoundError(MarketingOSError):
+    """A requested document does not exist in the document store for the tenant."""
+
+    http_status = 404
+
+
 class ToolError(MarketingOSError):
     """A tool could not run (bad arguments, sandbox violation, backend failure).
 

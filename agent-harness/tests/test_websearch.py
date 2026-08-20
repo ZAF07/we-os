@@ -593,7 +593,7 @@ def test_resolve_web_backend_does_not_own_caller_supplied(settings: Settings) ->
 def test_build_tools_uses_backend_for_web_capabilities(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sandbox = FilesystemSandbox(settings.root, write_prefixes=["campaigns"])
+    sandbox = FilesystemSandbox(settings.root)
     page = _FakePage(blocks=[_result_block("Hit", "https://hit.test", "why")])
     backend = PlaywrightWebSearch()
     monkeypatch.setattr(backend, "_new_page", lambda: page)
@@ -655,7 +655,7 @@ async def test_sync_web_tool_runs_under_async_specialist_node(
 
 
 def test_build_tools_defaults_to_noop_when_no_backend(settings: Settings) -> None:
-    sandbox = FilesystemSandbox(settings.root, write_prefixes=["campaigns"])
+    sandbox = FilesystemSandbox(settings.root)
     tools = build_tools(["WebSearch"], sandbox=sandbox)
     web_search = next(t for t in tools if t.name == "web_search")
 

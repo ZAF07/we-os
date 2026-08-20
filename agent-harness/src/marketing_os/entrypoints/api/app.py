@@ -17,7 +17,6 @@ Run with:  uvicorn marketing_os.entrypoints.api.app:app --reload
 from __future__ import annotations
 
 import json
-import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -27,6 +26,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.observability import (
     configure_logging,
     configure_tracing,
@@ -98,6 +98,17 @@ def get_settings() -> Settings:
 
 
 @lru_cache(maxsize=1)
+def get_document_store() -> FilesystemDocumentStore:
+    """Return the process-wide document store tenant documents resolve through.
+
+    Returns:
+        The filesystem adapter rooted at the configured repo root (tests reset
+        it with ``get_document_store.cache_clear()``, mirroring settings).
+    """
+    return FilesystemDocumentStore(get_settings().root)
+
+
+@lru_cache(maxsize=1)
 def get_registry() -> RunRegistry:
     """Return the process-wide registry of active background runs.
 
@@ -159,18 +170,17 @@ def create_campaign(body: CreateCampaign) -> dict[str, object]:
         HTTPException: If the campaign-goal template is missing.
     """
     settings = get_settings()
+    store = get_document_store()
     slug = body.slug or body.customer
-    campaign_dir = settings.campaigns_dir / slug
-    campaign_dir.mkdir(parents=True, exist_ok=True)
-    goal = campaign_dir / "goal.md"
+    goal_document = f"campaigns/{slug}/goal.md"
     created = False
-    if not goal.is_file():
+    if not store.exists(body.customer, goal_document):
         template = settings.templates_dir / "campaign-goal.md"
         if not template.is_file():
             raise HTTPException(500, "campaign-goal template missing")
-        shutil.copy(template, goal)
+        store.write(body.customer, goal_document, template.read_text(encoding="utf-8"))
         created = True
-    report = check_gate(settings, body.customer, slug)
+    report = check_gate(settings, body.customer, slug, store=store)
     return {
         "slug": slug,
         "customer": body.customer,
@@ -192,7 +202,7 @@ def gate(slug: str, customer: str) -> dict[str, object]:
         The gate status and any issues.
     """
     settings = get_settings()
-    report = check_gate(settings, customer, slug)
+    report = check_gate(settings, customer, slug, store=get_document_store())
     return {"ok": report.ok, "issues": report.all_issues}
 
 
@@ -241,7 +251,7 @@ async def run(slug: str, body: RunCampaign) -> dict[str, object]:
         HTTPException: 409 if the gate failed or the slug already has an active run.
     """
     settings = get_settings()
-    report = check_gate(settings, body.customer, slug)
+    report = check_gate(settings, body.customer, slug, store=get_document_store())
     if not report.ok:
         raise _http_error(GateError("Stage 0 gate failed", missing=report.all_issues))
     run_id = new_run_id()

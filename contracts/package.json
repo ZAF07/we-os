@@ -1,0 +1,16 @@
+{
+  "name": "we-os-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The frozen we-OS API contract (OpenAPI), its linter, and the mock server the frontend codes against.",
+  "type": "module",
+  "scripts": {
+    "lint": "spectral lint --fail-severity error openapi.yaml",
+    "mock": "prism mock openapi.yaml --port 4010",
+    "test": "node happy-path.mjs"
+  },
+  "devDependencies": {
+    "@stoplight/prism-cli": "^5.14.2",
+    "@stoplight/spectral-cli": "^6.15.0"
+  }
+}

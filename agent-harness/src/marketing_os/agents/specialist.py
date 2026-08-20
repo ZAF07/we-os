@@ -20,18 +20,21 @@ from marketing_os.agents.middleware import recover_tool_errors
 
 
 class SpecialistState(AgentState):
-    """Specialist agent state extended with the live campaign slug.
+    """Specialist agent state extended with the live campaign slug and tenant.
 
-    The slug is injected into the ``write_file`` tool (via ``InjectedState``) so a
-    write can be scoped to ``campaigns/<slug>/`` at call time, rejecting a
-    mis-slugged path the model hallucinated. It is threaded in by the specialist
-    node when it invokes the agent.
+    Both are injected into the ``write_file`` tool (via ``InjectedState``) so a
+    write can be scoped at call time: the slug confines it to
+    ``campaigns/<slug>/`` (rejecting a mis-slugged path the model hallucinated)
+    and the customer names the tenant the document store resolves the write
+    under. They are threaded in by the specialist node when it invokes the agent.
 
     Attributes:
         slug: The campaign slug for the active run.
+        customer: The tenant the campaign runs for.
     """
 
     slug: NotRequired[str]
+    customer: NotRequired[str]
 
 
 def compose_system(governance: str, agent_body: str) -> str:

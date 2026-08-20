@@ -1,6 +1,6 @@
 # 03 — Freeze the API contract and stand up a mock server
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Parent
@@ -29,14 +29,32 @@ The contract is a design deliverable and is expected to change; the point is tha
 
 ## Acceptance criteria
 
-- [ ] An OpenAPI document covers every operation listed above and is committed to the repo.
-- [ ] No operation accepts a tenant, business, or customer identity as a caller-supplied parameter.
-- [ ] Stage responses carry both the engine stage key and its operator Phase; lifecycle status is a distinct field.
-- [ ] Deliverable responses expose content, version, supersession and staleness.
-- [ ] The error schema covers gate failure with named missing fields, quota exhaustion, run conflict, and cross-tenant refusal.
-- [ ] A mock server serves the spec and the frontend can complete the happy path against it.
-- [ ] The spec validates against an OpenAPI linter in CI.
+- [x] An OpenAPI document covers every operation listed above and is committed to the repo.
+- [x] No operation accepts a tenant, business, or customer identity as a caller-supplied parameter.
+- [x] Stage responses carry both the engine stage key and its operator Phase; lifecycle status is a distinct field.
+- [x] Deliverable responses expose content, version, supersession and staleness.
+- [x] The error schema covers gate failure with named missing fields, quota exhaustion, run conflict, and cross-tenant refusal.
+- [x] A mock server serves the spec and the frontend can complete the happy path against it.
+- [x] The spec validates against an OpenAPI linter in CI.
 
 ## Blocked by
 
 None - can start immediately.
+## Comments
+
+- Contract at `contracts/openapi.yaml` (OpenAPI 3.0.3). Mock is Prism serving the
+  spec's examples; named variants select via `Prefer: example=<name>` and error shapes
+  via `Prefer: code=<n>`. `contracts/happy-path.mjs` is the executable proof of the
+  no-engine happy path (21 checks, all passing locally).
+- `.spectral.yaml` extends `spectral:oas` with two custom rules: no operation parameter
+  and no schema property may carry a tenant/business/customer identity, so the
+  no-tenant-parameter invariant is machine-enforced, not just reviewed.
+- CI: `.github/workflows/contract.yml` runs the lint and the happy path on any change
+  under `contracts/` — first workflow in the repo; it runs once this lands on GitHub.
+- Cross-tenant refusal is frozen as an indistinguishable 404 `not_found` (documented in
+  the spec's Tenancy section) rather than a 403, so existence never leaks.
+
+## Completion
+
+- Completed: 2026-08-20
+- Commit: <to be filled in manually>

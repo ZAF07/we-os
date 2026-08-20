@@ -15,6 +15,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.models import get_model
 from marketing_os.adapters.review import LLMReviewer
 from marketing_os.adapters.tools import FilesystemSandbox, WebSearchTool, build_tools
@@ -32,7 +33,7 @@ from marketing_os.graph.nodes import (
     route_after_review,
 )
 from marketing_os.graph.state import CampaignState
-from marketing_os.ports import Reviewer
+from marketing_os.ports import DocumentStore, Reviewer
 
 
 def _build_stage_agent(
@@ -42,6 +43,7 @@ def _build_stage_agent(
     governance: str,
     web_backend: WebSearchTool | None,
     spec_source: SpecSource,
+    store: DocumentStore,
 ) -> Runnable:
     """Build the specialist agent for one stage.
 
@@ -52,13 +54,14 @@ def _build_stage_agent(
         governance: The governance preamble baked into the system prompt.
         web_backend: The web backend for stages whose agent declares web tools.
         spec_source: The source resolving the stage's specialist definition.
+        store: The document store deliverable writes resolve through.
 
     Returns:
         The compiled specialist agent for the stage.
     """
     spec = spec_source.spec_for(stage.agent)
-    sandbox = FilesystemSandbox(settings.root, write_prefixes=["campaigns"])
-    tools = build_tools(spec.tools, sandbox=sandbox, web_backend=web_backend)
+    sandbox = FilesystemSandbox(settings.root)
+    tools = build_tools(spec.tools, sandbox=sandbox, web_backend=web_backend, document_store=store)
     return build_specialist(spec, model=model, tools=tools, governance=governance)
 
 
@@ -68,6 +71,7 @@ def _add_stage(
     stage: Stage,
     agent: Runnable,
     reviewer: Reviewer,
+    store: DocumentStore,
     advance_target: str,
 ) -> str:
     """Add a stage's enter/specialist/review nodes and wire the QA loop.
@@ -78,6 +82,7 @@ def _add_stage(
         stage: The pipeline stage to add.
         agent: The compiled specialist agent for the stage.
         reviewer: The QA reviewer for the stage.
+        store: The document store the stage's deliverables resolve through.
         advance_target: The node (or ``END``) to route to when the stage passes.
 
     Returns:
@@ -86,9 +91,9 @@ def _add_stage(
     enter = f"{stage.key}__enter"
     specialist = f"{stage.key}__specialist"
     review = f"{stage.key}__review"
-    builder.add_node(enter, make_enter_node(settings, stage))
+    builder.add_node(enter, make_enter_node(stage, store))
     builder.add_node(specialist, make_specialist_node(settings, stage, agent))
-    builder.add_node(review, make_review_node(settings, stage, reviewer))
+    builder.add_node(review, make_review_node(settings, stage, reviewer, store))
     builder.add_conditional_edges(enter, route_after_enter, {"specialist": specialist, "end": END})
     builder.add_edge(specialist, review)
     builder.add_conditional_edges(
@@ -132,6 +137,7 @@ def build_campaign_graph(
     reviewer: Reviewer | None = None,
     web_backend: WebSearchTool | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
+    document_store: DocumentStore | None = None,
 ) -> CompiledStateGraph:
     """Build and compile the full campaign graph from the mandatory pipeline.
 
@@ -141,6 +147,8 @@ def build_campaign_graph(
         reviewer: The QA reviewer; built from ``settings`` when ``None``.
         web_backend: The web backend for agents that declare web tools.
         checkpointer: An optional checkpointer; defaults to :class:`MemorySaver`.
+        document_store: The store tenant documents resolve through; defaults to
+            the filesystem adapter rooted at the repo root.
 
     Returns:
         The compiled campaign graph, keyed at runtime by ``thread_id``.
@@ -150,16 +158,19 @@ def build_campaign_graph(
     reviewer = reviewer or LLMReviewer(
         get_model(settings, role=Role.REVIEWER, thinking=settings.reviewer_thinking), settings
     )
+    store = document_store or FilesystemDocumentStore(settings.root)
     spec_source = SpecSource(settings)
     builder = StateGraph(CampaignState)
-    builder.add_node("gate", make_gate_node(settings))
+    builder.add_node("gate", make_gate_node(settings, store))
     builder.add_edge(START, "gate")
 
     entries: list[str] = []
     for index, stage in enumerate(PIPELINE):
         advance_target = f"{PIPELINE[index + 1].key}__enter" if index + 1 < len(PIPELINE) else END
-        agent = _build_stage_agent(settings, stage, model, governance, web_backend, spec_source)
-        entries.append(_add_stage(builder, settings, stage, agent, reviewer, advance_target))
+        agent = _build_stage_agent(
+            settings, stage, model, governance, web_backend, spec_source, store
+        )
+        entries.append(_add_stage(builder, settings, stage, agent, reviewer, store, advance_target))
 
     builder.add_conditional_edges("gate", _route_after_gate, {"continue": entries[0], "end": END})
     return _compile(builder, checkpointer)
@@ -173,6 +184,7 @@ def build_single_stage_graph(
     reviewer: Reviewer | None = None,
     web_backend: WebSearchTool | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
+    document_store: DocumentStore | None = None,
 ) -> CompiledStateGraph:
     """Build and compile a gate-then-one-stage graph for a single-stage run.
 
@@ -183,6 +195,8 @@ def build_single_stage_graph(
         reviewer: The QA reviewer; built from ``settings`` when ``None``.
         web_backend: The web backend for agents that declare web tools.
         checkpointer: An optional checkpointer; defaults to :class:`MemorySaver`.
+        document_store: The store tenant documents resolve through; defaults to
+            the filesystem adapter rooted at the repo root.
 
     Returns:
         The compiled single-stage graph.
@@ -196,11 +210,12 @@ def build_single_stage_graph(
     reviewer = reviewer or LLMReviewer(
         get_model(settings, role=Role.REVIEWER, thinking=settings.reviewer_thinking), settings
     )
+    store = document_store or FilesystemDocumentStore(settings.root)
     spec_source = SpecSource(settings)
     builder = StateGraph(CampaignState)
-    builder.add_node("gate", make_gate_node(settings))
+    builder.add_node("gate", make_gate_node(settings, store))
     builder.add_edge(START, "gate")
-    agent = _build_stage_agent(settings, stage, model, governance, web_backend, spec_source)
-    entry = _add_stage(builder, settings, stage, agent, reviewer, END)
+    agent = _build_stage_agent(settings, stage, model, governance, web_backend, spec_source, store)
+    entry = _add_stage(builder, settings, stage, agent, reviewer, store, END)
     builder.add_conditional_edges("gate", _route_after_gate, {"continue": entry, "end": END})
     return _compile(builder, checkpointer)

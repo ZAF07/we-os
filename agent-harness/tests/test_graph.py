@@ -11,7 +11,9 @@ import re
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
 from conftest import FakeReviewer, ProgrammableChatModel, read_call, write_call
+from marketing_os.adapters.documents import InMemoryDocumentStore
 from marketing_os.config import Settings
+from marketing_os.governance.pipeline import PIPELINE
 from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
 from marketing_os.schemas import Discrepancy, ReviewVerdict
 
@@ -309,6 +311,23 @@ async def test_prerequisite_halts_when_upstream_missing(settings: Settings) -> N
     assert state["error"]["prerequisite"] == "research.md"
 
 
+async def test_creative_brief_blocked_before_performance_plan_exists(settings: Settings) -> None:
+    _write_specs(settings)
+    for name in ("research.md", "brand-strategy.md", "campaign-strategy.md"):
+        (settings.campaigns_dir / "acme" / name).write_text("upstream", encoding="utf-8")
+    reviewer = FakeReviewer([_PASS])
+    graph = build_single_stage_graph(
+        settings,
+        "creative-brief",
+        model=ProgrammableChatModel(handler=_writing_handler),
+        reviewer=reviewer,
+    )
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("t6b"))
+    assert state["error"]["type"] == "pipeline"
+    assert state["error"]["prerequisite"] == "performance-plan.md"
+    assert not (settings.campaigns_dir / "acme" / "creative-brief.md").is_file()
+
+
 async def test_full_pipeline_advances_through_every_stage(settings: Settings) -> None:
     _write_specs(settings)
     reviewer = FakeReviewer([_PASS])
@@ -322,9 +341,39 @@ async def test_full_pipeline_advances_through_every_stage(settings: Settings) ->
         "research",
         "brand-strategy",
         "campaign-strategy",
+        "performance-plan",
         "creative-brief",
         "asset-prompts",
-        "performance-plan",
     ]
-    for name in ("research.md", "brand-strategy.md", "performance-plan.md"):
+    for name in ("research.md", "brand-strategy.md", "performance-plan.md", "creative-brief.md"):
         assert (settings.campaigns_dir / "acme" / name).is_file()
+
+
+async def test_full_pipeline_on_in_memory_store_writes_nothing_to_disk(
+    settings: Settings,
+) -> None:
+    import shutil
+
+    _write_specs(settings)
+    store = InMemoryDocumentStore()
+    store.write("acme", "dna.md", (settings.customers_dir / "acme" / "dna.md").read_text())
+    store.write(
+        "acme", "campaigns/acme/goal.md", (settings.campaigns_dir / "acme" / "goal.md").read_text()
+    )
+    shutil.rmtree(settings.campaigns_dir)
+    shutil.rmtree(settings.customers_dir)
+
+    reviewer = FakeReviewer([_PASS])
+    graph = build_campaign_graph(
+        settings,
+        model=ProgrammableChatModel(handler=_writing_handler),
+        reviewer=reviewer,
+        document_store=store,
+    )
+    state = await graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("mem"))
+    assert state["error"] is None
+    assert [record["stage"] for record in state["results"]] == [s.key for s in PIPELINE]
+    for stage in PIPELINE:
+        assert store.exists("acme", f"campaigns/acme/{stage.deliverable}")
+    assert not settings.campaigns_dir.exists()
+    assert not settings.customers_dir.exists()
