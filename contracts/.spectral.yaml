@@ -1,0 +1,26 @@
+extends: ["spectral:oas"]
+rules:
+  operation-tags: error
+  operation-operationId: error
+  no-tenant-identity-parameters:
+    description: >-
+      No operation may accept a tenant, business, or customer identity as a
+      caller-supplied parameter — identity comes only from the verified token.
+    severity: error
+    given: "$.paths[*][*].parameters[*].name"
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: "/^(tenant|business|customer)([_-]?(id|name))?$/i"
+  no-tenant-identity-properties:
+    description: >-
+      No request or response schema may carry a tenant or customer identity
+      field the caller could supply. (`business_name` on Me is display data,
+      derived from the token — so `business` is banned as a parameter above,
+      not as a property name.)
+    severity: error
+    given: "$.components.schemas[*].properties.*~"
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: "/^(tenant|customer)([_-]?(id|name))?$/i"

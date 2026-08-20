@@ -16,6 +16,7 @@ import argparse
 import sys
 from typing import Any
 
+from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.observability import configure_logging, configure_tracing
 from marketing_os.config import load_settings
 from marketing_os.entrypoints.env import load_env
@@ -76,7 +77,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
     """
     settings = load_settings()
     slug = args.slug or args.name
-    report = check_gate(settings, args.name, slug)
+    report = check_gate(settings, args.name, slug, store=FilesystemDocumentStore(settings.root))
     return 0 if _print_gate(report) else 1
 
 
@@ -111,7 +112,7 @@ def _cmd_new_campaign(args: argparse.Namespace) -> int:
         settings.provider = args.provider
     slug = args.slug or args.name
 
-    report = check_gate(settings, args.name, slug)
+    report = check_gate(settings, args.name, slug, store=FilesystemDocumentStore(settings.root))
     if not _print_gate(report):
         return 1
 

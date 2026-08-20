@@ -27,9 +27,9 @@ from marketing_os.adapters.observability import get_logger
 from marketing_os.config import Settings
 from marketing_os.governance import load_governance
 from marketing_os.governance.gate import check_gate
-from marketing_os.governance.pipeline import Stage, deliverable_path, prerequisite_met
+from marketing_os.governance.pipeline import Stage, prerequisite_met, stage_document
 from marketing_os.graph.state import CampaignState
-from marketing_os.ports import Reviewer
+from marketing_os.ports import DocumentStore, Reviewer
 from marketing_os.schemas import StageResult
 
 _LOGGER = get_logger("marketing_os.graph")
@@ -195,11 +195,10 @@ def _path_anchor(slug: str) -> str:
     )
 
 
-def _stage_task(settings: Settings, slug: str, customer: str, stage: Stage) -> str:
+def _stage_task(slug: str, customer: str, stage: Stage) -> str:
     """Format the task brief for a stage with its repo paths filled in.
 
     Args:
-        settings: The harness settings.
         slug: The campaign slug.
         customer: The customer name.
         stage: The pipeline stage.
@@ -211,15 +210,16 @@ def _stage_task(settings: Settings, slug: str, customer: str, stage: Stage) -> s
         goal_path=f"campaigns/{slug}/goal.md",
         dna_path=f"customers/{customer}/dna.md",
         prereq_path=(f"campaigns/{slug}/{stage.prerequisite}" if stage.prerequisite else ""),
-        deliverable_path=str(deliverable_path(settings, slug, stage).relative_to(settings.root)),
+        deliverable_path=stage_document(slug, stage),
     )
 
 
-def make_gate_node(settings: Settings) -> CampaignNode:
+def make_gate_node(settings: Settings, store: DocumentStore) -> CampaignNode:
     """Build the Stage 0 gate node.
 
     Args:
         settings: The harness settings.
+        store: The document store the DNA and goal resolve through.
 
     Returns:
         A node that validates the DNA/goal gate and loads the DNA on success.
@@ -238,15 +238,14 @@ def make_gate_node(settings: Settings) -> CampaignNode:
         customer = state["customer"]
         slug = state["slug"]
         _emit("gate.start", customer=customer, slug=slug)
-        report = check_gate(settings, customer, slug)
+        report = check_gate(settings, customer, slug, store=store)
         if not report.ok:
             _emit("gate.failed", customer=customer, slug=slug, issues=report.all_issues)
             return {
                 "error": {"type": "gate", "issues": list(report.all_issues)},
                 "halt": True,
             }
-        dna_text = (settings.customers_dir / customer / "dna.md").read_text(encoding="utf-8")
-        (settings.campaigns_dir / slug).mkdir(parents=True, exist_ok=True)
+        dna_text = store.read(customer, "dna.md")
         _emit("gate.passed", customer=customer, slug=slug)
         return {
             "dna_text": dna_text,
@@ -259,12 +258,12 @@ def make_gate_node(settings: Settings) -> CampaignNode:
     return gate_node
 
 
-def make_enter_node(settings: Settings, stage: Stage) -> CampaignNode:
+def make_enter_node(stage: Stage, store: DocumentStore) -> CampaignNode:
     """Build a stage's entry node.
 
     Args:
-        settings: The harness settings.
         stage: The pipeline stage this node enters.
+        store: The document store the prerequisite deliverable resolves through.
 
     Returns:
         A node that enforces the prerequisite and seeds the stage task.
@@ -282,7 +281,7 @@ def make_enter_node(settings: Settings, stage: Stage) -> CampaignNode:
         """
         slug = state["slug"]
         customer = state["customer"]
-        if not prerequisite_met(settings, slug, stage):
+        if not prerequisite_met(store, customer, slug, stage):
             _emit("stage.blocked", slug=slug, stage=stage.key, prerequisite=stage.prerequisite)
             return {
                 "error": {
@@ -294,7 +293,7 @@ def make_enter_node(settings: Settings, stage: Stage) -> CampaignNode:
                 "route": "end",
             }
         _emit("stage.start", slug=slug, stage=stage.key, agent=stage.agent)
-        task = _stage_task(settings, slug, customer, stage)
+        task = _stage_task(slug, customer, stage)
         task_body = f"{_path_anchor(slug)}\n\n# Your task\n\n{task}"
         return {
             "messages": _fresh_conversation(state["dna_text"], task_body),
@@ -327,8 +326,9 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> A
         The agent's tool-use loop is awaited (``ainvoke``) so every LLM call runs
         on the event loop; cancelling the run's task aborts the in-flight LLM
         request inside the loop rather than only between stages (see ADR-0009).
-        The run ``slug`` is passed into the agent state so the ``write_file`` tool
-        can scope writes to ``campaigns/<slug>/`` at call time.
+        The run ``slug`` and ``customer`` are passed into the agent state so the
+        ``write_file`` tool can scope writes to ``campaigns/<slug>/`` under the
+        right tenant at call time.
 
         Args:
             state: The campaign state carrying the specialist ``messages`` and slug.
@@ -339,7 +339,7 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> A
         inbound = list(state["messages"])
         with get_usage_metadata_callback() as callback:
             result = await agent.ainvoke(
-                {"messages": inbound, "slug": state["slug"]},
+                {"messages": inbound, "slug": state["slug"], "customer": state["customer"]},
                 config={
                     "recursion_limit": recursion_limit,
                     "run_name": f"specialist:{stage.key}",
@@ -351,13 +351,16 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> A
     return specialist_node
 
 
-def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> AsyncCampaignNode:
+def make_review_node(
+    settings: Settings, stage: Stage, reviewer: Reviewer, store: DocumentStore
+) -> AsyncCampaignNode:
     """Build a stage's QA review node.
 
     Args:
         settings: The harness settings (for the QA budget).
         stage: The pipeline stage this node reviews.
         reviewer: The QA reviewer scoring the deliverable.
+        store: The document store the deliverable resolves through.
 
     Returns:
         A node that verifies the save, scores the deliverable, and routes.
@@ -378,12 +381,12 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> As
             outcome, a revision message, a recorded stage result, or an error.
         """
         slug = state["slug"]
-        path = deliverable_path(settings, slug, stage)
-        rel = path.relative_to(settings.root)
-        if not path.is_file():
-            return _handle_missing_deliverable(settings, state, stage, str(rel), budget)
+        customer = state["customer"]
+        rel = stage_document(slug, stage)
+        if not store.exists(customer, rel):
+            return _handle_missing_deliverable(state, stage, rel, budget)
 
-        text = path.read_text(encoding="utf-8")
+        text = store.read(customer, rel)
         with get_usage_metadata_callback() as callback:
             verdict = await reviewer.areview(stage.key, text)
         qa_iterations = state.get("qa_iterations", 0)
@@ -402,7 +405,7 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> As
         if verdict.passed:
             result = StageResult(
                 stage=stage.key,
-                deliverable_path=str(rel),
+                deliverable_path=rel,
                 qa_iterations=qa_iterations,
                 save_retries=state.get("save_retries", 0),
                 verdict=verdict,
@@ -412,7 +415,7 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> As
                 "stage.done",
                 slug=slug,
                 stage=stage.key,
-                deliverable=str(rel),
+                deliverable=rel,
                 qa_iterations=qa_iterations,
             )
             return {
@@ -426,7 +429,7 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> As
         if qa_iterations >= budget:
             result = StageResult(
                 stage=stage.key,
-                deliverable_path=str(rel),
+                deliverable_path=rel,
                 qa_iterations=qa_iterations,
                 save_retries=state.get("save_retries", 0),
                 verdict=verdict,
@@ -473,7 +476,7 @@ def make_review_node(settings: Settings, stage: Stage, reviewer: Reviewer) -> As
 
 
 def _handle_missing_deliverable(
-    settings: Settings, state: CampaignState, stage: Stage, rel: str, budget: int
+    state: CampaignState, stage: Stage, rel: str, budget: int
 ) -> dict[str, Any]:
     """Force a save-retry, or fail the stage once the retry budget is spent.
 
@@ -481,7 +484,6 @@ def _handle_missing_deliverable(
     save instruction rather than appending to the prior transcript.
 
     Args:
-        settings: The harness settings (to rebuild the task brief).
         state: The campaign state after the specialist ran.
         stage: The stage whose deliverable is missing.
         rel: The repo-relative deliverable path the specialist must write.
@@ -500,7 +502,7 @@ def _handle_missing_deliverable(
             "route": "fail",
         }
     _emit("stage.save_retry", slug=slug, stage=stage.key, attempt=save_retries + 1)
-    task = _stage_task(settings, slug, state["customer"], stage)
+    task = _stage_task(slug, state["customer"], stage)
     save_body = (
         f"{_path_anchor(slug)}\n\n# Your task\n\n{task}\n\n# Important\n\nYou did NOT save "
         f"your deliverable. You MUST call the write_file tool to save it to {rel}, then stop."
