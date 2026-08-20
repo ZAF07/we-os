@@ -43,7 +43,7 @@ Required: one measurable business objective + timeframe, the campaign budget, th
 2. Checks every Required DNA field is filled — incomplete? It lists exactly what's missing and stops.
 3. Confirms the campaign goal — absent? It asks for it and stops.
 
-**No delegation happens until the gate passes.** Once it does, the Marketing Director runs the mandatory pipeline — research → brand strategy → campaign strategy → creative direction → asset prompts → performance plan — delegating each stage to its specialist. Deliverables are written to `campaigns/<slug>/`.
+**No delegation happens until the gate passes.** Once it does, the Marketing Director runs the mandatory pipeline — research → brand strategy → campaign strategy → performance plan → creative direction → asset prompts — delegating each stage to its specialist. The performance plan precedes creative so briefs are scoped to the channels and placements it chose. Deliverables are written to `campaigns/<slug>/`.
 
 ## What "strictly abide by the DNA" means
 

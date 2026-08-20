@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.governance import PIPELINE, deliverable_path, prerequisite_met
-from marketing_os.governance.pipeline import DIRECTOR, PIPELINE_BY_KEY
+from marketing_os.governance.pipeline import DIRECTOR, PIPELINE_BY_KEY, stage_document
 
 
 def test_pipeline_order_is_mandatory():
@@ -11,10 +12,16 @@ def test_pipeline_order_is_mandatory():
         "research",
         "brand-strategy",
         "campaign-strategy",
+        "performance-plan",
         "creative-brief",
         "asset-prompts",
-        "performance-plan",
     ]
+
+
+def test_prerequisite_chain_follows_the_order():
+    assert PIPELINE_BY_KEY["performance-plan"].prerequisite == "campaign-strategy.md"
+    assert PIPELINE_BY_KEY["creative-brief"].prerequisite == "performance-plan.md"
+    assert PIPELINE_BY_KEY["asset-prompts"].prerequisite == "creative-brief.md"
 
 
 def test_campaign_strategy_is_director_owned():
@@ -22,21 +29,50 @@ def test_campaign_strategy_is_director_owned():
     assert PIPELINE_BY_KEY["research"].agent == "market-research"
 
 
+def test_performance_plan_task_asks_for_channels_spend_kpis_and_placements():
+    task = PIPELINE_BY_KEY["performance-plan"].task
+    assert "channel mix" in task
+    assert "per-channel spend allocation" in task
+    assert "KPI targets" in task
+    assert "placement" in task
+
+
+def test_creative_brief_task_briefs_against_the_plans_placements():
+    task = PIPELINE_BY_KEY["creative-brief"].task
+    assert "performance plan" in task
+    assert "placements" in task
+
+
 def test_first_stage_has_no_prerequisite(settings):
+    store = FilesystemDocumentStore(settings.root)
     research = PIPELINE_BY_KEY["research"]
-    assert prerequisite_met(settings, "acme", research) is True
+    assert prerequisite_met(store, "acme", "acme", research) is True
 
 
 def test_stage_blocked_until_prerequisite_exists(settings):
+    store = FilesystemDocumentStore(settings.root)
     brand = PIPELINE_BY_KEY["brand-strategy"]
     # research.md does not exist yet -> blocked
-    assert prerequisite_met(settings, "acme", brand) is False
+    assert prerequisite_met(store, "acme", "acme", brand) is False
     # create the prerequisite deliverable -> unblocked
-    (settings.campaigns_dir / "acme" / "research.md").write_text("findings", encoding="utf-8")
-    assert prerequisite_met(settings, "acme", brand) is True
+    store.write("acme", "campaigns/acme/research.md", "findings")
+    assert prerequisite_met(store, "acme", "acme", brand) is True
+
+
+def test_creative_brief_blocked_until_performance_plan_exists(settings):
+    store = FilesystemDocumentStore(settings.root)
+    brief = PIPELINE_BY_KEY["creative-brief"]
+    assert prerequisite_met(store, "acme", "acme", brief) is False
+    store.write("acme", "campaigns/acme/performance-plan.md", "plan")
+    assert prerequisite_met(store, "acme", "acme", brief) is True
 
 
 def test_deliverable_path(settings):
     research = PIPELINE_BY_KEY["research"]
     p = deliverable_path(settings, "acme", research)
     assert p == settings.campaigns_dir / "acme" / "research.md"
+
+
+def test_stage_document_is_the_tenant_relative_path():
+    research = PIPELINE_BY_KEY["research"]
+    assert stage_document("acme", research) == "campaigns/acme/research.md"

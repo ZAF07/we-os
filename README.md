@@ -290,21 +290,25 @@ Create campaign strategy.
 
 Step 7
 
-Create creative direction.
+Plan channels, placements, and spend.
 
 Step 8
 
-Generate assets.
+Create creative direction.
 
 Step 9
 
-Launch.
+Generate assets.
 
 Step 10
 
-Analyze results.
+Launch.
 
 Step 11
+
+Analyze results.
+
+Step 12
 
 Optimize.
 

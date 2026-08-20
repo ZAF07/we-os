@@ -28,9 +28,9 @@ At the start, derive a campaign slug and create the folder `campaigns/<slug>/`. 
 | Research | `campaigns/<slug>/research.md` |
 | Brand strategy | `campaigns/<slug>/brand-strategy.md` |
 | Campaign strategy | `campaigns/<slug>/campaign-strategy.md` |
+| Performance plan | `campaigns/<slug>/performance-plan.md` |
 | Creative brief | `campaigns/<slug>/creative-brief.md` |
 | Asset prompts | `campaigns/<slug>/asset-prompts.md` |
-| Performance plan | `campaigns/<slug>/performance-plan.md` |
 
 A stage's deliverable file existing on disk is the gate that lets the next stage begin.
 
@@ -40,11 +40,11 @@ A stage's deliverable file existing on disk is the gate that lets the next stage
    <!-- TODO: add intake questions that must be answered before research begins. -->
 3. **Research** — delegate to the `market-research` subagent. Wait for findings.
 4. **Positioning, messaging, value prop** — delegate to the `brand-strategy` subagent with the findings. Wait for the strategy.
-5. **Campaign strategy** — decide approach, channels-at-a-glance, and budget.
+5. **Campaign strategy** — decide approach, a rough channel direction, and the KPI tiers; the performance plan makes channels and spend concrete.
    <!-- TODO: add budget allocation logic / constraints here. -->
-6. **Creative direction** — delegate to the `creative-director` subagent with the approved strategy. Wait for the brief.
-7. **Asset prompts** — once the brief is approved, delegate to the `creative-asset-prompt` subagent.
-8. **Performance plan** — delegate to the `performance-marketing` subagent for channels, KPIs, budget, setup.
+6. **Performance plan** — delegate to the `performance-marketing` subagent for the concrete channel mix, per-channel spend allocation, KPI targets, and the placement/format specs creative must satisfy.
+7. **Creative direction** — delegate to the `creative-director` subagent with the approved strategy **and performance plan**; the brief must honour the plan's placements. Wait for the brief.
+8. **Asset prompts** — once the brief is approved, delegate to the `creative-asset-prompt` subagent.
 9. **Launch** — confirm assets + plan are ready.
 10. **Performance analysis** — after results, bring data back to the `performance-marketing` subagent.
 11. **Optimization** — apply data-driven recommendations; loop as needed.
