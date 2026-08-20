@@ -245,7 +245,7 @@ class Settings:
 
     @property
     def customers_dir(self) -> Path:
-        """Return the directory holding per-customer DNA profiles."""
+        """Return the directory holding per-Brand DNA profiles."""
         return self.root / "customers"
 
     @property

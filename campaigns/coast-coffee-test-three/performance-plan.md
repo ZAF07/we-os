@@ -2,7 +2,7 @@
 
 > **Agent:** Performance Marketing  
 > **Date:** 2025-07-16 (revised 2025-07-16)  
-> **Grounding:** Customer DNA (`customers/coast-coffee/dna.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`), Campaign Strategy (`campaigns/coast-coffee-test-three/campaign-strategy.md`), Market Research (`campaigns/coast-coffee-test-three/research.md`), Creative Brief (`campaigns/coast-coffee-test-three/creative-brief.md`)  
+> **Grounding:** Brand DNA (`customers/coast-coffee/dna.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`), Campaign Strategy (`campaigns/coast-coffee-test-three/campaign-strategy.md`), Market Research (`campaigns/coast-coffee-test-three/research.md`), Creative Brief (`campaigns/coast-coffee-test-three/creative-brief.md`)  
 > **Status:** Complete — performance plan is operationalised, with setup specifications, measurement cadence, and optimization decision trees. Creative copy and content specifications live in the Creative Brief; this document specifies formats, placements, requirements, and decision rules only.
 
 ---
@@ -650,4 +650,4 @@ protects SGD 600 from being wasted on underperforming paid channels.
 
 ---
 
-*End of performance plan. Every channel choice, KPI target, budget figure, and optimization trigger is grounded in the Customer DNA, Campaign Strategy, Campaign Goal, Brand Strategy, and Market Research. Creative copy, content calendar specifics, and asset-level creative direction live in the Creative Brief (`campaigns/coast-coffee-test-three/creative-brief.md`). The performance plan specifies what formats run where, at what budget, measured against which KPIs, with which decision rules — and nothing more. Ready for execution.*
+*End of performance plan. Every channel choice, KPI target, budget figure, and optimization trigger is grounded in the Brand DNA, Campaign Strategy, Campaign Goal, Brand Strategy, and Market Research. Creative copy, content calendar specifics, and asset-level creative direction live in the Creative Brief (`campaigns/coast-coffee-test-three/creative-brief.md`). The performance plan specifies what formats run where, at what budget, measured against which KPIs, with which decision rules — and nothing more. Ready for execution.*

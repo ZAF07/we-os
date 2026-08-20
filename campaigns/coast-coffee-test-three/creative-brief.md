@@ -3,7 +3,7 @@
 > **Date:** 2025-07-16  
 > **Agent:** Creative Director  
 > **Status:** Complete — ready for handoff to Creative Asset Prompt Agent  
-> **Grounding:** Customer DNA (`customers/coast-coffee/dna.md`), Market Research (`campaigns/coast-coffee-test-three/research.md`), Brand Strategy (`campaigns/coast-coffee-test-three/brand-strategy.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`), Campaign Strategy (`campaigns/coast-coffee-test-three/campaign-strategy.md`)
+> **Grounding:** Brand DNA (`customers/coast-coffee/dna.md`), Market Research (`campaigns/coast-coffee-test-three/research.md`), Brand Strategy (`campaigns/coast-coffee-test-three/brand-strategy.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`), Campaign Strategy (`campaigns/coast-coffee-test-three/campaign-strategy.md`)
 
 ---
 
@@ -446,4 +446,4 @@ P3 (nice to have):
 
 ---
 
-*End of creative brief. Every concept, direction, and asset requirement traces to the Customer DNA, Brand Strategy, and Campaign Strategy. No recommendation is invented from thin air. Ready for handoff to the Creative Asset Prompt Agent.*
+*End of creative brief. Every concept, direction, and asset requirement traces to the Brand DNA, Brand Strategy, and Campaign Strategy. No recommendation is invented from thin air. Ready for handoff to the Creative Asset Prompt Agent.*

@@ -49,7 +49,7 @@ PIPELINE: list[Stage] = [
         prerequisite=None,
         task=(
             "Conduct market research for this campaign. Read the campaign goal at "
-            "{goal_path} and the Customer DNA at {dna_path}. Produce customer, "
+            "{goal_path} and the Brand DNA at {dna_path}. Produce customer, "
             "competitor, market, trend, and audience-segmentation findings — findings "
             "only, no strategy. Cite the framework behind each finding and flag gaps "
             "honestly. Save the result to {deliverable_path}."
@@ -62,7 +62,7 @@ PIPELINE: list[Stage] = [
         prerequisite="research.md",
         task=(
             "Develop brand strategy. Read the research findings at {prereq_path}, the "
-            "goal at {goal_path}, and the Customer DNA at {dna_path}. Produce "
+            "goal at {goal_path}, and the Brand DNA at {dna_path}. Produce "
             "positioning, messaging, brand personality/voice, and value proposition — "
             "each explained with the 'why', grounded in a research finding. Save to "
             "{deliverable_path}."

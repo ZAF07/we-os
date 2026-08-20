@@ -20,3 +20,7 @@ This is domain-expert content, not code. The library is read-only to agents in t
 
 - `knowledge/{research,brand,creative,frameworks,performance}/README.md` (each carries a `<!-- TODO: add ... -->` marker).
 - `knowledge/README.md` (structure + read-only note).
+
+## Comments
+
+**2026-08-20.** The knowledge library is now classed as admin-tunable content and moves into Postgres ([ADR-0014](../../../docs/adr/0014-postgres-system-of-record-and-split-governance.md)). The work is unchanged — domain-expert content, not code — but if the migration has landed, author it in the admin surface rather than in `knowledge/<discipline>/`.

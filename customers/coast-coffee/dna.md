@@ -1,4 +1,4 @@
-# Customer DNA — Coast Coffee
+# Brand DNA — Coast Coffee
 
 > Reusable profile the agent grounds all work in. Required fields are complete; items marked `<TO CONFIRM>` or "(confirm)" should be validated with the customer to sharpen output.
 

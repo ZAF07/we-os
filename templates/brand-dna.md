@@ -1,4 +1,4 @@
-# Customer DNA — <CUSTOMER NAME>
+# Brand DNA — <CUSTOMER NAME>
 
 > Copy this file to `customers/<name>/dna.md` and fill every **Required** field with real, specific information.
 > This is the single source of truth the agent strictly abides by. Vague or placeholder answers produce vague, generic campaigns.

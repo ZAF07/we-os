@@ -15,7 +15,7 @@ _FALLBACK_RUBRIC = (
     "- Strategy before content. Revenue before engagement.\n"
     "- Every recommendation is evidence-based, explains why, and ties to the "
     "business objective.\n"
-    "- Ground everything in the Customer DNA; no generic filler."
+    "- Ground everything in the Brand DNA; no generic filler."
 )
 
 

@@ -37,7 +37,7 @@ class CampaignState(TypedDict, total=False):
     Attributes:
         customer: The customer name the campaign runs for.
         slug: The campaign slug and checkpoint thread key.
-        dna_text: The loaded Customer DNA, populated by the gate node.
+        dna_text: The loaded Brand DNA, populated by the gate node.
         governance: The assembled governance preamble, populated by the gate node.
         error: A structured error describing why the run halted, if it did.
         halt: Whether the run should short-circuit to the end.

@@ -28,7 +28,7 @@ Consult `knowledge/creative/` for prompt conventions and format/spec requirement
 <!-- TODO: add project-specific prompt templates and per-format spec requirements here, or in knowledge/creative/. -->
 
 ## Guardrails (non-negotiable)
-- **Ground everything in the Customer DNA** the orchestrator gives you (plus the approved brief). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
+- **Ground everything in the Brand DNA** the orchestrator gives you (plus the approved brief). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
 - **Never invent strategy.** If the brief is ambiguous or incomplete, stop and ask the orchestrator rather than filling gaps.
 - Strictly follow the approved brief — no new concepts, positioning, or messaging.
 - Do not generate assets before a brief exists.

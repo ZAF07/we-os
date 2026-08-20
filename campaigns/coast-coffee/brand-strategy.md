@@ -2,7 +2,7 @@
 
 > Author: Brand Strategy Agent. Output is **strategy only** — positioning, value proposition, messaging, brand personality/voice, and reasons-to-believe. **No** creative concepts, taglines-as-assets, campaign ideas, channels, or media decisions (those are downstream stages).
 > Grounded in `customers/coast-coffee/dna.md` (authoritative) and `campaigns/coast-coffee/research.md`, in service of the goal in `campaigns/coast-coffee/goal.md`: **acquire 70 new customers in 8 weeks** on SGD 1,000 paid, CAC ≤ ~SGD 14, via an introductory 3-bean flavour trio.
-> **[DNA]** = drawn from the Customer DNA · **[RESEARCH]** = from research findings · **[REC]** = my recommendation to validate.
+> **[DNA]** = drawn from the Brand DNA · **[RESEARCH]** = from research findings · **[REC]** = my recommendation to validate.
 >
 > **Frameworks applied:** `knowledge/brand/` currently contains only a stub (no project-defined positioning model, messaging hierarchy, or voice guidelines — see "Knowledge gaps"). In its absence I applied three standard, well-established frameworks and name them per section: the **April Dunford / classic "for [target] who [need]…" positioning statement** for positioning, a **message-pyramid (primary → supporting → proof)** for messaging, and a **brand-personality/voice-trait** model for voice.
 

@@ -25,7 +25,7 @@ three KPI tiers (Business / Marketing / Creative), each tied to the business
 objective.
 
 ## Guardrails (non-negotiable)
-- Ground everything in the Customer DNA and the approved brand strategy. Never invent
+- Ground everything in the Brand DNA and the approved brand strategy. Never invent
   what the DNA omits — say so instead.
 - Strategy before content: do not specify creative or assets.
 - Every decision explains its 'why' and ties back to the business KPI.

@@ -27,7 +27,7 @@ Consult `knowledge/research/` for the frameworks and methods this project uses. 
 <!-- TODO: add project-specific research methodology, source quality bar, and segmentation model here, or in knowledge/research/. -->
 
 ## Guardrails (non-negotiable)
-- **Ground everything in the Customer DNA** the orchestrator gives you (plus research). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
+- **Ground everything in the Brand DNA** the orchestrator gives you (plus research). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
 - Every finding must be **evidence-based** and state its source.
 - You output findings only — you must not skip ahead to positioning, messaging, or assets.
 - Flag gaps honestly rather than inventing data.

@@ -2,7 +2,7 @@
 
 > **Date:** 2025-07-16 (refined 2025-07-16 — web search attempted; no usable results returned)  
 > **Status:** Complete (with flagged gaps for customer validation)  
-> **Grounding:** All findings trace to the Customer DNA (`customers/coast-coffee/dna.md`) or named frameworks. Web search was attempted but yielded no usable data; findings that rely on general knowledge are marked as such.
+> **Grounding:** All findings trace to the Brand DNA (`customers/coast-coffee/dna.md`) or named frameworks. Web search was attempted but yielded no usable data; findings that rely on general knowledge are marked as such.
 
 ---
 
@@ -262,7 +262,7 @@ These gaps should be resolved by the customer. Where a gap directly constrains a
 ---
 
 > **Framework citations:** Jobs-to-be-Done (Christensen et al.), Porter's Five Forces (Porter, 1979), PESTLE Analysis, TAM/SAM/SOM market sizing, Needs-Based Segmentation (Haley, 1968), STEEP Trends analysis.  
-> **Data limitations:** Web search was attempted for market sizing, competitor data, and trend validation but returned no usable results. All findings beyond the Customer DNA are from general knowledge and framework application. Gaps are explicitly flagged.
+> **Data limitations:** Web search was attempted for market sizing, competitor data, and trend validation but returned no usable results. All findings beyond the Brand DNA are from general knowledge and framework application. Gaps are explicitly flagged.
 
 ---
 

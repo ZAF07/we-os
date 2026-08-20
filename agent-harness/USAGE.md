@@ -32,7 +32,7 @@ or `openai` to swap backends with no code change.
 | 3 | Run the pipeline | produce the deliverables (research → … → performance plan) | `POST /campaigns/{slug}/run` or `GET …/stream` |
 | 4 | Fetch results | read the written deliverables | `GET /campaigns/{slug}/deliverables` |
 
-Customer DNA (`customers/<name>/dna.md`) is authored once by a human and reused
+Brand DNA (`customers/<name>/dna.md`) is authored once by a human and reused
 across campaigns — the API does not create it. If it's missing/incomplete the
 gate fails and `run` returns `409`.
 

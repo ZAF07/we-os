@@ -1,11 +1,11 @@
 # Customers
 
-One folder per customer, each holding that customer's **Customer DNA** — the stable, reusable profile the agent grounds all work in.
+One folder per customer, each holding that customer's **Brand DNA** — the stable, reusable profile the agent grounds all work in.
 
 ```
 customers/
   <name>/
-    dna.md        # copied from templates/customer-dna.md, then filled in
+    dna.md        # copied from templates/brand-dna.md, then filled in
 ```
 
 ## How it works

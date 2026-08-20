@@ -27,7 +27,7 @@ Consult `knowledge/performance/` for the channel playbooks, KPI models, and budg
 <!-- TODO: add project-specific channel benchmarks, KPI targets, and budget model here, or in knowledge/performance/. -->
 
 ## Guardrails (non-negotiable)
-- **Ground everything in the Customer DNA** the orchestrator gives you (plus the strategy and data). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
+- **Ground everything in the Brand DNA** the orchestrator gives you (plus the strategy and data). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
 - Every recommendation must explain **why** and tie back to the business KPI.
 - Define success metrics across all three KPI tiers before recommending spend.
 - Optimization recommendations must be driven by data, not assumption.

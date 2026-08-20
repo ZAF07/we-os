@@ -4,7 +4,7 @@
 > **Date:** 2025-07-10
 > **Produced by:** Market Research Agent
 > **Grounded in:** `customers/coast-coffee/dna.md` (complete) + direct competitor site analysis + web-sourced data
-> **Methodology note:** Web search (Google) was unavailable throughout this research — all queries returned CAPTCHA blocks. Findings are based on direct URL fetches of competitor websites, industry platform pages, and the Customer DNA. Gaps are flagged honestly. Where possible, publicly documented frameworks are cited.
+> **Methodology note:** Web search (Google) was unavailable throughout this research — all queries returned CAPTCHA blocks. Findings are based on direct URL fetches of competitor websites, industry platform pages, and the Brand DNA. Gaps are flagged honestly. Where possible, publicly documented frameworks are cited.
 
 ---
 
@@ -229,7 +229,7 @@ Given the **70-new-customer / SGD 1,000 budget / 8-week** constraint:
 
 | Source | Quality | Limitation |
 |--------|---------|------------|
-| Customer DNA (`customers/coast-coffee/dna.md`) | Primary — customer-provided | Several fields marked `<TO CONFIRM>`; baseline metrics missing |
+| Brand DNA (`customers/coast-coffee/dna.md`) | Primary — customer-provided | Several fields marked `<TO CONFIRM>`; baseline metrics missing |
 | Competitor websites (direct fetch) | Primary — publicly verifiable | Product pages not exhaustively fetched; exact pricing/bag sizes may vary |
 | Euromonitor "Coffee in Singapore" report | Paywalled — not accessed | USD 1,195 paywall; title and segmentation data confirmed but not purchased |
 | Market size estimates | Agent-generated top-down | Not validated; based on general demographic data + industry rules of thumb |

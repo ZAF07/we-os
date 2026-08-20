@@ -21,7 +21,7 @@
 ---
 
 ## 1. Target audience / segmentation
-*Method: behavioural audience segmentation + JTBD. Builds on prior research segments; re-validated against the same Customer DNA.*
+*Method: behavioural audience segmentation + JTBD. Builds on prior research segments; re-validated against the same Brand DNA.*
 
 ### Who SG home baristas are (unchanged context)
 - Singapore has a mature specialty coffee culture and an active home-brewing movement driven by remote/hybrid work, lifestyle upgrades, and rising quality appreciation. Consumers invest in grinders, scales, pour-over kits, frothers, and home roasters. **[PRIOR-RESEARCH FACT]**

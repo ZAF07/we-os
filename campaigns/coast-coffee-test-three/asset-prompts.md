@@ -3,7 +3,7 @@
 > **Agent:** Creative Asset Prompt Agent  
 > **Date:** 2025-07-16  
 > **Source:** Creative Brief (`campaigns/coast-coffee-test-three/creative-brief.md`)  
-> **Grounding:** Customer DNA (`customers/coast-coffee/dna.md`)  
+> **Grounding:** Brand DNA (`customers/coast-coffee/dna.md`)  
 > **Status:** Complete — ready for production (designer, photographer, or AI-generation tools)
 
 ---
@@ -618,4 +618,4 @@ P3 — NICE TO HAVE:
 
 ---
 
-*End of asset prompts. Every prompt traces to a specific requirement in the creative brief (§3.3, §3.4, §4.2, §4.3, §5.1, §6.2, §6.3, §6.4) and is grounded in the Customer DNA at `customers/coast-coffee/dna.md`. No strategy, positioning, or messaging has been invented — only the brief's approved direction has been converted into executable generation prompts.*
+*End of asset prompts. Every prompt traces to a specific requirement in the creative brief (§3.3, §3.4, §4.2, §4.3, §5.1, §6.2, §6.3, §6.4) and is grounded in the Brand DNA at `customers/coast-coffee/dna.md`. No strategy, positioning, or messaging has been invented — only the brief's approved direction has been converted into executable generation prompts.*

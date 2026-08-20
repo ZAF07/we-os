@@ -1,6 +1,6 @@
 # Campaign Goal — Coast Coffee Launch
 
-> Customer DNA (`customers/coast-coffee/dna.md`) is complete. This goal is finalised; KPI
+> Brand DNA (`customers/coast-coffee/dna.md`) is complete. This goal is finalised; KPI
 > targets are evidence-based proposals by the Marketing Director — adjust if the customer
 > has firmer baselines (DNA lists baseline metrics as `<TO CONFIRM>`).
 

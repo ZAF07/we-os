@@ -3,7 +3,7 @@
 > **Date:** 2025-07-16 (revised 2025-07-16)  
 > **Agent:** Brand Strategy  
 > **Status:** Complete — all four required components (positioning, messaging, brand personality & voice, value proposition) are present. Brand voice (§3) is derived inferentially from DNA and research — marked **PROVISIONAL** pending customer confirmation.  
-> **Grounding:** All recommendations trace to the Customer DNA (`customers/coast-coffee/dna.md`) and Market Research (`campaigns/coast-coffee-test-three/research.md`). No recommendation is invented from thin air.
+> **Grounding:** All recommendations trace to the Brand DNA (`customers/coast-coffee/dna.md`) and Market Research (`campaigns/coast-coffee-test-three/research.md`). No recommendation is invented from thin air.
 
 ---
 
@@ -141,7 +141,7 @@ CORE MESSAGE
 
 ## 3. Brand Personality & Voice
 
-> **Status:** PROVISIONAL — derived inferentially from the Customer DNA and Market Research. The DNA marks brand voice as `<TO CONFIRM>`. These voice attributes, do's/don'ts, and tone guidelines are the agent's best reading of what the brand should sound like given its positioning, audience, and differentiation. **The customer should validate, revise, or replace this section before creative work begins.**
+> **Status:** PROVISIONAL — derived inferentially from the Brand DNA and Market Research. The DNA marks brand voice as `<TO CONFIRM>`. These voice attributes, do's/don'ts, and tone guidelines are the agent's best reading of what the brand should sound like given its positioning, audience, and differentiation. **The customer should validate, revise, or replace this section before creative work begins.**
 
 ### 3.1 Why This Voice
 

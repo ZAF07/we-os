@@ -1,7 +1,7 @@
 """Load the canonical governance from `.claude/rules/*.md`.
 
 These rule files (`decision-hierarchy.md`, `operating-principles.md`,
-`customer-dna.md`) are the non-negotiable governance every specialist runs under.
+`brand-dna.md`) are the non-negotiable governance every specialist runs under.
 They are concatenated into a single preamble that is prepended to every agent's
 system prompt — the same content the Claude Code session loads each turn.
 """
@@ -14,7 +14,7 @@ from marketing_os.config import Settings
 _PREFERRED_ORDER = [
     "operating-principles.md",
     "decision-hierarchy.md",
-    "customer-dna.md",
+    "brand-dna.md",
 ]
 
 

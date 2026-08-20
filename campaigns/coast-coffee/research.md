@@ -2,7 +2,7 @@
 
 > Author: Market Research Agent. Output is **research findings only** — no positioning, messaging, or creative.
 > Grounded in `customers/coast-coffee/dna.md` and `campaigns/coast-coffee/goal.md`, supplemented by cited external research (June 2026).
-> **[FACT]** = sourced/external; **[INFERENCE]** = reasoned conclusion clearly labelled; **[DNA]** = drawn directly from the Customer DNA.
+> **[FACT]** = sourced/external; **[INFERENCE]** = reasoned conclusion clearly labelled; **[DNA]** = drawn directly from the Brand DNA.
 >
 > **Frameworks applied:** `knowledge/research/` currently contains only a stub (no project-specific methods defined — see "DNA & knowledge gaps"). In its absence I applied three standard, well-established methods and name them per section: **Jobs-to-be-Done (JTBD)** for customer research, a **Competitor Positioning Matrix** for the landscape, and **behavioural audience segmentation** for the segments.
 

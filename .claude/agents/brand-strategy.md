@@ -27,7 +27,7 @@ Consult `knowledge/brand/` for the positioning and messaging frameworks this pro
 <!-- TODO: add project-specific positioning model, messaging hierarchy, and voice guidelines here, or in knowledge/brand/. -->
 
 ## Guardrails (non-negotiable)
-- **Ground everything in the Customer DNA** the orchestrator gives you (plus research). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
+- **Ground everything in the Brand DNA** the orchestrator gives you (plus research). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
 - Every recommendation must explain **why**, grounded in the research findings.
 - Strategy before content — you must not write creative or specify assets.
 - Customer understanding before positioning — do not override the research.

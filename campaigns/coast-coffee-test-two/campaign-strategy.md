@@ -2,7 +2,7 @@
 
 > Author: Marketing Director. Output is **campaign strategy only** — approach, channels-at-a-glance, budget allocation, and KPI tiers. No creative concepts, no asset briefs, no channel-level execution (those are downstream).
 >
-> Grounded in `customers/coast-coffee/dna.md` (Customer DNA), `campaigns/coast-coffee-test-two/goal.md` (campaign goal), `campaigns/coast-coffee-test-two/brand-strategy.md` (approved brand strategy), and `campaigns/coast-coffee-test-two/research.md` (research findings).
+> Grounded in `customers/coast-coffee/dna.md` (Brand DNA), `campaigns/coast-coffee-test-two/goal.md` (campaign goal), `campaigns/coast-coffee-test-two/brand-strategy.md` (approved brand strategy), and `campaigns/coast-coffee-test-two/research.md` (research findings).
 >
 > **Binding constraints from upstream:** brand strategy Section 6 (10 non-negotiable strategic parameters); campaign goal (70 customers, 8 weeks, SGD 1,000 paid, trio at ~SGD 50–54); DNA hard constraints (3 flavour variations, SGD 18–30/bag, ≥6-week freshness promise, English-primary, Singapore-only).
 
@@ -199,7 +199,7 @@ The campaign's trust deficit (no testimonials, unknown brand) is addressed throu
 | **≥6-week freshness guarantee operationally deliverable** | Coast Coffee | **Existential.** The brand strategy's primary differentiator and risk-reversal lever. | If the guarantee cannot be honoured, the entire positioning collapses. Do not launch. |
 | **At least 1–2 editorial inclusions by week 6** | Operator / Marketing Director | **High.** The organic customer contribution (25–35) partly depends on editorial-driven discovery. | Increase community/referral emphasis; accept that the 70-customer target may not be reached and treat 50–60 as the fallback. |
 | **Social proof harvested and deployed by week 4** | Performance Marketing Agent + Creative Director | **High.** Phase 2 conversion rates depend on proof existing. | If capture rate is low (<30%), deploy whatever exists and lean harder on the guarantee + process transparency as trust substitutes. |
-| **Customer DNA brand voice validated before creative locks** | Operator / Coast Coffee | **Medium-High.** The brand strategy's voice section is provisional (`<TO CONFIRM>`). Creative can draft with the provisional voice but must not finalise until validated. | If validation is delayed, creative proceeds with the provisional "knowledgeable guide" voice as a working assumption — the campaign launches but may need tone adjustments mid-flight. |
+| **Brand DNA brand voice validated before creative locks** | Operator / Coast Coffee | **Medium-High.** The brand strategy's voice section is provisional (`<TO CONFIRM>`). Creative can draft with the provisional voice but must not finalise until validated. | If validation is delayed, creative proceeds with the provisional "knowledgeable guide" voice as a working assumption — the campaign launches but may need tone adjustments mid-flight. |
 
 ### 5.2 Risks
 

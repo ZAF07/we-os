@@ -137,7 +137,7 @@ class NoopWebSearch(WebSearchTool):
     """Default backend with no live web access, returning an honest message."""
 
     _MSG = (
-        "Web search is not configured. Ground findings in the Customer DNA and "
+        "Web search is not configured. Ground findings in the Brand DNA and "
         "state explicitly where external data would be needed but is unavailable."
     )
 

@@ -1,4 +1,4 @@
-"""Stage 0 — the Customer DNA gate.
+"""Stage 0 — the Brand DNA gate.
 
 Reproduces the orchestrator's three blocking checks:
   1. `customers/<name>/dna.md` exists.
@@ -119,14 +119,14 @@ def check_gate(settings: Settings, customer: str, slug: str) -> GateReport:
     """Run the gate and return a report (does not raise)."""
     dna_path = settings.customers_dir / customer / "dna.md"
     goal_path = settings.campaigns_dir / slug / "goal.md"
-    dna_template = settings.templates_dir / "customer-dna.md"
+    dna_template = settings.templates_dir / "brand-dna.md"
     goal_template = settings.templates_dir / "campaign-goal.md"
 
     report = GateReport(customer=customer, slug=slug)
     if not dna_path.is_file():
         report.dna_issues.append(
-            f"no Customer DNA at {dna_path}. Create it: "
-            f"cp templates/customer-dna.md customers/{customer}/dna.md, "
+            f"no Brand DNA at {dna_path}. Create it: "
+            f"cp templates/brand-dna.md customers/{customer}/dna.md, "
             "then fill every Required field."
         )
     else:

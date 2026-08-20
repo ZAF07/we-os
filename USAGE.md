@@ -1,13 +1,13 @@
 # Using Marketing OS
 
-Marketing OS produces sharp campaigns only when fed real customer truth. Feed it nothing specific and it returns generic garbage that fits any business and helps none. So the agent is **gated**: it will not start until you've given it a complete **Customer DNA** and a **campaign goal**. Do the prep first — it's the difference between a campaign and filler.
+Marketing OS produces sharp campaigns only when fed real customer truth. Feed it nothing specific and it returns generic garbage that fits any business and helps none. So the agent is **gated**: it will not start until you've given it a complete **Brand DNA** and a **campaign goal**. Do the prep first — it's the difference between a campaign and filler.
 
-## Step 1 — Collect the Customer DNA
+## Step 1 — Collect the Brand DNA
 
-The Customer DNA is the stable, reusable profile of the business and its customers. Fill it **once** per customer; every future campaign reuses it.
+The Brand DNA is the stable, reusable profile of the business and its customers. Fill it **once** per customer; every future campaign reuses it.
 
 ```
-cp templates/customer-dna.md customers/<name>/dna.md
+cp templates/brand-dna.md customers/<name>/dna.md
 ```
 
 Then fill it in with real, specific information. The agent **will not run** until every **Required** field is filled (not left as a `<...>` placeholder):
@@ -39,7 +39,7 @@ Required: one measurable business objective + timeframe, the campaign budget, th
 
 `<name>` matches the customer folder (`customers/<name>/dna.md`). On start the agent runs a **gate**:
 
-1. Loads the Customer DNA — missing? It stops and points you to the template.
+1. Loads the Brand DNA — missing? It stops and points you to the template.
 2. Checks every Required DNA field is filled — incomplete? It lists exactly what's missing and stops.
 3. Confirms the campaign goal — absent? It asks for it and stops.
 
@@ -47,10 +47,10 @@ Required: one measurable business objective + timeframe, the campaign budget, th
 
 ## What "strictly abide by the DNA" means
 
-Every recommendation the agents make must trace back to the Customer DNA or to research findings. They are instructed to refuse to produce generic, DNA-unsupported content, and to flag gaps rather than invent. If output ever feels generic, the fix is almost always a thinner DNA — enrich `customers/<name>/dna.md` and re-run.
+Every recommendation the agents make must trace back to the Brand DNA or to research findings. They are instructed to refuse to produce generic, DNA-unsupported content, and to flag gaps rather than invent. If output ever feels generic, the fix is almost always a thinner DNA — enrich `customers/<name>/dna.md` and re-run.
 
 ## Required-fields checklist
 
-**Customer DNA** — business name + what they sell · primary segment(s) · pain points / jobs-to-be-done · differentiation · geography + language · budget range + hard constraints.
+**Brand DNA** — business name + what they sell · primary segment(s) · pain points / jobs-to-be-done · differentiation · geography + language · budget range + hard constraints.
 
 **Campaign goal** — measurable objective + timeframe · budget · target segment · success metrics (Business / Marketing / Creative).

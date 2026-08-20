@@ -19,7 +19,7 @@ from marketing_os.schemas import Discrepancy, ReviewVerdict
 
 Handler = Callable[[list[BaseMessage], int], AIMessage]
 
-PLACEHOLDER_DNA = "# Customer DNA — Acme\n\n## Business\n- **Business name:** <name>\n"
+PLACEHOLDER_DNA = "# Brand DNA — Acme\n\n## Business\n- **Business name:** <name>\n"
 
 PASS_VERDICT = ReviewVerdict(passed=True, summary="ok")
 FAIL_VERDICT = ReviewVerdict(
@@ -232,7 +232,7 @@ class FakeReviewer:
 
 
 _DNA_TEMPLATE = """\
-# Customer DNA — <CUSTOMER NAME>
+# Brand DNA — <CUSTOMER NAME>
 
 ## Required (the agent will not start without these)
 
@@ -270,7 +270,7 @@ _GOAL_TEMPLATE = """\
 """
 
 _DNA_FILLED = """\
-# Customer DNA — Acme
+# Brand DNA — Acme
 
 ## Business
 - **Business name:** Acme Climbing Gym
@@ -343,7 +343,7 @@ def repo(tmp_path: Path) -> Path:
     """
     _write(tmp_path / ".claude" / "agents" / "market-research.md", _AGENT_MD)
     _write(tmp_path / ".claude" / "rules" / "operating-principles.md", _RULES_MD)
-    _write(tmp_path / "templates" / "customer-dna.md", _DNA_TEMPLATE)
+    _write(tmp_path / "templates" / "brand-dna.md", _DNA_TEMPLATE)
     _write(tmp_path / "templates" / "campaign-goal.md", _GOAL_TEMPLATE)
     _write(tmp_path / "customers" / "acme" / "dna.md", _DNA_FILLED)
     _write(tmp_path / "campaigns" / "acme" / "goal.md", _GOAL_FILLED)

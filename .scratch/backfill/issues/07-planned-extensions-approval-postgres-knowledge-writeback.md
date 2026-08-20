@@ -20,3 +20,15 @@ Three capabilities are documented as intended future work but not built. Grouped
 
 - `agent-harness/TODO.md` (extension points: reviewer model, approval policy, persistence).
 - `agent-harness/pyproject.toml` (`postgres` extra); `knowledge/README.md` (Future capability).
+
+## Comments
+
+**2026-08-20 — triaged; two of three candidates decided, scope expanded.** A design session settled the product shape (multi-tenant SaaS, FE↔BE wiring, creative assets, Meta/TikTok). Outcome:
+
+- **Human approval node — decided and expanded.** Not a single node: a per-stage approval policy with `interrupt()`/resume and `approve`/`revise` endpoints, plus immutable deliverable versions and downstream staleness. See [ADR-0015](../../../docs/adr/0015-human-approval-gates-and-versioned-deliverables.md).
+- **Postgres persistence — decided and expanded well beyond the checkpointer.** Postgres becomes the system of record for all tenant data behind a `DocumentStore` port, plus the questionnaire, guardrails and knowledge library. See [ADR-0014](../../../docs/adr/0014-postgres-system-of-record-and-split-governance.md). The abandon-must-clear-the-thread carry-over recorded above still stands and is restated in that ADR.
+- **Knowledge write-back — still not decided.** Untouched by this session; remains a candidate.
+
+Note the ordering constraint this creates: Postgres is a **hard prerequisite** for the approval work (LangGraph cannot resume an interrupted run across a process boundary on `MemorySaver`), and both precede any real FE↔BE wiring.
+
+Related new decisions: [ADR-0013](../../../docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md) (tenancy/auth), [ADR-0016](../../../docs/adr/0016-channel-planning-precedes-creative.md) (stage reorder), [ADR-0017](../../../docs/adr/0017-stages-and-lifecycle-are-separate-axes.md) (FE↔engine mapping), [ADR-0018](../../../docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md) (DNA authoring), [ADR-0019](../../../docs/adr/0019-creative-unit-is-the-approvable-asset.md) (assets), [ADR-0020](../../../docs/adr/0020-usage-ledger-and-enforced-quota.md) (quota), [ADR-0021](../../../docs/adr/0021-organic-publishing-before-paid-ads.md) (publishing).

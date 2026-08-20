@@ -8,7 +8,7 @@
 >
 > **Frameworks applied** (same as prior, since `knowledge/brand/` remains a stub): positioning statement (April Dunford / "for [target] who [need]…"), message pyramid (primary → supporting → proof), brand-personality/voice-trait model.
 >
-> **[DNA]** = from Customer DNA · **[RES]** = from this campaign's research · **[PS]** = from prior brand strategy (carried forward) · **[ADAPT]** = new or adjusted for this campaign.
+> **[DNA]** = from Brand DNA · **[RES]** = from this campaign's research · **[PS]** = from prior brand strategy (carried forward) · **[ADAPT]** = new or adjusted for this campaign.
 
 ---
 
@@ -128,7 +128,7 @@ The trio at ~SGD 50–54 is the **hero offer and the trust engine** — its job 
 
 ## 4. Brand personality & voice — UNRESOLVED GAP (customer validation required)
 
-*DNA field: **Brand voice & guardrails: `<TO CONFIRM>`**. The Customer DNA provides no voice guardrails — no tone specification, no words/styles to use, no do's and don'ts. This section is a **gap, not settled strategy**.*
+*DNA field: **Brand voice & guardrails: `<TO CONFIRM>`**. The Brand DNA provides no voice guardrails — no tone specification, no words/styles to use, no do's and don'ts. This section is a **gap, not settled strategy**.*
 
 ### Why this matters now
 Brand voice is not cosmetic. For a cold launch with no testimonials, voice is a trust signal — it either reinforces the "knowledgeable guide" persona that compensates for missing social proof, or it undermines it. Downstream agents (Creative Director, Performance Marketing) cannot lock in copy or creative tone until voice is settled. **[ADAPT]**
@@ -232,7 +232,7 @@ Unfamiliar origins are reframed as the trend-setting advantage they are — supp
 At most 3 flavour variations. SGD 18–30 per 200–250 g bag. The ≥6-week freshness promise must not be overstated. English-primary (pending customer confirmation of Mandarin/Malay reach).
 
 ### 6.10 Voice is gated on customer validation
-Section 4 is a provisional recommendation, not settled strategy. The Customer DNA's voice field is `<TO CONFIRM>`. Creative must not lock in final tone or copy until the customer validates the voice recommendation. The provisional "knowledgeable guide" persona may be used as a working assumption for early drafts only.
+Section 4 is a provisional recommendation, not settled strategy. The Brand DNA's voice field is `<TO CONFIRM>`. Creative must not lock in final tone or copy until the customer validates the voice recommendation. The provisional "knowledgeable guide" persona may be used as a working assumption for early drafts only.
 
 ---
 

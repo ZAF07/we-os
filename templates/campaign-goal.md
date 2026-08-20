@@ -1,7 +1,7 @@
 # Campaign Goal — <CAMPAIGN NAME>
 
 > Copy this file to `campaigns/<slug>/goal.md` and fill every **Required** field.
-> The goal is per-campaign; the Customer DNA (in `customers/<name>/dna.md`) is reused across campaigns.
+> The goal is per-campaign; the Brand DNA (in `customers/<name>/dna.md`) is reused across campaigns.
 
 ## Required
 

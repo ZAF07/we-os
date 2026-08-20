@@ -1,10 +1,10 @@
 # Creative Brief — Coast Coffee Launch Campaign
 
-> Author: Creative Director Agent. Output is a **creative brief only** — big idea, campaign theme, content directions, and concrete asset requirements. **No** finished assets and **no** generation prompts (those are the Creative Asset Prompt stage). Every creative decision below is grounded in and traceable to the approved strategy and the Customer DNA, and each ties back to the business goal (**acquire 70 new customers in 8 weeks**).
+> Author: Creative Director Agent. Output is a **creative brief only** — big idea, campaign theme, content directions, and concrete asset requirements. **No** finished assets and **no** generation prompts (those are the Creative Asset Prompt stage). Every creative decision below is grounded in and traceable to the approved strategy and the Brand DNA, and each ties back to the business goal (**acquire 70 new customers in 8 weeks**).
 >
 > Grounded in: `customers/coast-coffee/dna.md` (authoritative), `campaigns/coast-coffee/research.md`, `campaigns/coast-coffee/brand-strategy.md` (approved positioning/messaging/voice), `campaigns/coast-coffee/campaign-strategy.md` (approved channels, phasing, hero offer).
 >
-> **[DNA]** = from Customer DNA · **[RESEARCH]** = from research · **[STRATEGY]** = from approved brand/campaign strategy · **[REC]** = my recommendation to validate.
+> **[DNA]** = from Brand DNA · **[RESEARCH]** = from research · **[STRATEGY]** = from approved brand/campaign strategy · **[REC]** = my recommendation to validate.
 >
 > **Frameworks applied:** `knowledge/creative/` is currently a stub (no project-defined brief template, concept criteria, or format specs — see "Knowledge gaps"). In its absence I applied three standard, well-established frameworks and name them per section: a **single-minded-proposition creative brief** structure, the **"big idea / campaign theme → content directions → asset requirements" concepting ladder**, and a **scroll-stopping hook model (problem/curiosity/proof openers in the first 3 seconds)** for the video KPI.
 

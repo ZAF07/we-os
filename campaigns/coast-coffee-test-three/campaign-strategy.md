@@ -3,7 +3,7 @@
 > **Date:** 2025-07-16  
 > **Agent:** Marketing Director  
 > **Status:** Complete  
-> **Grounding:** Customer DNA (`customers/coast-coffee/dna.md`), Brand Strategy (`campaigns/coast-coffee-test-three/brand-strategy.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`).
+> **Grounding:** Brand DNA (`customers/coast-coffee/dna.md`), Brand Strategy (`campaigns/coast-coffee-test-three/brand-strategy.md`), Campaign Goal (`campaigns/coast-coffee-test-three/goal.md`).
 
 ---
 
@@ -208,4 +208,4 @@ This campaign strategy is the upstream deliverable. The **Creative Director** ag
 
 ---
 
-*End of campaign strategy. All choices are grounded in the Customer DNA, Brand Strategy, and Campaign Goal. No recommendation is invented from thin air. Handoff ready.*
+*End of campaign strategy. All choices are grounded in the Brand DNA, Brand Strategy, and Campaign Goal. No recommendation is invented from thin air. Handoff ready.*

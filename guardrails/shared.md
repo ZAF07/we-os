@@ -2,7 +2,7 @@
 
 Reject the deliverable if any of these are violated:
 
-- **DNA-grounded.** Every claim and recommendation traces to the Customer DNA or
+- **DNA-grounded.** Every claim and recommendation traces to the Brand DNA or
   to a stated research finding. No generic filler that could apply to any
   business. If something the DNA doesn't cover is needed, the deliverable says so
   explicitly rather than inventing it.

@@ -13,3 +13,7 @@ The QA rubrics in `guardrails/*.md` are functional but flagged as needing sharpe
 
 - `agent-harness/TODO.md` (extension point: "Guardrail rubrics: sharpen `guardrails/*.md` to professional bar").
 - `agent-harness/src/marketing_os/governance/rubric.py` (`load_rubric` reads these files at review time).
+
+## Comments
+
+**2026-08-20.** Rubrics are now classed as admin-tunable content and move into Postgres, editable without a deploy ([ADR-0014](../../../docs/adr/0014-postgres-system-of-record-and-split-governance.md)). Sharpening the content is still the work here and is unaffected — but do it against the migrated store rather than `guardrails/*.md` if the migration has already landed. Also note the pipeline reorder ([ADR-0016](../../../docs/adr/0016-channel-planning-precedes-creative.md)): the creative-brief rubric must now require the brief to honour the placements set by the performance plan.

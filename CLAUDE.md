@@ -17,9 +17,9 @@ The repository has two layers: the **interactive agentic system** configured und
 | `.claude/rules/`               | **Canonical governance**, loaded every session: the mandatory pipeline and operating principles.                                           |
 | `.claude/settings.json`        | Permissions (read-only research tools pre-allowed).                                                                                        |
 | `knowledge/`                   | Central domain-knowledge library, by discipline. Agents read frameworks from here.                                                         |
-| `customers/<name>/dna.md`      | Reusable **Customer DNA** — the profile the agent grounds all work in. Human-authored; read-only to agents.                                |
+| `customers/<name>/dna.md`      | Reusable **Brand DNA** — the profile the agent grounds all work in. Human-authored; read-only to agents.                                |
 | `campaigns/<slug>/`            | Per-campaign `goal.md` (input) + deliverables written by each pipeline stage. Writes here are pre-approved (no prompt).                    |
-| `templates/`                   | Fill-in templates for Customer DNA and campaign goals.                                                                                     |
+| `templates/`                   | Fill-in templates for Brand DNA and campaign goals.                                                                                     |
 | `USAGE.md`                     | Operator guide: how to collect DNA, set the goal, and run the agent.                                                                       |
 | `agent-harness/`               | Compiled LangGraph runtime — Python package (`src/marketing_os/`), tests, Makefile. Runs the same pipeline headlessly.                     |
 | `CONTEXT.md`                   | Domain glossary and pipeline vocabulary — read before working in any area.                                                                 |
@@ -39,7 +39,7 @@ The repository has two layers: the **interactive agentic system** configured und
 
 ## Governance
 
-The mandatory decision pipeline and the non-negotiable rules are the canonical source of truth in `.claude/rules/` (`decision-hierarchy.md`, `operating-principles.md`, `customer-dna.md`) — loaded into every session. The core constraints: **a complete Customer DNA gates all work** (no research/strategy/creative/assets until `customers/<name>/dna.md` is complete — see `customer-dna.md`); **strategy before content; never generate assets before strategy exists; no stage bypasses an upstream decision.** Each subagent also restates its own key guardrail inline, since subagents run in isolated context and don't inherit project rules.
+The mandatory decision pipeline and the non-negotiable rules are the canonical source of truth in `.claude/rules/` (`decision-hierarchy.md`, `operating-principles.md`, `brand-dna.md`) — loaded into every session. The core constraints: **a complete Brand DNA gates all work** (no research/strategy/creative/assets until `customers/<name>/dna.md` is complete — see `brand-dna.md`); **strategy before content; never generate assets before strategy exists; no stage bypasses an upstream decision.** Each subagent also restates its own key guardrail inline, since subagents run in isolated context and don't inherit project rules.
 
 ## Where domain knowledge goes
 

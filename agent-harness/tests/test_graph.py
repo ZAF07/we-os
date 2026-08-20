@@ -280,7 +280,7 @@ async def test_qa_budget_exhausted_fails(settings: Settings) -> None:
 async def test_gate_halts_on_placeholder_dna(settings: Settings) -> None:
     dna = settings.customers_dir / "acme" / "dna.md"
     dna.write_text(
-        "# Customer DNA — Acme\n\n## Business\n- **Business name:** <name>\n",
+        "# Brand DNA — Acme\n\n## Business\n- **Business name:** <name>\n",
         encoding="utf-8",
     )
     reviewer = FakeReviewer([_PASS])

@@ -9,7 +9,7 @@ from marketing_os.governance import check_gate, enforce_gate, required_fields, v
 
 
 def test_required_fields_parsed_from_template(settings):
-    labels = required_fields(settings.templates_dir / "customer-dna.md")
+    labels = required_fields(settings.templates_dir / "brand-dna.md")
     assert "Business name" in labels
     assert "Why customers choose them over alternatives" in labels
     # Recommended-section fields must NOT be treated as required.
@@ -39,7 +39,7 @@ def test_gate_blocks_on_missing_files(settings):
     (settings.customers_dir / "acme" / "dna.md").unlink()
     report = check_gate(settings, "acme", "acme")
     assert not report.ok
-    assert any("no Customer DNA" in i for i in report.dna_issues)
+    assert any("no Brand DNA" in i for i in report.dna_issues)
 
 
 def test_enforce_gate_raises(settings):
@@ -51,7 +51,7 @@ def test_enforce_gate_raises(settings):
 
 def test_multiline_field_value_counts_as_filled(settings, tmp_path):
     # A label whose value is written as an indented sub-list underneath it is
-    # filled, not empty (matches how the real Customer DNA files are authored).
+    # filled, not empty (matches how the real Brand DNA files are authored).
     doc = tmp_path / "dna.md"
     doc.write_text(
         "# DNA\n\n## Business\n"
@@ -66,12 +66,12 @@ def test_multiline_field_value_counts_as_filled(settings, tmp_path):
         "  1. Free coached intro\n",
         encoding="utf-8",
     )
-    issues = validate_document(settings.templates_dir / "customer-dna.md", doc)
+    issues = validate_document(settings.templates_dir / "brand-dna.md", doc)
     assert issues == [], issues
 
 
 def test_validate_document_reports_missing_field(settings, tmp_path):
     bad = tmp_path / "dna.md"
     bad.write_text("# DNA\n\n## Business\n- **What they sell:** widgets\n", encoding="utf-8")
-    issues = validate_document(settings.templates_dir / "customer-dna.md", bad)
+    issues = validate_document(settings.templates_dir / "brand-dna.md", bad)
     assert any("Business name" in i for i in issues)

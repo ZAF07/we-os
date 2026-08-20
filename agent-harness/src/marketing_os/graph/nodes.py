@@ -3,7 +3,7 @@
 Each stage contributes three nodes wired by :mod:`marketing_os.graph.graph`:
 
 * ``<stage>__enter`` validates the prerequisite, resets the per-stage working
-  state, and seeds the task (with the Customer DNA) as the first message.
+  state, and seeds the task (with the Brand DNA) as the first message.
 * ``<stage>__specialist`` runs the specialist agent's tool-use loop and folds its
   token usage into state.
 * ``<stage>__review`` verifies the deliverable was saved (forcing a save-retry if
@@ -145,14 +145,14 @@ def _compose_seed(dna_text: str, body: str) -> str:
     """Compose a specialist seed message from the DNA and a task/instruction body.
 
     Args:
-        dna_text: The Customer DNA to ground the work in.
+        dna_text: The Brand DNA to ground the work in.
         body: The task or revision instructions.
 
     Returns:
         The seed message text.
     """
     return (
-        "# Customer DNA (ground every recommendation in this; never invent "
+        "# Brand DNA (ground every recommendation in this; never invent "
         f"what it omits)\n\n{dna_text}\n\n{body}"
     )
 
@@ -165,7 +165,7 @@ def _fresh_conversation(dna_text: str, body: str) -> list[BaseMessage]:
     re-sent to the model (which DeepSeek V4 thinking mode rejects).
 
     Args:
-        dna_text: The Customer DNA to ground the work in.
+        dna_text: The Brand DNA to ground the work in.
         body: The task or revision instructions.
 
     Returns:

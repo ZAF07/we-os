@@ -2,7 +2,7 @@
 
 Composes the static system prompt (governance preamble + the agent's own role and
 guardrails + a DNA-grounding instruction) and builds a LangChain agent that runs
-the tool-use loop. The Customer DNA text itself is injected at stage entry as part
+the tool-use loop. The Brand DNA text itself is injected at stage entry as part
 of the task message, so the agent can be built once and reused across a run.
 """
 
@@ -37,7 +37,7 @@ class SpecialistState(AgentState):
 def compose_system(governance: str, agent_body: str) -> str:
     """Assemble the static system prompt a specialist runs under.
 
-    The Customer DNA is not embedded here; it is provided in the task message so
+    The Brand DNA is not embedded here; it is provided in the task message so
     the agent stays cheap to build. This prompt carries the governance preamble,
     the agent's role and guardrails, and the instruction to ground every
     recommendation in the DNA supplied in the conversation.
@@ -52,7 +52,7 @@ def compose_system(governance: str, agent_body: str) -> str:
     return (
         f"{governance}\n\n"
         "# Grounding\n\n"
-        "Ground every recommendation in the Customer DNA provided in the task "
+        "Ground every recommendation in the Brand DNA provided in the task "
         "message. Never invent what the DNA omits — say so instead.\n\n"
         "# Your role and guardrails\n\n"
         f"{agent_body}"

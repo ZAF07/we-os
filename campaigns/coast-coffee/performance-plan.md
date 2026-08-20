@@ -4,7 +4,7 @@
 >
 > Grounded in and executed within: `customers/coast-coffee/dna.md` (authoritative constraints/geography), `campaigns/coast-coffee/goal.md` (the numbers), `campaigns/coast-coffee/campaign-strategy.md` (the frame: channel split, phasing, week-3 reallocation rule), `campaigns/coast-coffee/research.md` (channel intelligence, keywords, communities), `campaigns/coast-coffee/brand-strategy.md` (offer, objections), `campaigns/coast-coffee/creative-brief.md` (asset/channel match).
 >
-> **[DNA]** = from Customer DNA · **[GOAL]** = from goal.md · **[STRATEGY]** = from campaign strategy · **[RESEARCH]** = from research · **[CREATIVE]** = from creative brief · **[REC]** = my recommendation to validate · **[ASSUMPTION]** = explicit modelling assumption to confirm.
+> **[DNA]** = from Brand DNA · **[GOAL]** = from goal.md · **[STRATEGY]** = from campaign strategy · **[RESEARCH]** = from research · **[CREATIVE]** = from creative brief · **[REC]** = my recommendation to validate · **[ASSUMPTION]** = explicit modelling assumption to confirm.
 >
 > **Frameworks applied:** `knowledge/performance/` is currently a stub (no project-defined channel benchmarks, KPI targets, or budget model — see "Knowledge gaps"). In its absence I applied three standard, well-established frameworks and name them per section: a **full-funnel channel-role model** (intent capture vs. demand creation vs. earned trust vs. retargeting) for channel selection, a **three-tier KPI cascade** (Business → Marketing → Creative) for instrumentation, and a **unit-economics / CAC-payback model** for budget allocation. SGD benchmarks below are flagged `[ASSUMPTION]` and must be validated against live data — the DNA has no baseline metrics (`<TO CONFIRM>`).
 

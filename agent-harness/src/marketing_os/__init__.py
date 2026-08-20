@@ -1,7 +1,7 @@
 """Marketing OS — a LangGraph agent application for the marketing decision pipeline.
 
 Reproduces the governance encoded in the repo's ``.claude/`` configuration (the
-Customer DNA gate, the mandatory decision pipeline, the specialist agents, and a
+Brand DNA gate, the mandatory decision pipeline, the specialist agents, and a
 per-stage self-critique loop) as a compiled LangGraph ``StateGraph`` built on
 LangChain chat models.
 

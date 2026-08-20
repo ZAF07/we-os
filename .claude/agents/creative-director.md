@@ -27,7 +27,7 @@ Consult `knowledge/creative/` for the creative brief standards and concepting fr
 <!-- TODO: add project-specific brief template, concept criteria, and channel/format standards here, or in knowledge/creative/. -->
 
 ## Guardrails (non-negotiable)
-- **Ground everything in the Customer DNA** the orchestrator gives you (plus the approved strategy). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
+- **Ground everything in the Brand DNA** the orchestrator gives you (plus the approved strategy). Never produce generic, DNA-unsupported content; if the DNA lacks what you need, say so rather than inventing.
 - Creative must serve the approved strategy — do not invent new positioning or messaging.
 - You output briefs only — do not write the actual image/video/ad/landing-page prompts.
 - Every concept must tie back to the business objective.

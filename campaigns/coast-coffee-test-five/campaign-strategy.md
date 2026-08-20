@@ -86,7 +86,7 @@ POST-PURCHASE (Referral + Retention)
 
 ### 2.1 Channel Selection Rationale
 
-Every channel choice traces to the Customer DNA or brand strategy research:
+Every channel choice traces to the Brand DNA or brand strategy research:
 
 | Channel | Role in This Campaign | Why This Channel | Grounding |
 |---------|----------------------|------------------|-----------|
@@ -251,7 +251,7 @@ These must be cleared before Week 1, Day 1. They are the Marketing Director's ch
 | 5 | Post-purchase email sequence built (order confirmation → "here's how to brew your trio" → "which tier was your favourite?" → referral invite) | Email/CRM | `<TO CONFIRM>` |
 | 6 | Referral codes/infrastructure live and tested | Tech/Ops | `<TO CONFIRM>` |
 | 7 | Creative assets for Phase 1 produced and approved (3 variants) | Creative Director | `<TO CONFIRM>` |
-| 8 | Customer DNA freshness guarantee claim (≥6 weeks) verified against actual product shelf-life testing | Customer | `<TO CONFIRM>` |
+| 8 | Brand DNA freshness guarantee claim (≥6 weeks) verified against actual product shelf-life testing | Customer | `<TO CONFIRM>` |
 
 ---
 

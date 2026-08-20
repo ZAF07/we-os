@@ -38,7 +38,7 @@ class ConfigError(MarketingOSError):
 
 
 class GateError(MarketingOSError):
-    """Stage 0 gate failed: Customer DNA or campaign goal is missing/incomplete.
+    """Stage 0 gate failed: Brand DNA or campaign goal is missing/incomplete.
 
     Carries the structured list of offending fields so the caller can tell the
     operator exactly what to fix.
