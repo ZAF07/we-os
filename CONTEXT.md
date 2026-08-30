@@ -8,6 +8,14 @@ A SaaS agentic platform that gives a business a cheaper alternative to hiring a 
 One business using we-OS to market itself — the isolation boundary for all data in the system. A tenant owns exactly one Brand DNA, and many campaigns. we-OS is not an agency platform: a tenant never manages other businesses (see [ADR-0013](docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md)).
 _Avoid_: account, org, workspace, client, agency.
 
+**Tenant-Owned Document**:
+Anything that belongs to one business and no other — its Brand DNA, campaign goals, deliverables, and run traces. Reachable only by naming the tenant that owns it, because the tenant is part of where the document lives rather than a filter applied afterwards. A tenant-owned document is never served to an agent by the read sandbox; it resolves through the tenant-scoped `DocumentStore` (see [ADR-0023](docs/adr/0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md)).
+_Avoid_: user data, private file, scoped document.
+
+**Code-Shipped Material**:
+The governance the platform ships and every tenant shares — the eight rules, the pipeline definition, specialist prompts, templates, guardrails, the Knowledge Library. Identical for every business, which is what makes it safe to read unscoped. The counterpart to a Tenant-Owned Document, and the only thing the read sandbox serves.
+_Avoid_: static files, config, assets.
+
 **Brand DNA**:
 The stable, reusable, human-authored profile of the tenant's business — what it sells, at what price, where, under what constraints, in what voice, and to which audience segments. The single source of truth every recommendation is grounded in. One per tenant, reused across every campaign; read-only to agents. Authored by answering the Questionnaire — never drafted or guessed by a model (see [ADR-0018](docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md)).
 _Avoid_: "Customer DNA" (the old name — it implied an agency serving many businesses), profile, brief, persona.
@@ -25,15 +33,15 @@ The admin-curated set of questions a business answers to author its Brand DNA. I
 _Avoid_: survey, form, intake, onboarding flow.
 
 **Campaign Goal**:
-The per-campaign business objective and success metrics (`campaigns/<slug>/goal.md`). The DNA is shared across campaigns; the goal is specific to one.
+The per-campaign business objective and success metrics (`campaigns/<slug>/goal.md`). The DNA is shared across campaigns; the goal is specific to one. It never names the business — a tenant is one business, so which business the campaign belongs to is already known.
 _Avoid_: objective doc, spec.
 
 **Campaign Slug**:
-The identifier for a single **campaign** — the durable thing. It names the campaign's directory (`campaigns/<slug>/`), so every input and deliverable for that campaign lives under it, and it keys the checkpoint thread that makes the campaign resumable. A specialist must use the campaign's slug verbatim; a write under any other slug is rejected as off-slug (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
+The identifier for a single **campaign** — the durable thing. It names the campaign's directory (`campaigns/<slug>/`, resolved within the owning tenant), so every input and deliverable for that campaign lives under it, and it keys the checkpoint thread that makes the campaign resumable. A slug is unique within a tenant, not globally: two businesses may both run a campaign called `spring` without ever meeting. A specialist must use the campaign's slug verbatim; a write under any other slug is rejected as off-slug (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
 _Avoid_: id, name, key, thread.
 
 **Run**:
-A single **execution attempt** of a campaign's pipeline, identified by a unique `run_id`. A campaign (slug) may accumulate many runs over its life — one per attempt — but **at most one run per slug may be active at a time** (a second concurrent run of the same slug is rejected). Each run has its own JSONL trace (`logs/<slug>/<run_id>.jsonl`) and, in the background-job model, its own status and cancellation handle. The slug names the campaign; the run_id names one attempt to advance it. A run's **status** is one of: **running** (executing now), **completed** (finished ok), **failed** (halted on an error), **cancelled** (stopped on operator request), or **interrupted** (its process died — e.g. a restart — leaving a trace with no terminal summary). Cancelling a run **abandons** it: it is not resumed, and the next run of the slug starts clean. See [ADR-0010](docs/adr/0010-background-job-run-model.md) for the background-job model and [ADR-0009](docs/adr/0009-async-cancellable-pipeline-execution.md) for the cancellable async foundation it rests on.
+A single **execution attempt** of a campaign's pipeline, identified by a unique `run_id`. A campaign (slug) may accumulate many runs over its life — one per attempt — but **at most one run per slug may be active at a time** (a second concurrent run of the same slug is rejected). Each run has its own JSONL trace (`logs/<tenant>/<slug>/<run_id>.jsonl` — a run is a Tenant-Owned Document, so a run id is unfindable outside the tenant that owns it) and, in the background-job model, its own status and cancellation handle. The slug names the campaign; the run_id names one attempt to advance it. A run's **status** is one of: **running** (executing now), **completed** (finished ok), **failed** (halted on an error), **cancelled** (stopped on operator request), or **interrupted** (its process died — e.g. a restart — leaving a trace with no terminal summary). Cancelling a run **abandons** it: it is not resumed, and the next run of the slug starts clean. See [ADR-0010](docs/adr/0010-background-job-run-model.md) for the background-job model and [ADR-0009](docs/adr/0009-async-cancellable-pipeline-execution.md) for the cancellable async foundation it rests on.
 _Avoid_: job (use for the background execution mechanism only), execution, session, thread.
 
 **Marketing Director**:
@@ -136,19 +144,28 @@ The Performance Plan precedes creative so the brief and the asset prompts inheri
 - **Strategy before content** — creative is never generated before a **human-approved** strategy exists, which is what the Approval Gates enforce.
 - **Upstream prerequisite** — a stage may not begin until the prior stage's deliverable exists.
 - **QA budget** — each deliverable must pass its guardrail rubric within `MARKETING_OS_MAX_QA` revision rounds (default 3), or the run halts.
-- **Tenant scope** — every read and write is scoped to the tenant derived from the verified identity claim, enforced in the storage layer rather than at call sites (see [ADR-0013](docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md)); within a run a specialist's writes are further scoped to its own campaign, and an off-slug write is rejected (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
+- **Tenant scope** — every read and write is scoped to the tenant derived from the verified identity claim, enforced in the storage layer rather than at call sites (see [ADR-0013](docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md)). The tenant is part of where a document lives, so the unscoped call does not exist to be reached for; cross-tenant access answers **404, not 403**, so existence never leaks. Agents never see a tenant id and cannot read Tenant-Owned Documents through the sandbox (see [ADR-0023](docs/adr/0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md)). Within a run a specialist's writes are further scoped to its own campaign, and an off-slug write is rejected (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
 - **Quota** — a billable call is refused when the tenant's allowance is exhausted (see [ADR-0020](docs/adr/0020-usage-ledger-and-enforced-quota.md)).
 
 ## Repo map
 
-- `customers/<name>/dna.md` — Brand DNA (input, human-authored). The per-business directory is agency-shaped and collapses to a tenant-owned singleton (see [ADR-0022](docs/adr/0022-brand-dna-and-the-overloaded-customer.md)).
-- `campaigns/<slug>/` — per-campaign `goal.md` (input) + stage deliverables (output).
+**Tenant-Owned Documents** — reachable only through the `DocumentStore`, never by the read sandbox:
+
+- `tenants/<tenant>/dna.md` — Brand DNA (input, human-authored). One per tenant; the old agency-shaped `customers/<name>/` collection is gone (see [ADR-0022](docs/adr/0022-brand-dna-and-the-overloaded-customer.md)).
+- `tenants/<tenant>/campaigns/<slug>/` — per-campaign `goal.md` (input) + stage deliverables (output).
+- `logs/<tenant>/<slug>/<run_id>.jsonl` — per-run traces.
+
+**Code-Shipped Material** — identical for every tenant, which is what the read sandbox serves to agents:
+
 - `knowledge/<discipline>/` — the Knowledge Library (stubs).
 - `guardrails/*.md` — QA rubrics.
 - `templates/` — Brand DNA and campaign-goal templates.
 - `.claude/` — agents, rules, skills, permissions (the interactive configuration).
+
+**Source** — not read by agents at all:
+
 - `agent-harness/` — the LangGraph runtime enforcing the same governance.
-- `web/` — the Next.js operator UI + BFF (see [ADR-0012](docs/adr/0012-nextjs-frontend-and-bff-in-monolith.md)). Milestone 1 is a mock-fixture clone of the approved design and makes no engine calls.
+- `web/` — the Next.js operator UI + BFF (see [ADR-0012](docs/adr/0012-nextjs-frontend-and-bff-in-monolith.md)).
 - `contracts/` — the frozen OpenAPI contract between the frontend and the engine, its linter, and the mock server the frontend codes against (see [ADR-0017](docs/adr/0017-stages-and-lifecycle-are-separate-axes.md)).
 
-Tenant data (Brand DNA, campaign goal, deliverables) resolves through a `DocumentStore` port — filesystem and in-memory adapters exist today; Postgres joins as the production adapter, alongside checkpoints, guardrails, the knowledge library and the questionnaire (see [ADR-0014](docs/adr/0014-postgres-system-of-record-and-split-governance.md)). The eight rules, the pipeline definition and the specialist prompts stay as code-shipped markdown. The paths above describe the current filesystem layout, which the filesystem adapter serves for local development.
+Tenant-Owned Documents resolve through a `DocumentStore` port — filesystem and in-memory adapters exist today; Postgres joins as the production adapter, alongside checkpoints, guardrails, the knowledge library and the questionnaire (see [ADR-0014](docs/adr/0014-postgres-system-of-record-and-split-governance.md)). The eight rules, the pipeline definition and the specialist prompts stay as code-shipped markdown. The paths above describe the current filesystem layout, which the filesystem adapter serves for local development; the split between the two groups is the boundary the sandbox enforces (see [ADR-0023](docs/adr/0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md)).

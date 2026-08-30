@@ -1,5 +1,7 @@
 # 0005 — Code-enforced filesystem sandbox
 
+> **Amended by [ADR-0023](0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md).** The read rule below — "anywhere under the repo root" — was written for a single-business repository. Under multi-tenancy it became a cross-tenant read primitive, so the sandbox now refuses the `tenants/` subtree entirely and serves only Code-Shipped Material. Everything else here still holds.
+
 Agent file access is scoped in code, not by prompt instruction: agents may read anywhere under the repo root but may write only under `campaigns/**`. We enforce this in `FilesystemSandbox` (`adapters/tools/sandbox.py`) rather than trusting the model to obey a "don't write elsewhere" instruction, because prompt-based restrictions are not a security boundary.
 
 The sandbox resolves paths and rejects escapes with `is_relative_to`, caps reads at ~400KB per file and grep at 200 matches, and raises `ToolError` (a recoverable tool error) on violation. The same scope is mirrored in `.claude/settings.json` for the interactive path, which pre-allows only `Write(campaigns/**)` and `Edit(campaigns/**)` plus read-only tools.

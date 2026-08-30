@@ -14,5 +14,5 @@ Identity comes from a managed IdP issuing JWTs. The Next.js BFF verifies the tok
 
 - The current API takes `customer` as a request field and `slug` as a path param, neither checked against the caller — safe only while single-user and unexposed. Under one-business-per-tenant the `customer` parameter is **fully redundant** with the verified claim and is removed rather than validated.
 - The `customers/<name>/` collection is agency-shaped and collapses to a Brand DNA singleton owned by the tenant (see [ADR-0022](0022-brand-dna-and-the-overloaded-customer.md)).
-- Tenant scoping is enforced in the repository/DocumentStore layer — and backstopped by Postgres row-level security — never at individual call sites, so a forgotten `WHERE` clause cannot leak across tenants.
+- Tenant scoping is enforced in the repository/DocumentStore layer — and backstopped by Postgres row-level security — never at individual call sites, so a forgotten `WHERE` clause cannot leak across tenants. Implementing this found three places where the pre-tenancy code did not honour it; see [ADR-0023](0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md) for what leaked and how partitioning closed it.
 - Every existing endpoint changes shape, which is why FE↔BE wiring cannot precede this work.
