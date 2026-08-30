@@ -9,9 +9,11 @@ import {
   Home,
   Megaphone,
   Menu,
+  ShieldCheck,
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
+import { UserButton, useOrganization, useUser } from "@clerk/nextjs";
 
 import {
   Sheet,
@@ -34,8 +36,12 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/brand", label: "Brand", icon: BookOpen },
+  { href: "/workspace", label: "Workspace", icon: ShieldCheck },
   { href: "/performance", label: "Performance", icon: TrendingUp },
 ];
+
+/** Routes that render their own full-page layout, without the app chrome. */
+const BARE_ROUTES = ["/sign-in", "/sign-up"];
 
 /**
  * Decides whether a nav item is active for the current path.
@@ -107,21 +113,36 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-/** Renders the operator card with the active company workspace name. */
+/**
+ * Renders the operator card: the signed-in user, their business, and sign-out.
+ *
+ * The name and business come from Clerk's session rather than the demo store,
+ * so the shell reflects who is actually signed in.
+ */
 function UserCard() {
-  const companyName = useDemoStore(
+  const { user } = useUser();
+  const { organization } = useOrganization();
+  const demoCompany = useDemoStore(
     (state) => state.onboarding?.companyName ?? "Fernway",
   );
+  const businessName = organization?.name ?? demoCompany;
 
   return (
     <div className="mt-auto flex items-center gap-2.5 border-t px-3.5 py-3">
-      <div className="flex size-7 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
-        M
-      </div>
-      <div className="leading-tight">
-        <div className="text-[13px] font-semibold">Maya Chen</div>
-        <div className="text-[11.5px] text-muted-foreground">
-          {companyName} workspace
+      <UserButton
+        appearance={{ elements: { userButtonAvatarBox: "size-7" } }}
+        fallback={
+          <div className="flex size-7 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+            M
+          </div>
+        }
+      />
+      <div className="min-w-0 leading-tight">
+        <div className="truncate text-[13px] font-semibold">
+          {user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "Signed in"}
+        </div>
+        <div className="truncate text-[11.5px] text-muted-foreground">
+          {businessName} workspace
         </div>
       </div>
     </div>
@@ -138,10 +159,15 @@ function UserCard() {
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     void useDemoStore.persist.rehydrate();
   }, []);
+
+  if (BARE_ROUTES.some((route) => pathname.startsWith(route))) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden md:flex-row">

@@ -20,7 +20,7 @@ Public surface::
     graph = build_campaign_graph(settings)
     result = asyncio.run(
         graph.ainvoke(
-            {"customer": "coast-coffee", "slug": "coast-coffee"},
+            {"tenant": "org_coast", "slug": "coast-coffee"},
             config={"configurable": {"thread_id": "coast-coffee"}},
         )
     )

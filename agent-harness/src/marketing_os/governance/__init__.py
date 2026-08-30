@@ -14,8 +14,8 @@ from marketing_os.governance.pipeline import (
     PIPELINE,
     PIPELINE_BY_KEY,
     Stage,
-    deliverable_path,
     prerequisite_met,
+    stage_document,
 )
 from marketing_os.governance.rubric import load_rubric
 from marketing_os.governance.rules import load_governance, load_operating_principles
@@ -32,7 +32,7 @@ __all__ = [
     "PIPELINE_BY_KEY",
     "Stage",
     "DIRECTOR",
-    "deliverable_path",
     "prerequisite_met",
+    "stage_document",
     "load_rubric",
 ]

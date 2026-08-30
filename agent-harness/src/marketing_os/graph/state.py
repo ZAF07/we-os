@@ -1,6 +1,6 @@
 """Graph state — the typed state threaded through the campaign StateGraph.
 
-A single flat :class:`CampaignState` carries both campaign-level data (customer,
+A single flat :class:`CampaignState` carries both campaign-level data (tenant,
 DNA, accumulated results, usage) and the per-stage working set for the QA loop
 (the specialist conversation, the current verdict, and the retry counters). The
 per-stage working keys are reset at each stage's entry node.
@@ -35,7 +35,7 @@ class CampaignState(TypedDict, total=False):
     """The state object for the campaign graph.
 
     Attributes:
-        customer: The customer name the campaign runs for.
+        tenant: The tenant name the campaign runs for.
         slug: The campaign slug and checkpoint thread key.
         dna_text: The loaded Brand DNA, populated by the gate node.
         governance: The assembled governance preamble, populated by the gate node.
@@ -51,7 +51,7 @@ class CampaignState(TypedDict, total=False):
         route: The routing decision the review node produced for the router.
     """
 
-    customer: str
+    tenant: str
     slug: str
     dna_text: str
     governance: str

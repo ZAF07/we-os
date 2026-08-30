@@ -16,7 +16,7 @@ import os
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
-from conftest import install_scripted_graph
+from conftest import SLUG, TENANT, install_scripted_graph
 from marketing_os.config import Settings
 from marketing_os.graph.runner import run_campaign, thread_id
 
@@ -31,7 +31,7 @@ def test_run_persists_checkpoint_under_thread_id(
 ) -> None:
     install_scripted_graph(monkeypatch)
     saver = MemorySaver()
-    result = run_campaign(settings, "acme", "acme", stage="research", checkpointer=saver)
+    result = run_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver)
     assert result.stages[0].stage == "research"
     config = {"configurable": {"thread_id": thread_id("acme", "research")}}
     stored = saver.get_tuple(config)
@@ -44,10 +44,10 @@ def test_supplied_checkpointer_is_reused_across_runs(
 ) -> None:
     install_scripted_graph(monkeypatch)
     saver = MemorySaver()
-    run_campaign(settings, "acme", "acme", stage="research", checkpointer=saver)
+    run_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver)
     first = saver.get_tuple({"configurable": {"thread_id": "acme:research"}})
 
-    run_campaign(settings, "acme", "acme", stage="research", checkpointer=saver)
+    run_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver)
     second = saver.get_tuple({"configurable": {"thread_id": "acme:research"}})
 
     assert first is not None and second is not None
@@ -69,6 +69,6 @@ def test_postgres_checkpointer_persists_run(
     dsn = os.environ["MARKETING_OS_TEST_POSTGRES_DSN"]
     with PostgresSaver.from_conn_string(dsn) as saver:
         saver.setup()
-        run_campaign(settings, "acme", "acme", stage="research", checkpointer=saver)
+        run_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver)
         stored = saver.get_tuple({"configurable": {"thread_id": "acme:research"}})
     assert stored is not None

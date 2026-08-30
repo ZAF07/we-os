@@ -17,7 +17,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import FAIL_VERDICT, PLACEHOLDER_DNA, BlockingChatModel, install_scripted_graph
+from conftest import (
+    FAIL_VERDICT,
+    PLACEHOLDER_DNA,
+    SLUG,
+    TENANT,
+    BlockingChatModel,
+    authenticate,
+    install_scripted_graph,
+)
 
 
 def _make_client(repo: Path) -> TestClient:
@@ -39,6 +47,7 @@ def _make_client(repo: Path) -> TestClient:
     get_settings.cache_clear()
     get_registry.cache_clear()
     get_document_store.cache_clear()
+    authenticate(app)
     return TestClient(app)
 
 
@@ -96,18 +105,18 @@ def test_health_reports_provider_and_root(client: TestClient, repo: Path) -> Non
 
 
 def test_create_campaign_scaffolds_goal_from_template(client: TestClient, repo: Path) -> None:
-    response = client.post("/campaigns", json={"customer": "acme", "slug": "newcamp"})
+    response = client.post("/campaigns", json={"slug": "newcamp"})
     assert response.status_code == 200
     body = response.json()
     assert body["slug"] == "newcamp"
     assert body["goal_created_from_template"] is True
-    assert (repo / "campaigns" / "newcamp" / "goal.md").is_file()
+    assert (repo / "tenants" / TENANT / "campaigns" / "newcamp" / "goal.md").is_file()
     assert body["gate_ok"] is False
     assert body["gate_issues"]
 
 
 def test_create_campaign_is_idempotent_when_goal_exists(client: TestClient) -> None:
-    response = client.post("/campaigns", json={"customer": "acme"})
+    response = client.post("/campaigns", json={"slug": SLUG})
     assert response.status_code == 200
     body = response.json()
     assert body["goal_created_from_template"] is False
@@ -116,13 +125,13 @@ def test_create_campaign_is_idempotent_when_goal_exists(client: TestClient) -> N
 
 def test_create_campaign_500_when_template_missing(client: TestClient, repo: Path) -> None:
     (repo / "templates" / "campaign-goal.md").unlink()
-    response = client.post("/campaigns", json={"customer": "acme", "slug": "notmpl"})
+    response = client.post("/campaigns", json={"slug": "notmpl"})
     assert response.status_code == 500
-    assert "template missing" in response.json()["detail"]
+    assert "template missing" in response.json()["message"]
 
 
 def test_gate_endpoint_reports_pass(client: TestClient) -> None:
-    response = client.get("/campaigns/acme/gate", params={"customer": "acme"})
+    response = client.get("/campaigns/acme/gate")
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
@@ -130,8 +139,8 @@ def test_gate_endpoint_reports_pass(client: TestClient) -> None:
 
 
 def test_gate_endpoint_reports_failure(client: TestClient, repo: Path) -> None:
-    (repo / "customers" / "acme" / "dna.md").write_text(PLACEHOLDER_DNA, encoding="utf-8")
-    response = client.get("/campaigns/acme/gate", params={"customer": "acme"})
+    (repo / "tenants" / TENANT / "dna.md").write_text(PLACEHOLDER_DNA, encoding="utf-8")
+    response = client.get("/campaigns/acme/gate")
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is False
@@ -144,7 +153,7 @@ def test_deliverables_404_when_campaign_missing(client: TestClient) -> None:
 
 
 def test_run_starts_background_job_and_returns_run_id(client: TestClient, repo: Path) -> None:
-    run = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+    run = client.post("/campaigns/acme/run", json={"stage": "research"})
     assert run.status_code == 202
     started = run.json()
     assert started["slug"] == "acme"
@@ -154,7 +163,7 @@ def test_run_starts_background_job_and_returns_run_id(client: TestClient, repo: 
 
     completed = _wait_for_status(client, run_id, "completed")
     assert completed["run_id"] == run_id
-    assert (repo / "campaigns" / "acme" / "research.md").is_file()
+    assert (repo / "tenants" / TENANT / "campaigns" / SLUG / "research.md").is_file()
 
     listing = client.get("/campaigns/acme/deliverables")
     assert listing.status_code == 200
@@ -164,10 +173,10 @@ def test_run_starts_background_job_and_returns_run_id(client: TestClient, repo: 
 
 
 def test_run_returns_409_when_gate_fails(client: TestClient, repo: Path) -> None:
-    (repo / "customers" / "acme" / "dna.md").write_text(PLACEHOLDER_DNA, encoding="utf-8")
-    response = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+    (repo / "tenants" / TENANT / "dna.md").write_text(PLACEHOLDER_DNA, encoding="utf-8")
+    response = client.post("/campaigns/acme/run", json={"stage": "research"})
     assert response.status_code == 409
-    assert response.json()["detail"]["type"] == "gate"
+    assert response.json()["type"] == "gate_failed"
 
 
 def test_run_background_job_fails_on_guardrail_failure(
@@ -179,7 +188,7 @@ def test_run_background_job_fails_on_guardrail_failure(
     from marketing_os.entrypoints.api.app import get_document_store, get_registry, get_settings
 
     with _make_client(repo) as client:
-        started = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+        started = client.post("/campaigns/acme/run", json={"stage": "research"})
         assert started.status_code == 202
         run_id = started.json()["run_id"]
 
@@ -200,7 +209,7 @@ def test_runs_endpoints_list_and_return_trace(client: TestClient) -> None:
     assert empty.status_code == 200
     assert empty.json()["runs"] == []
 
-    started = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+    started = client.post("/campaigns/acme/run", json={"stage": "research"})
     run_id = started.json()["run_id"]
     _wait_for_status(client, run_id, "completed")
 
@@ -230,7 +239,7 @@ def _run_to_completion(client: TestClient, slug: str = "acme") -> str:
     Returns:
         The completed run's id.
     """
-    started = client.post(f"/campaigns/{slug}/run", json={"customer": "acme", "stage": "research"})
+    started = client.post(f"/campaigns/{slug}/run", json={"stage": "research"})
     assert started.status_code == 202
     run_id = started.json()["run_id"]
     _wait_for_status(client, run_id, "completed")
@@ -315,27 +324,27 @@ def _install_blocking_client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Tes
 def test_second_run_same_slug_conflicts_while_cross_slug_is_concurrent(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (repo / "campaigns" / "beta").mkdir(parents=True, exist_ok=True)
-    (repo / "campaigns" / "beta" / "goal.md").write_text(
-        (repo / "campaigns" / "acme" / "goal.md").read_text(encoding="utf-8"), encoding="utf-8"
+    beta_goal = repo / "tenants" / TENANT / "campaigns" / "beta" / "goal.md"
+    beta_goal.parent.mkdir(parents=True, exist_ok=True)
+    beta_goal.write_text(
+        (repo / "tenants" / TENANT / "campaigns" / SLUG / "goal.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
     )
     from marketing_os.entrypoints.api.app import get_document_store, get_registry, get_settings
 
     with _install_blocking_client(repo, monkeypatch) as client:
-        first = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+        first = client.post("/campaigns/acme/run", json={"stage": "research"})
         assert first.status_code == 202
         first_id = first.json()["run_id"]
         _wait_for_status(client, first_id, "running")
 
-        conflict = client.post(
-            "/campaigns/acme/run", json={"customer": "acme", "stage": "research"}
-        )
+        conflict = client.post("/campaigns/acme/run", json={"stage": "research"})
         assert conflict.status_code == 409
-        detail = conflict.json()["detail"]
-        assert detail["type"] == "slug_busy"
+        detail = conflict.json()
+        assert detail["type"] == "run_conflict"
         assert detail["active_run_id"] == first_id
 
-        cross = client.post("/campaigns/beta/run", json={"customer": "acme", "stage": "research"})
+        cross = client.post("/campaigns/beta/run", json={"stage": "research"})
         assert cross.status_code == 202
 
         active_slugs = {run["slug"] for run in client.get("/runs").json()["runs"]}
@@ -355,7 +364,7 @@ def test_cancel_endpoint_stops_run_and_marks_it_cancelled(
     from marketing_os.entrypoints.api.app import get_document_store, get_registry, get_settings
 
     with _install_blocking_client(repo, monkeypatch) as client:
-        started = client.post("/campaigns/acme/run", json={"customer": "acme", "stage": "research"})
+        started = client.post("/campaigns/acme/run", json={"stage": "research"})
         assert started.status_code == 202
         run_id = started.json()["run_id"]
         assert _wait_for_status(client, run_id, "running")["status"] == "running"
@@ -384,7 +393,7 @@ def test_get_run_status_infers_interrupted_from_orphaned_trace(
     client: TestClient, repo: Path
 ) -> None:
     run_id = "20260704T120000Z-deadbeef"
-    trace = repo / "logs" / "acme" / f"{run_id}.jsonl"
+    trace = repo / "logs" / TENANT / SLUG / f"{run_id}.jsonl"
     trace.parent.mkdir(parents=True, exist_ok=True)
     trace.write_text('{"event": "stage.start", "stage": "research"}\n', encoding="utf-8")
 

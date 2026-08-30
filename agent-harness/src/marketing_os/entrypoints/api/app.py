@@ -1,15 +1,21 @@
 """FastAPI service exposing the Marketing OS graph over HTTP.
 
 Endpoints:
-  GET  /health
+  GET  /health                          -> liveness; the only unauthenticated route
+  GET  /me                              -> the verified identity and its tenant
   POST /campaigns                       -> scaffold a campaign goal from the template
-  GET  /campaigns/{slug}/gate?customer= -> Stage 0 gate report
+  GET  /campaigns/{slug}/gate           -> Stage 0 gate report
   GET  /campaigns/{slug}/deliverables   -> list written deliverables
   POST /campaigns/{slug}/run            -> start a background run, return its run_id (202)
   GET  /runs                            -> list in-flight runs
   GET  /runs/{run_id}                   -> report a run's lifecycle status
   POST /runs/{run_id}/cancel            -> cancel an in-flight run
   GET  /runs/{run_id}/stream            -> attach to a run and tail its trace as SSE
+
+Every route except ``/health`` requires a verified bearer token, and the tenant
+is derived from that token's claim — no operation accepts a business identity as
+a parameter (ADR-0013). Resources belonging to another tenant answer 404 rather
+than 403, so a foreign id is indistinguishable from a missing one.
 
 Run with:  uvicorn marketing_os.entrypoints.api.app:app --reload
 """
@@ -21,11 +27,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from functools import lru_cache
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from marketing_os.adapters.auth import JwksTokenVerifier
 from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.observability import (
     configure_logging,
@@ -37,7 +45,14 @@ from marketing_os.adapters.observability import (
 )
 from marketing_os.config import Settings, load_settings
 from marketing_os.entrypoints.env import load_env
-from marketing_os.errors import GateError, MarketingOSError, RunConflictError
+from marketing_os.errors import (
+    ConfigError,
+    DocumentNotFoundError,
+    GateError,
+    MarketingOSError,
+    RunConflictError,
+    UnauthenticatedError,
+)
 from marketing_os.governance import check_gate
 from marketing_os.graph.registry import (
     CANCELLED,
@@ -47,7 +62,8 @@ from marketing_os.graph.registry import (
     resolve_trace_path,
 )
 from marketing_os.graph.runner import arun_campaign
-from marketing_os.schemas import CampaignResult
+from marketing_os.ports import TokenVerifier
+from marketing_os.schemas import CampaignResult, VerifiedIdentity
 
 load_env()
 
@@ -71,12 +87,38 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Marketing OS", version="0.2.0", lifespan=_lifespan)
 
 
+@app.exception_handler(HTTPException)
+async def _error_body(_: Request, exc: HTTPException) -> JSONResponse:
+    """Render errors as the contract's top-level ``Error`` object.
+
+    FastAPI nests ``HTTPException.detail`` under a ``detail`` key, but the frozen
+    contract defines ``Error`` as the response body itself. This unwraps the
+    structured payload so the frontend codes against the contract rather than
+    against the framework's envelope.
+
+    Args:
+        _: The inbound request (unused).
+        exc: The exception raised by an endpoint or dependency.
+
+    Returns:
+        The JSON error response, with ``type``, ``status`` and ``message`` at the
+        top level.
+    """
+    if isinstance(exc.detail, dict):
+        body: dict[str, object] = dict(exc.detail)
+    else:
+        body = {"message": str(exc.detail)}
+    body.setdefault("type", "internal")
+    body.setdefault("status", exc.status_code)
+    return JSONResponse(status_code=exc.status_code, content=body, headers=exc.headers)
+
+
 def _http_error(exc: MarketingOSError) -> HTTPException:
     """Map a harness error to an HTTP error using the error's own presentation.
 
-    The status code and structured payload come from the exception itself
-    (``http_status`` and ``detail``), so the taxonomy is not re-spelled at each
-    endpoint.
+    The status code, the contract's ``type`` discriminator and the structured
+    payload all come from the exception itself, so the taxonomy is not re-spelled
+    at each endpoint.
 
     Args:
         exc: The harness error to translate.
@@ -84,7 +126,12 @@ def _http_error(exc: MarketingOSError) -> HTTPException:
     Returns:
         The HTTP exception carrying the error's status and detail payload.
     """
-    return HTTPException(exc.http_status, exc.detail or {"message": str(exc)})
+    detail = exc.detail or {
+        "type": exc.error_type,
+        "status": exc.http_status,
+        "message": str(exc),
+    }
+    return HTTPException(exc.http_status, detail)
 
 
 @lru_cache(maxsize=1)
@@ -109,6 +156,57 @@ def get_document_store() -> FilesystemDocumentStore:
 
 
 @lru_cache(maxsize=1)
+def get_token_verifier() -> TokenVerifier:
+    """Return the process-wide verifier for inbound bearer tokens.
+
+    Returns:
+        A :class:`JwksTokenVerifier` bound to the configured OIDC issuer.
+
+    Raises:
+        ConfigError: If no issuer is configured. The service refuses every
+            authenticated request rather than falling open, so a missing
+            configuration can never silently disable tenancy.
+    """
+    settings = get_settings()
+    if not settings.auth_issuer:
+        raise ConfigError(
+            "No auth issuer configured. Set MARKETING_OS_AUTH_ISSUER (or "
+            "CLERK_ISSUER_URL) to the IdP that issues your tokens."
+        )
+    return JwksTokenVerifier(issuer=settings.auth_issuer, audience=settings.auth_audience)
+
+
+def get_identity(request: Request) -> VerifiedIdentity:
+    """Resolve the caller's verified identity from the ``Authorization`` header.
+
+    This is the only place a tenant enters the service. Tests override it via
+    ``app.dependency_overrides[get_identity]`` to inject a claim, so no test
+    contacts a live IdP.
+
+    Args:
+        request: The inbound request carrying the bearer token.
+
+    Returns:
+        The verified identity, whose ``tenant_id`` scopes the whole request.
+
+    Raises:
+        HTTPException: 401 if the header is absent, malformed, or the token
+            does not verify.
+    """
+    header = request.headers.get("Authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise _http_error(UnauthenticatedError("Sign in to continue."))
+    try:
+        return get_token_verifier().verify(token.strip())
+    except MarketingOSError as exc:
+        raise _http_error(exc) from exc
+
+
+Identity = Annotated[VerifiedIdentity, Depends(get_identity)]
+
+
+@lru_cache(maxsize=1)
 def get_registry() -> RunRegistry:
     """Return the process-wide registry of active background runs.
 
@@ -124,30 +222,32 @@ def get_registry() -> RunRegistry:
 class CreateCampaign(BaseModel):
     """Request body for scaffolding a campaign.
 
+    Carries no business identity: the tenant comes from the verified token
+    (ADR-0013), so this body describes only the campaign itself.
+
     Attributes:
-        customer: The customer name.
-        slug: The campaign slug; defaults to the customer name.
+        slug: The campaign slug.
     """
 
-    customer: str
-    slug: str | None = None
+    slug: str
 
 
 class RunCampaign(BaseModel):
     """Request body for running a campaign.
 
     Attributes:
-        customer: The customer name.
         stage: The single stage to run, or ``None`` for the full pipeline.
     """
 
-    customer: str
     stage: str | None = None
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     """Report service health and the active provider and root.
+
+    Liveness only — it carries no tenant data and needs no identity, so it is
+    the one route exempt from authentication.
 
     Returns:
         A status payload.
@@ -156,12 +256,30 @@ def health() -> dict[str, str]:
     return {"status": "ok", "provider": settings.provider, "root": str(settings.root)}
 
 
+@app.get("/me")
+def me(identity: Identity) -> dict[str, object]:
+    """Report the signed-in user and the business their tenant represents.
+
+    Args:
+        identity: The verified identity, resolved from the bearer token.
+
+    Returns:
+        The user id, email, and business name from the verified claim.
+    """
+    return {
+        "user_id": identity.user_id,
+        "email": identity.email,
+        "business_name": identity.business_name or identity.tenant_id,
+    }
+
+
 @app.post("/campaigns")
-def create_campaign(body: CreateCampaign) -> dict[str, object]:
+def create_campaign(body: CreateCampaign, identity: Identity) -> dict[str, object]:
     """Scaffold a campaign goal from the template and report the gate.
 
     Args:
         body: The create-campaign request.
+        identity: The verified identity whose tenant owns the campaign.
 
     Returns:
         The slug, whether the goal was created, and the gate status.
@@ -171,19 +289,19 @@ def create_campaign(body: CreateCampaign) -> dict[str, object]:
     """
     settings = get_settings()
     store = get_document_store()
-    slug = body.slug or body.customer
+    tenant = identity.tenant_id
+    slug = body.slug
     goal_document = f"campaigns/{slug}/goal.md"
     created = False
-    if not store.exists(body.customer, goal_document):
+    if not store.exists(tenant, goal_document):
         template = settings.templates_dir / "campaign-goal.md"
         if not template.is_file():
             raise HTTPException(500, "campaign-goal template missing")
-        store.write(body.customer, goal_document, template.read_text(encoding="utf-8"))
+        store.write(tenant, goal_document, template.read_text(encoding="utf-8"))
         created = True
-    report = check_gate(settings, body.customer, slug, store=store)
+    report = check_gate(settings, tenant, slug, store=store)
     return {
         "slug": slug,
-        "customer": body.customer,
         "goal_created_from_template": created,
         "gate_ok": report.ok,
         "gate_issues": report.all_issues,
@@ -191,46 +309,79 @@ def create_campaign(body: CreateCampaign) -> dict[str, object]:
 
 
 @app.get("/campaigns/{slug}/gate")
-def gate(slug: str, customer: str) -> dict[str, object]:
+def gate(slug: str, identity: Identity) -> dict[str, object]:
     """Return the Stage 0 gate report for a campaign.
 
     Args:
         slug: The campaign slug.
-        customer: The customer name.
+        identity: The verified identity whose tenant owns the campaign.
 
     Returns:
         The gate status and any issues.
     """
     settings = get_settings()
-    report = check_gate(settings, customer, slug, store=get_document_store())
+    report = check_gate(settings, identity.tenant_id, slug, store=get_document_store())
     return {"ok": report.ok, "issues": report.all_issues}
 
 
 @app.get("/campaigns/{slug}/deliverables")
-def deliverables(slug: str) -> dict[str, object]:
-    """List the deliverable files written for a campaign.
+def deliverables(slug: str, identity: Identity) -> dict[str, object]:
+    """List the deliverable documents written for a campaign.
+
+    The listing goes through the tenant-scoped document store, so a slug owned
+    by another tenant is simply absent — indistinguishable from one that was
+    never created.
 
     Args:
         slug: The campaign slug.
+        identity: The verified identity whose tenant owns the campaign.
 
     Returns:
-        The campaign slug and the list of written files.
+        The campaign slug and the list of written documents.
 
     Raises:
-        HTTPException: If the campaign directory does not exist.
+        HTTPException: 404 if the caller's tenant has no such campaign.
     """
-    settings = get_settings()
-    campaign_dir = settings.campaigns_dir / slug
-    if not campaign_dir.is_dir():
-        raise HTTPException(404, f"No campaign '{slug}'")
+    store = get_document_store()
+    documents = store.list(identity.tenant_id, f"campaigns/{slug}")
+    if not documents:
+        raise _http_error(DocumentNotFoundError(f"No campaign '{slug}'"))
     files = [
-        {"name": f.name, "size_bytes": f.stat().st_size} for f in sorted(campaign_dir.glob("*.md"))
+        {"name": document.rsplit("/", 1)[-1], "path": document}
+        for document in documents
+        if document.endswith(".md")
     ]
     return {"slug": slug, "files": files}
 
 
+@app.get("/campaigns/{slug}/deliverables/{name}")
+def deliverable(slug: str, name: str, identity: Identity) -> dict[str, object]:
+    """Return one deliverable's markdown content.
+
+    Args:
+        slug: The campaign slug.
+        name: The deliverable filename, e.g. ``research.md``.
+        identity: The verified identity whose tenant owns the campaign.
+
+    Returns:
+        The deliverable's name, path, and full markdown content.
+
+    Raises:
+        HTTPException: 404 if the caller's tenant has no such deliverable.
+    """
+    document = f"campaigns/{slug}/{name}"
+    store = get_document_store()
+    if not name.endswith(".md") or not store.exists(identity.tenant_id, document):
+        raise _http_error(DocumentNotFoundError(f"No deliverable '{name}' for campaign '{slug}'"))
+    return {
+        "name": name,
+        "path": document,
+        "content": store.read(identity.tenant_id, document),
+    }
+
+
 @app.post("/campaigns/{slug}/run", status_code=202)
-async def run(slug: str, body: RunCampaign) -> dict[str, object]:
+async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, object]:
     """Start a detached background run and return its ``run_id`` immediately.
 
     The run is a first-class background job: it executes as an :class:`asyncio.Task`
@@ -243,6 +394,7 @@ async def run(slug: str, body: RunCampaign) -> dict[str, object]:
     Args:
         slug: The campaign slug.
         body: The run request.
+        identity: The verified identity whose tenant owns the campaign.
 
     Returns:
         The new run's id, slug, stage, and initial ``running`` status.
@@ -251,7 +403,8 @@ async def run(slug: str, body: RunCampaign) -> dict[str, object]:
         HTTPException: 409 if the gate failed or the slug already has an active run.
     """
     settings = get_settings()
-    report = check_gate(settings, body.customer, slug, store=get_document_store())
+    tenant = identity.tenant_id
+    report = check_gate(settings, tenant, slug, store=get_document_store())
     if not report.ok:
         raise _http_error(GateError("Stage 0 gate failed", missing=report.all_issues))
     run_id = new_run_id()
@@ -262,14 +415,14 @@ async def run(slug: str, body: RunCampaign) -> dict[str, object]:
         Returns:
             The structured campaign result.
         """
-        return await arun_campaign(settings, body.customer, slug, stage=body.stage, run_id=run_id)
+        return await arun_campaign(settings, tenant, slug, stage=body.stage, run_id=run_id)
 
     try:
         get_registry().start(
             run_id=run_id,
             slug=slug,
             stage=body.stage,
-            customer=body.customer,
+            tenant=tenant,
             launch=launch,
         )
     except RunConflictError as exc:
@@ -278,22 +431,25 @@ async def run(slug: str, body: RunCampaign) -> dict[str, object]:
 
 
 @app.get("/runs")
-def list_active_runs() -> dict[str, object]:
-    """List the runs currently in flight across all campaigns.
+def list_active_runs(identity: Identity) -> dict[str, object]:
+    """List the caller's runs currently in flight.
+
+    Args:
+        identity: The verified identity whose tenant owns the runs.
 
     Returns:
-        The active runs, each with its ``run_id``, ``slug``, ``stage``, and
-        ``customer``.
+        The tenant's active runs, each with its ``run_id``, ``slug``, and ``stage``.
+        Runs belonging to other tenants are not listed.
     """
     runs = [
-        {"run_id": run.run_id, "slug": run.slug, "stage": run.stage, "customer": run.customer}
-        for run in get_registry().active()
+        {"run_id": run.run_id, "slug": run.slug, "stage": run.stage}
+        for run in get_registry().active(identity.tenant_id)
     ]
     return {"runs": runs}
 
 
 @app.get("/runs/{run_id}")
-def get_run_status(run_id: str) -> dict[str, object]:
+def get_run_status(run_id: str, identity: Identity) -> dict[str, object]:
     """Report a run's lifecycle status across its five terminal and live states.
 
     Resolves ``running`` from the live registry, or ``completed`` / ``failed`` /
@@ -301,21 +457,22 @@ def get_run_status(run_id: str) -> dict[str, object]:
 
     Args:
         run_id: The run id to query.
+        identity: The verified identity whose tenant owns the run.
 
     Returns:
         The run's id, slug, stage, and status.
 
     Raises:
-        HTTPException: 404 if the run id is unknown (no live run and no trace).
+        HTTPException: 404 if the caller's tenant has no such run.
     """
-    status = read_run_status(get_settings(), get_registry(), run_id)
+    status = read_run_status(get_settings(), get_registry(), run_id, identity.tenant_id)
     if status is None:
-        raise HTTPException(404, f"No run '{run_id}'")
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
     return asdict(status)
 
 
 @app.post("/runs/{run_id}/cancel")
-async def cancel_run(run_id: str) -> dict[str, object]:
+async def cancel_run(run_id: str, identity: Identity) -> dict[str, object]:
     """Cancel an in-flight run, aborting its in-flight LLM call.
 
     Cancelling the run's task lands a :class:`asyncio.CancelledError` inside the
@@ -324,56 +481,60 @@ async def cancel_run(run_id: str) -> dict[str, object]:
 
     Args:
         run_id: The id of the run to cancel.
+        identity: The verified identity whose tenant owns the run.
 
     Returns:
         The cancelled run's id, slug, and ``cancelled`` status.
 
     Raises:
-        HTTPException: 404 if no live run has that id (already finished or unknown).
+        HTTPException: 404 if the caller's tenant has no live run with that id.
     """
-    cancelled = await get_registry().cancel(run_id)
+    cancelled = await get_registry().cancel(run_id, identity.tenant_id)
     if cancelled is None:
-        raise HTTPException(404, f"No active run '{run_id}'")
+        raise _http_error(DocumentNotFoundError(f"No active run '{run_id}'"))
     return {"run_id": run_id, "slug": cancelled.slug, "status": CANCELLED}
 
 
 @app.get("/campaigns/{slug}/runs")
-def list_runs(slug: str) -> dict[str, object]:
+def list_runs(slug: str, identity: Identity) -> dict[str, object]:
     """List the run-log traces recorded for a campaign.
 
     Args:
         slug: The campaign slug.
+        identity: The verified identity whose tenant owns the campaign.
 
     Returns:
         The campaign slug and the available run ids (newest first).
     """
     settings = get_settings()
-    return {"slug": slug, "runs": list_run_ids(settings.logs_dir, slug)}
+    runs = list_run_ids(settings.tenant_logs_dir(identity.tenant_id), slug)
+    return {"slug": slug, "runs": runs}
 
 
 @app.get("/campaigns/{slug}/runs/{run_id}")
-def get_run(slug: str, run_id: str) -> dict[str, object]:
+def get_run(slug: str, run_id: str, identity: Identity) -> dict[str, object]:
     """Return the parsed JSONL trace for one run.
 
     Args:
         slug: The campaign slug.
         run_id: The run id (trace filename without extension).
+        identity: The verified identity whose tenant owns the run.
 
     Returns:
         The campaign slug, run id, and the list of trace events.
 
     Raises:
-        HTTPException: 404 if the trace does not exist.
+        HTTPException: 404 if the caller's tenant has no such trace.
     """
     settings = get_settings()
-    path = settings.logs_dir / slug / f"{run_id}.jsonl"
+    path = settings.tenant_logs_dir(identity.tenant_id) / slug / f"{run_id}.jsonl"
     if not path.is_file():
-        raise HTTPException(404, f"No run '{run_id}' for campaign '{slug}'")
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}' for campaign '{slug}'"))
     return {"slug": slug, "run_id": run_id, "events": read_events(path)}
 
 
 @app.get("/runs/{run_id}/stream")
-def stream_run(run_id: str) -> StreamingResponse:
+def stream_run(run_id: str, identity: Identity) -> StreamingResponse:
     """Attach to an existing run and stream its progress as Server-Sent Events.
 
     Observing is split from starting (the run is already executing as a detached
@@ -386,18 +547,19 @@ def stream_run(run_id: str) -> StreamingResponse:
 
     Args:
         run_id: The id of the run to observe.
+        identity: The verified identity whose tenant owns the run.
 
     Returns:
         A streaming response emitting one SSE ``data:`` frame per trace event.
 
     Raises:
-        HTTPException: 404 if no live run and no trace exist for the run id.
+        HTTPException: 404 if the caller's tenant has no such run.
     """
     settings = get_settings()
     registry = get_registry()
-    trace_path = resolve_trace_path(settings, registry, run_id)
+    trace_path = resolve_trace_path(settings, registry, run_id, identity.tenant_id)
     if trace_path is None:
-        raise HTTPException(404, f"No run '{run_id}'")
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
 
     async def event_source() -> AsyncIterator[str]:
         """Yield each trace event as an SSE ``data:`` frame.
@@ -405,7 +567,7 @@ def stream_run(run_id: str) -> StreamingResponse:
         Yields:
             SSE-formatted event lines.
         """
-        async for event in tail_trace(trace_path, is_live=lambda: registry.get(run_id) is not None):
+        async for event in tail_trace(trace_path, is_live=lambda: registry.is_live(run_id)):
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(event_source(), media_type="text/event-stream")

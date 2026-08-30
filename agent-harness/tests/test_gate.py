@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from conftest import SLUG, TENANT
 from marketing_os.adapters.documents import FilesystemDocumentStore, InMemoryDocumentStore
 from marketing_os.errors import GateError
 from marketing_os.governance import check_gate, enforce_gate, required_fields, validate_document
@@ -36,37 +37,37 @@ def test_goal_required_includes_h3_kpi_fields(settings):
 
 
 def test_gate_passes_for_complete_repo(settings):
-    report = check_gate(settings, "acme", "acme", store=_store(settings))
+    report = check_gate(settings, TENANT, SLUG, store=_store(settings))
     assert report.ok, report.all_issues
 
 
 def test_gate_blocks_on_placeholder(settings):
-    dna = settings.customers_dir / "acme" / "dna.md"
+    dna = settings.tenant_dir(TENANT) / "dna.md"
     dna.write_text(dna.read_text().replace("Acme Climbing Gym", "<name>"), encoding="utf-8")
-    report = check_gate(settings, "acme", "acme", store=_store(settings))
+    report = check_gate(settings, TENANT, SLUG, store=_store(settings))
     assert not report.ok
     assert any("Business name" in i for i in report.dna_issues)
 
 
 def test_gate_blocks_on_missing_files(settings):
-    (settings.customers_dir / "acme" / "dna.md").unlink()
-    report = check_gate(settings, "acme", "acme", store=_store(settings))
+    (settings.tenant_dir(TENANT) / "dna.md").unlink()
+    report = check_gate(settings, TENANT, SLUG, store=_store(settings))
     assert not report.ok
     assert any("no Brand DNA" in i for i in report.dna_issues)
 
 
 def test_gate_runs_against_an_in_memory_store(settings):
     memory = InMemoryDocumentStore()
-    memory.write("acme", "dna.md", (settings.customers_dir / "acme" / "dna.md").read_text())
-    report = check_gate(settings, "acme", "acme", store=memory)
+    memory.write(TENANT, "dna.md", (settings.tenant_dir(TENANT) / "dna.md").read_text())
+    report = check_gate(settings, TENANT, SLUG, store=memory)
     assert report.dna_issues == []
     assert any("no campaign goal" in i for i in report.goal_issues)
 
 
 def test_enforce_gate_raises(settings):
-    (settings.campaigns_dir / "acme" / "goal.md").unlink()
+    (settings.tenant_dir(TENANT) / "campaigns" / SLUG / "goal.md").unlink()
     with pytest.raises(GateError) as exc:
-        enforce_gate(settings, "acme", "acme", store=_store(settings))
+        enforce_gate(settings, TENANT, SLUG, store=_store(settings))
     assert exc.value.missing  # carries the structured issue list
 
 

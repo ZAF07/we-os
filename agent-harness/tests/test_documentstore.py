@@ -84,9 +84,9 @@ def test_filesystem_layout_matches_the_repository(tmp_path: Path) -> None:
     fs = FilesystemDocumentStore(tmp_path)
     fs.write("acme", "dna.md", "# DNA")
     fs.write("acme", "campaigns/spring/research.md", "# Findings")
-    assert (tmp_path / "customers" / "acme" / "dna.md").read_text(encoding="utf-8") == "# DNA"
-    assert (tmp_path / "campaigns" / "spring" / "research.md").is_file()
-    assert fs.describe("acme", "dna.md") == str(tmp_path / "customers" / "acme" / "dna.md")
+    assert (tmp_path / "tenants" / "acme" / "dna.md").read_text(encoding="utf-8") == "# DNA"
+    assert (tmp_path / "tenants" / "acme" / "campaigns" / "spring" / "research.md").is_file()
+    assert fs.describe("acme", "dna.md") == str(tmp_path / "tenants" / "acme" / "dna.md")
 
 
 def test_filesystem_rejects_paths_escaping_the_root(tmp_path: Path) -> None:

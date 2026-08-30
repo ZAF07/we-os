@@ -17,6 +17,8 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 from conftest import (
     PASS_VERDICT,
+    SLUG,
+    TENANT,
     FakeReviewer,
     ProgrammableChatModel,
     deliverable_from,
@@ -643,13 +645,13 @@ async def test_sync_web_tool_runs_under_async_specialist_node(
         web_backend=backend,
     )
     state = await graph.ainvoke(
-        {"customer": "acme", "slug": "acme"},
+        {"tenant": TENANT, "slug": SLUG},
         config={"configurable": {"thread_id": "web-async"}, "recursion_limit": 50},
     )
     backend.close()
 
     assert state["error"] is None
-    assert (settings.campaigns_dir / "acme" / "research.md").is_file()
+    assert (settings.tenant_dir(TENANT) / "campaigns" / SLUG / "research.md").is_file()
     assert page_thread_idents, "the web backend was never invoked under the async node"
     assert threading.get_ident() not in page_thread_idents
 

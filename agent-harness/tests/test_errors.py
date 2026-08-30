@@ -24,7 +24,7 @@ def test_gate_state_error_maps_to_gate_error() -> None:
     assert isinstance(exc, GateError)
     assert exc.http_status == 409
     assert exc.detail is not None
-    assert exc.detail["type"] == "gate"
+    assert exc.detail["type"] == "gate_failed"
     assert exc.detail["issues"] == ["DNA: missing name"]
     assert exc.run_log == "logs/acme/r.jsonl"
 
@@ -63,5 +63,5 @@ def test_run_conflict_error_is_self_describing() -> None:
     exc = RunConflictError("acme", "20260716T101010Z-abcd1234")
     assert exc.http_status == 409
     assert exc.detail is not None
-    assert exc.detail["type"] == "slug_busy"
+    assert exc.detail["type"] == "run_conflict"
     assert exc.detail["active_run_id"] == "20260716T101010Z-abcd1234"

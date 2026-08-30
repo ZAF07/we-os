@@ -190,6 +190,16 @@ class Settings:
         reviewer_thinking: Whether the QA reviewer runs in thinking mode. Off by
             default because DeepSeek V4 thinking mode rejects the forced
             ``tool_choice`` that structured output uses.
+        auth_issuer: The OIDC issuer whose tokens the API accepts, or ``None``
+            when unset. The API refuses every request while it is unset rather
+            than falling open, so a missing configuration cannot silently
+            disable tenancy.
+        auth_audience: The expected ``aud`` claim, or ``None`` to skip the
+            audience check when the IdP does not set one.
+        tenant_id: The tenant the **CLI** operates as. The CLI is a local
+            operator tool with no request to carry a token, so its tenant comes
+            from configuration — never from a command-line argument, which would
+            be a caller-supplied business identity (ADR-0013).
     """
 
     provider: str = field(
@@ -222,6 +232,17 @@ class Settings:
     reviewer_thinking: bool = field(
         default_factory=lambda: os.environ.get("MARKETING_OS_REVIEWER_THINKING", "0") != "0"
     )
+    auth_issuer: str | None = field(
+        default_factory=lambda: (
+            os.environ.get("MARKETING_OS_AUTH_ISSUER") or os.environ.get("CLERK_ISSUER_URL") or None
+        )
+    )
+    auth_audience: str | None = field(
+        default_factory=lambda: os.environ.get("MARKETING_OS_AUTH_AUDIENCE") or None
+    )
+    tenant_id: str | None = field(
+        default_factory=lambda: os.environ.get("MARKETING_OS_TENANT_ID") or None
+    )
 
     @property
     def claude_dir(self) -> Path:
@@ -244,14 +265,26 @@ class Settings:
         return self.root / "templates"
 
     @property
-    def customers_dir(self) -> Path:
-        """Return the directory holding per-Brand DNA profiles."""
-        return self.root / "customers"
+    def tenants_dir(self) -> Path:
+        """Return the directory the filesystem store keeps tenant-owned documents under.
 
-    @property
-    def campaigns_dir(self) -> Path:
-        """Return the directory where campaign deliverables are written."""
-        return self.root / "campaigns"
+        Every document a tenant owns — its Brand DNA and all campaign
+        deliverables — lives beneath ``tenants/<tenant_id>/``. Nothing else in
+        the repository is tenant data, which is what lets the read sandbox deny
+        this prefix wholesale (ADR-0013).
+        """
+        return self.root / "tenants"
+
+    def tenant_dir(self, tenant: str) -> Path:
+        """Return one tenant's document directory.
+
+        Args:
+            tenant: The tenant whose directory to locate.
+
+        Returns:
+            The ``tenants/<tenant>/`` directory path.
+        """
+        return self.tenants_dir / tenant
 
     @property
     def knowledge_dir(self) -> Path:
@@ -265,8 +298,23 @@ class Settings:
 
     @property
     def logs_dir(self) -> Path:
-        """Return the directory where per-run JSONL traces are written."""
+        """Return the root directory where per-run JSONL traces are written."""
         return self.root / "logs"
+
+    def tenant_logs_dir(self, tenant: str) -> Path:
+        """Return the directory holding one tenant's run traces.
+
+        Traces are partitioned by tenant for the same reason documents are: a
+        run id belonging to another business must be unfindable, not merely
+        unauthorised, so cross-tenant lookups answer 404 (ADR-0013).
+
+        Args:
+            tenant: The tenant whose traces to locate.
+
+        Returns:
+            The ``logs/<tenant>/`` directory path.
+        """
+        return self.logs_dir / tenant
 
     def provider_config(
         self, name: str | None = None, *, role: str | None = None

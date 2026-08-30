@@ -10,9 +10,7 @@ reordered, never skipped.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from marketing_os.config import Settings
 from marketing_os.ports import DocumentStore
 
 # Sentinel for stages the Marketing Director (orchestrator) owns directly,
@@ -131,39 +129,6 @@ PIPELINE: list[Stage] = [
 ]
 
 PIPELINE_BY_KEY: dict[str, Stage] = {s.key: s for s in PIPELINE}
-
-
-def campaign_dir(settings: Settings, slug: str) -> Path:
-    """Return the filesystem directory holding a campaign's deliverables.
-
-    Describes the repository layout the filesystem adapter serves; store-backed
-    code should address documents via :func:`stage_document` instead.
-
-    Args:
-        settings: The harness settings.
-        slug: The campaign slug.
-
-    Returns:
-        The ``campaigns/<slug>/`` directory path.
-    """
-    return settings.campaigns_dir / slug
-
-
-def deliverable_path(settings: Settings, slug: str, stage: Stage) -> Path:
-    """Return the filesystem path a stage's deliverable lives at.
-
-    Describes the repository layout the filesystem adapter serves; store-backed
-    code should address documents via :func:`stage_document` instead.
-
-    Args:
-        settings: The harness settings.
-        slug: The campaign slug.
-        stage: The pipeline stage.
-
-    Returns:
-        The absolute path of the stage's deliverable file.
-    """
-    return campaign_dir(settings, slug) / stage.deliverable
 
 
 def stage_document(slug: str, stage: Stage) -> str:

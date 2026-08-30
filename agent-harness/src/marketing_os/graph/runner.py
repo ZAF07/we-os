@@ -139,13 +139,11 @@ def _raise_on_error(state: CampaignState, run_log: str | None) -> None:
     raise exception_from_state_error(error, run_log)
 
 
-def _to_result(
-    customer: str, slug: str, state: CampaignState, run_log: str | None
-) -> CampaignResult:
+def _to_result(tenant: str, slug: str, state: CampaignState, run_log: str | None) -> CampaignResult:
     """Assemble a :class:`CampaignResult` from the final graph state.
 
     Args:
-        customer: The customer the campaign ran for.
+        tenant: The tenant the campaign ran for.
         slug: The campaign slug.
         state: The final campaign state.
         run_log: The repo-relative path of the run's JSONL trace, if any.
@@ -155,14 +153,16 @@ def _to_result(
     """
     stages = [StageResult(**record) for record in state.get("results", [])]
     usage = Usage(**state.get("usage", {}))
-    return CampaignResult(customer=customer, slug=slug, stages=stages, usage=usage, run_log=run_log)
+    return CampaignResult(tenant=tenant, slug=slug, stages=stages, usage=usage, run_log=run_log)
 
 
-def _open_trace(settings: Settings, slug: str, run_id: str) -> RunTrace | None:
-    """Open a per-run JSONL trace under ``logs/`` when run logging is enabled.
+def _open_trace(settings: Settings, tenant: str, slug: str, run_id: str) -> RunTrace | None:
+    """Open a per-run JSONL trace under ``logs/<tenant>/`` when run logging is enabled.
 
     Args:
         settings: The harness settings.
+        tenant: The tenant the run belongs to; traces are partitioned by it so a
+            run id is only findable by the business that owns it.
         slug: The campaign slug.
         run_id: The unique run id used as the trace filename.
 
@@ -171,7 +171,7 @@ def _open_trace(settings: Settings, slug: str, run_id: str) -> RunTrace | None:
     """
     if not settings.run_logs:
         return None
-    return RunTrace(settings.logs_dir / slug / f"{run_id}.jsonl")
+    return RunTrace(settings.tenant_logs_dir(tenant) / slug / f"{run_id}.jsonl")
 
 
 def _rel_log(settings: Settings, trace: RunTrace | None) -> str | None:
@@ -189,11 +189,11 @@ def _rel_log(settings: Settings, trace: RunTrace | None) -> str | None:
     return str(trace.path.relative_to(settings.root))
 
 
-def _config(customer: str, slug: str, stage: str | None) -> dict[str, Any]:
+def _config(tenant: str, slug: str, stage: str | None) -> dict[str, Any]:
     """Build the LangGraph config for a run, including LangSmith trace metadata.
 
     Args:
-        customer: The customer name.
+        tenant: The tenant name.
         slug: The campaign slug.
         stage: The single stage, or ``None`` for the full pipeline.
 
@@ -204,7 +204,7 @@ def _config(customer: str, slug: str, stage: str | None) -> dict[str, Any]:
     return run_config(
         thread_id(slug, stage),
         run_name=f"campaign:{slug}:{scope}",
-        metadata={"customer": customer, "slug": slug, "stage": stage},
+        metadata={"tenant": tenant, "slug": slug, "stage": stage},
         tags=["marketing-os", scope],
     )
 
@@ -303,7 +303,7 @@ def _write_error_summary(trace: RunTrace | None, exc: BaseException, run_log: st
 
 async def arun_campaign(
     settings: Settings,
-    customer: str,
+    tenant: str,
     slug: str,
     *,
     stage: str | None = None,
@@ -325,7 +325,7 @@ async def arun_campaign(
 
     Args:
         settings: The harness settings.
-        customer: The customer name.
+        tenant: The tenant name.
         slug: The campaign slug.
         stage: The single stage to run, or ``None`` for the full pipeline.
         run_id: The id used as the trace filename; a fresh id is generated when
@@ -345,11 +345,9 @@ async def arun_campaign(
         PipelineError: If a prerequisite was missing or a deliverable never saved.
         GuardrailError: If a deliverable failed QA within the revision budget.
     """
-    trace = _open_trace(settings, slug, run_id or new_run_id())
+    trace = _open_trace(settings, tenant, slug, run_id or new_run_id())
     run_log = _rel_log(settings, trace)
-    _LOGGER.info(
-        "run.start customer=%s slug=%s stage=%s run_log=%s", customer, slug, stage, run_log
-    )
+    _LOGGER.info("run.start tenant=%s slug=%s stage=%s run_log=%s", tenant, slug, stage, run_log)
     backend: WebSearchTool | None = None
     owns_backend = False
     try:
@@ -361,8 +359,8 @@ async def arun_campaign(
             checkpointer=checkpointer,
             document_store=document_store,
         )
-        config = _config(customer, slug, stage)
-        inbound = {"customer": customer, "slug": slug}
+        config = _config(tenant, slug, stage)
+        inbound = {"tenant": tenant, "slug": slug}
         async for mode, chunk in graph.astream(
             inbound, config=config, stream_mode=["custom", "updates"]
         ):
@@ -386,12 +384,12 @@ async def arun_campaign(
         if owns_backend and backend is not None:
             backend.close()
     _raise_on_error(state, run_log)
-    return _to_result(customer, slug, state, run_log)
+    return _to_result(tenant, slug, state, run_log)
 
 
 def run_campaign(
     settings: Settings,
-    customer: str,
+    tenant: str,
     slug: str,
     *,
     stage: str | None = None,
@@ -410,7 +408,7 @@ def run_campaign(
 
     Args:
         settings: The harness settings.
-        customer: The customer name.
+        tenant: The tenant name.
         slug: The campaign slug.
         stage: The single stage to run, or ``None`` for the full pipeline.
         run_id: The id used as the trace filename; a fresh id is generated when
@@ -432,7 +430,7 @@ def run_campaign(
     return asyncio.run(
         arun_campaign(
             settings,
-            customer,
+            tenant,
             slug,
             stage=stage,
             run_id=run_id,
@@ -446,7 +444,7 @@ def run_campaign(
 
 async def astream_campaign(
     settings: Settings,
-    customer: str,
+    tenant: str,
     slug: str,
     *,
     stage: str | None = None,
@@ -462,7 +460,7 @@ async def astream_campaign(
 
     Args:
         settings: The harness settings.
-        customer: The customer name.
+        tenant: The tenant name.
         slug: The campaign slug.
         stage: The single stage to run, or ``None`` for the full pipeline.
         web_backend: The web backend for agents that declare web tools.
@@ -474,11 +472,9 @@ async def astream_campaign(
         Event dictionaries with an ``event`` key and event-specific fields.
     """
     run_id = new_run_id()
-    trace = _open_trace(settings, slug, run_id)
+    trace = _open_trace(settings, tenant, slug, run_id)
     run_log = _rel_log(settings, trace)
-    _LOGGER.info(
-        "run.start customer=%s slug=%s stage=%s run_log=%s", customer, slug, stage, run_log
-    )
+    _LOGGER.info("run.start tenant=%s slug=%s stage=%s run_log=%s", tenant, slug, stage, run_log)
     backend: WebSearchTool | None = None
     owns_backend = False
     try:
@@ -490,9 +486,9 @@ async def astream_campaign(
             checkpointer=checkpointer,
             document_store=document_store,
         )
-        config = _config(customer, slug, stage)
+        config = _config(tenant, slug, stage)
         async for mode, chunk in graph.astream(
-            {"customer": customer, "slug": slug},
+            {"tenant": tenant, "slug": slug},
             config=config,
             stream_mode=["custom", "updates"],
         ):

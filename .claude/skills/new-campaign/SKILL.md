@@ -11,9 +11,9 @@ Campaign input: **$ARGUMENTS**
 ## Stage 0 — Brand DNA gate (run this first, every time)
 You may not delegate to any specialist until this gate passes. See `.claude/rules/brand-dna.md`.
 
-1. **Load the DNA.** Read `customers/<name>/dna.md`, where `<name>` is derived from **$ARGUMENTS**. If the file does not exist → tell the operator to create it from `templates/brand-dna.md` (`cp templates/brand-dna.md customers/<name>/dna.md`) and **stop**.
+1. **Load the DNA.** Read `tenants/<tenant>/dna.md`, where `<tenant>` is the tenant this session operates as. If the file does not exist → tell the operator to create it from `templates/brand-dna.md` (`cp templates/brand-dna.md tenants/<tenant>/dna.md`) and **stop**.
 2. **Validate completeness.** Confirm every **Required** DNA field is present and not left as a `<...>` placeholder. If any are missing or still placeholder → list exactly which fields are incomplete and **stop**.
-3. **Confirm the campaign goal.** Ensure `campaigns/<slug>/goal.md` exists and its Required fields are filled (use `templates/campaign-goal.md`). If absent or incomplete → request it and **stop**.
+3. **Confirm the campaign goal.** Ensure `tenants/<tenant>/campaigns/<slug>/goal.md` exists and its Required fields are filled (use `templates/campaign-goal.md`). If absent or incomplete → request it and **stop**.
 
 Only when all three pass do you continue. **Pass the Brand DNA (path and contents) to every subagent you delegate to**, and require them to ground all output in it.
 

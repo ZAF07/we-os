@@ -110,7 +110,7 @@ def validate_document(template_path: Path, doc_text: str) -> list[str]:
 class GateReport:
     """Structured outcome of the Stage 0 gate."""
 
-    customer: str
+    tenant: str
     slug: str
     dna_issues: list[str] = field(default_factory=list)
     goal_issues: list[str] = field(default_factory=list)
@@ -126,12 +126,12 @@ class GateReport:
         return [f"DNA: {i}" for i in self.dna_issues] + [f"Goal: {i}" for i in self.goal_issues]
 
 
-def check_gate(settings: Settings, customer: str, slug: str, *, store: DocumentStore) -> GateReport:
+def check_gate(settings: Settings, tenant: str, slug: str, *, store: DocumentStore) -> GateReport:
     """Run the gate and return a report (does not raise).
 
     Args:
         settings: The harness settings locating the templates.
-        customer: The tenant the campaign runs for.
+        tenant: The tenant the campaign runs for.
         slug: The campaign slug.
         store: The document store the DNA and goal resolve through.
 
@@ -143,39 +143,33 @@ def check_gate(settings: Settings, customer: str, slug: str, *, store: DocumentS
     dna_template = settings.templates_dir / "brand-dna.md"
     goal_template = settings.templates_dir / "campaign-goal.md"
 
-    report = GateReport(customer=customer, slug=slug)
-    if not store.exists(customer, dna_document):
+    report = GateReport(tenant=tenant, slug=slug)
+    if not store.exists(tenant, dna_document):
         report.dna_issues.append(
-            f"no Brand DNA at {store.describe(customer, dna_document)}. Create it: "
-            f"cp templates/brand-dna.md customers/{customer}/dna.md, "
-            "then fill every Required field."
+            f"no Brand DNA at {store.describe(tenant, dna_document)}. Author it from "
+            "templates/brand-dna.md, filling every Required field."
         )
     else:
-        report.dna_issues.extend(
-            validate_document(dna_template, store.read(customer, dna_document))
-        )
+        report.dna_issues.extend(validate_document(dna_template, store.read(tenant, dna_document)))
 
-    if not store.exists(customer, goal_document):
+    if not store.exists(tenant, goal_document):
         report.goal_issues.append(
-            f"no campaign goal at {store.describe(customer, goal_document)}. Create it: "
-            f"cp templates/campaign-goal.md campaigns/{slug}/goal.md, "
-            "then fill every Required field."
+            f"no campaign goal at {store.describe(tenant, goal_document)}. Author it from "
+            "templates/campaign-goal.md, filling every Required field."
         )
     else:
         report.goal_issues.extend(
-            validate_document(goal_template, store.read(customer, goal_document))
+            validate_document(goal_template, store.read(tenant, goal_document))
         )
     return report
 
 
-def enforce_gate(
-    settings: Settings, customer: str, slug: str, *, store: DocumentStore
-) -> GateReport:
+def enforce_gate(settings: Settings, tenant: str, slug: str, *, store: DocumentStore) -> GateReport:
     """Run the gate and raise GateError if it does not pass.
 
     Args:
         settings: The harness settings locating the templates.
-        customer: The tenant the campaign runs for.
+        tenant: The tenant the campaign runs for.
         slug: The campaign slug.
         store: The document store the DNA and goal resolve through.
 
@@ -185,7 +179,7 @@ def enforce_gate(
     Raises:
         GateError: If the gate does not pass, carrying the offending fields.
     """
-    report = check_gate(settings, customer, slug, store=store)
+    report = check_gate(settings, tenant, slug, store=store)
     if not report.ok:
         raise GateError(
             "Stage 0 gate failed — work cannot begin until these are fixed:\n  - "

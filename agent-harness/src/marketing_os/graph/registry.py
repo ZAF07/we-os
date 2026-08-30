@@ -45,14 +45,14 @@ class ActiveRun:
         run_id: The unique id of this execution attempt (also the trace filename).
         slug: The campaign slug the run belongs to.
         stage: The single stage being run, or ``None`` for the full pipeline.
-        customer: The customer the run is for.
+        tenant: The tenant the run is for.
         task: The :class:`asyncio.Task` executing the run.
     """
 
     run_id: str
     slug: str
     stage: str | None
-    customer: str
+    tenant: str
     task: asyncio.Task[CampaignResult]
 
 
@@ -92,27 +92,52 @@ class RunRegistry:
         """
         return self._by_slug.get(slug)
 
-    def get(self, run_id: str) -> ActiveRun | None:
-        """Return the active run with the given id, or ``None`` if not live.
+    def get(self, run_id: str, tenant: str) -> ActiveRun | None:
+        """Return a tenant's active run with the given id, or ``None``.
+
+        The tenant is part of the lookup rather than a filter applied to the
+        result, so there is no unscoped call shape for new code to reach for. A
+        run belonging to another tenant is reported as absent, not refused, so
+        the two cases stay indistinguishable (ADR-0013).
 
         Args:
             run_id: The run id to look up.
+            tenant: The tenant the caller acts for.
 
         Returns:
-            The matching active run, or ``None`` when no live run has that id.
+            The matching active run, or ``None`` when no live run has that id
+            **or** it belongs to another tenant.
         """
         for run in self._by_slug.values():
-            if run.run_id == run_id:
+            if run.run_id == run_id and run.tenant == tenant:
                 return run
         return None
 
-    def active(self) -> list[ActiveRun]:
-        """Return every currently active run.
+    def active(self, tenant: str) -> list[ActiveRun]:
+        """Return one tenant's currently active runs.
+
+        Args:
+            tenant: The tenant whose runs to list.
 
         Returns:
-            The live runs, one per busy slug.
+            The tenant's live runs, one per busy slug. Other tenants' runs are
+            never returned, so a caller cannot forget to exclude them.
         """
-        return list(self._by_slug.values())
+        return [run for run in self._by_slug.values() if run.tenant == tenant]
+
+    def is_live(self, run_id: str) -> bool:
+        """Return whether any tenant has a live run with this id.
+
+        Used only to decide when a trace stream may stop polling; the caller has
+        already proved it owns the run by resolving its trace path.
+
+        Args:
+            run_id: The run id to test.
+
+        Returns:
+            ``True`` while a run with that id is executing.
+        """
+        return any(run.run_id == run_id for run in self._by_slug.values())
 
     def start(
         self,
@@ -120,7 +145,7 @@ class RunRegistry:
         run_id: str,
         slug: str,
         stage: str | None,
-        customer: str,
+        tenant: str,
         launch: Callable[[], Coroutine[Any, Any, CampaignResult]],
     ) -> ActiveRun:
         """Register a slug's run and launch it as a background task.
@@ -134,7 +159,7 @@ class RunRegistry:
             run_id: The unique id for this run.
             slug: The campaign slug to claim.
             stage: The single stage to run, or ``None`` for the full pipeline.
-            customer: The customer the run is for.
+            tenant: The tenant the run is for.
             launch: A zero-argument coroutine factory that executes the run.
 
         Returns:
@@ -147,7 +172,7 @@ class RunRegistry:
         if existing is not None:
             raise RunConflictError(slug, existing.run_id)
         task = asyncio.create_task(launch())
-        run = ActiveRun(run_id=run_id, slug=slug, stage=stage, customer=customer, task=task)
+        run = ActiveRun(run_id=run_id, slug=slug, stage=stage, tenant=tenant, task=task)
         self._by_slug[slug] = run
         task.add_done_callback(lambda _task: self._forget(run))
         _LOGGER.info("run.registered run_id=%s slug=%s stage=%s", run_id, slug, stage)
@@ -171,7 +196,7 @@ class RunRegistry:
         if not run.task.cancelled():
             run.task.exception()
 
-    async def cancel(self, run_id: str) -> ActiveRun | None:
+    async def cancel(self, run_id: str, tenant: str) -> ActiveRun | None:
         """Cancel a live run and wait for it to finish unwinding.
 
         Cancelling the task raises :class:`asyncio.CancelledError` inside the run's
@@ -182,11 +207,15 @@ class RunRegistry:
 
         Args:
             run_id: The id of the run to cancel.
+            tenant: The tenant the caller acts for. A run belonging to another
+                tenant is treated as absent, so one business can never cancel
+                another's work.
 
         Returns:
-            The cancelled :class:`ActiveRun`, or ``None`` if no live run has that id.
+            The cancelled :class:`ActiveRun`, or ``None`` if the caller's tenant
+            has no live run with that id.
         """
-        run = self.get(run_id)
+        run = self.get(run_id, tenant)
         if run is None:
             return None
         run.task.cancel()
@@ -199,27 +228,30 @@ class RunRegistry:
         return run
 
 
-def read_run_status(settings: Settings, registry: RunRegistry, run_id: str) -> RunStatus | None:
+def read_run_status(
+    settings: Settings, registry: RunRegistry, run_id: str, tenant: str
+) -> RunStatus | None:
     """Resolve a run's lifecycle status from the live registry, then its trace.
 
     A run in the registry is ``running``. Otherwise its JSONL trace is consulted:
     the terminal ``run.summary`` outcome maps to ``completed`` / ``failed`` /
     ``cancelled``; a trace with no terminal summary means the run was
     ``interrupted`` (a process-restart casualty). A run id with neither a registry
-    entry nor a trace is unknown.
+    entry nor a trace **within the caller's tenant** is unknown.
 
     Args:
         settings: The harness settings locating the ``logs/`` tree.
         registry: The live run registry.
         run_id: The run id to resolve.
+        tenant: The tenant the caller acts for; runs outside it are unknown.
 
     Returns:
         The resolved :class:`RunStatus`, or ``None`` when the run id is unknown.
     """
-    live = registry.get(run_id)
+    live = registry.get(run_id, tenant)
     if live is not None:
         return RunStatus(run_id=run_id, slug=live.slug, status=RUNNING, stage=live.stage)
-    trace = find_trace(settings.logs_dir, run_id)
+    trace = find_trace(settings.tenant_logs_dir(tenant), run_id)
     if trace is None:
         return None
     slug = trace.parent.name
@@ -230,7 +262,9 @@ def read_run_status(settings: Settings, registry: RunRegistry, run_id: str) -> R
     return RunStatus(run_id=run_id, slug=slug, status=status)
 
 
-def resolve_trace_path(settings: Settings, registry: RunRegistry, run_id: str) -> Path | None:
+def resolve_trace_path(
+    settings: Settings, registry: RunRegistry, run_id: str, tenant: str
+) -> Path | None:
     """Return the JSONL trace path to tail for a run, or ``None`` if unknown.
 
     Observing attaches by tailing this file. A **live** run's path is derived from
@@ -238,17 +272,18 @@ def resolve_trace_path(settings: Settings, registry: RunRegistry, run_id: str) -
     its first event — so a client attaching immediately after ``POST /run`` is not
     turned away with a spurious 404; the tailer waits for the file to appear. A run
     that is no longer live is located by its on-disk trace. A run id that is neither
-    live nor traced is unknown.
+    live nor traced within the caller's tenant is unknown.
 
     Args:
         settings: The harness settings locating the ``logs/`` tree.
         registry: The live run registry.
         run_id: The run id to resolve a trace path for.
+        tenant: The tenant the caller acts for; runs outside it are unknown.
 
     Returns:
         The trace path to tail, or ``None`` when the run id is unknown.
     """
-    live = registry.get(run_id)
+    live = registry.get(run_id, tenant)
     if live is not None:
-        return settings.logs_dir / live.slug / f"{run_id}.jsonl"
-    return find_trace(settings.logs_dir, run_id)
+        return settings.tenant_logs_dir(tenant) / live.slug / f"{run_id}.jsonl"
+    return find_trace(settings.tenant_logs_dir(tenant), run_id)

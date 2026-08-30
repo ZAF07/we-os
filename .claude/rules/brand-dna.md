@@ -3,7 +3,7 @@
 we-OS produces sharp work only when grounded in real truth about the business and the customers it sells to. Running without it yields generic, worthless output. Therefore:
 
 ## Gate (mandatory, before any campaign work)
-No research, strategy, creative, or assets may be produced until a **complete Brand DNA** exists for the business at `customers/<name>/dna.md`.
+No research, strategy, creative, or assets may be produced until a **complete Brand DNA** exists for the business at `tenants/<tenant>/dna.md`.
 
 The orchestrator must, before delegating to any specialist:
 1. Load the business's Brand DNA. If absent → stop and direct the operator to `templates/brand-dna.md`.

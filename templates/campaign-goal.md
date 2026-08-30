@@ -1,11 +1,13 @@
 # Campaign Goal — <CAMPAIGN NAME>
 
-> Copy this file to `campaigns/<slug>/goal.md` and fill every **Required** field.
-> The goal is per-campaign; the Brand DNA (in `customers/<name>/dna.md`) is reused across campaigns.
+> Copy this file to `tenants/<tenant>/campaigns/<slug>/goal.md` and fill every **Required** field.
+> The goal is per-campaign; the Brand DNA (in `tenants/<tenant>/dna.md`) is reused across campaigns.
+>
+> The goal never names the business: a tenant is one business, so which business
+> this campaign belongs to is already known (ADR-0013).
 
 ## Required
 
-- **Customer:** <name — must match a folder in customers/>
 - **Primary business objective:** <one measurable outcome, e.g. "+40 bookings", "120 qualified leads">
 - **Timeframe:** <start → end, or duration>
 - **Campaign budget:** <spend available for this campaign>

@@ -15,6 +15,8 @@ import pytest
 from conftest import (
     FAIL_VERDICT,
     PLACEHOLDER_DNA,
+    SLUG,
+    TENANT,
     install_scripted_graph,
     write_all_agent_specs,
 )
@@ -31,6 +33,7 @@ def cli(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: The pytest monkeypatch fixture.
     """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    monkeypatch.setenv("MARKETING_OS_TENANT_ID", TENANT)
     install_scripted_graph(monkeypatch)
 
 
@@ -45,7 +48,7 @@ def test_check_passes_on_valid_repo(cli: None, capsys: pytest.CaptureFixture[str
 def test_check_fails_on_placeholder_dna(
     cli: None, repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (repo / "customers" / "acme" / "dna.md").write_text(PLACEHOLDER_DNA, encoding="utf-8")
+    (repo / "tenants" / TENANT / "dna.md").write_text(PLACEHOLDER_DNA, encoding="utf-8")
     code = main(["check", "acme"])
     out = capsys.readouterr().out
     assert code == 1
@@ -67,7 +70,7 @@ def test_new_campaign_single_stage_writes_deliverable(
     code = main(["new-campaign", "acme", "--stage", "research"])
     out = capsys.readouterr().out
     assert code == 0
-    assert (repo / "campaigns" / "acme" / "research.md").is_file()
+    assert (repo / "tenants" / TENANT / "campaigns" / SLUG / "research.md").is_file()
     assert "Stage 0 gate passed" in out
     assert "complete" in out
     assert "research:" in out
@@ -81,33 +84,35 @@ def test_new_campaign_full_pipeline_runs_every_stage(
     out = capsys.readouterr().out
     assert code == 0
     for name in ("research.md", "brand-strategy.md", "performance-plan.md"):
-        assert (repo / "campaigns" / "acme" / name).is_file()
+        assert (repo / "tenants" / TENANT / "campaigns" / SLUG / name).is_file()
     assert "Stages run: 6" in out
 
 
 def test_new_campaign_slug_override_targets_named_campaign(
     cli: None, repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (repo / "campaigns" / "spring" / "goal.md").parent.mkdir(parents=True, exist_ok=True)
-    (repo / "campaigns" / "spring" / "goal.md").write_text(
-        (repo / "campaigns" / "acme" / "goal.md").read_text(encoding="utf-8"),
+    (repo / "tenants" / TENANT / "campaigns" / "spring" / "goal.md").parent.mkdir(
+        parents=True, exist_ok=True
+    )
+    (repo / "tenants" / TENANT / "campaigns" / "spring" / "goal.md").write_text(
+        (repo / "tenants" / TENANT / "campaigns" / SLUG / "goal.md").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    code = main(["new-campaign", "acme", "--slug", "spring", "--stage", "research"])
+    code = main(["new-campaign", "spring", "--stage", "research"])
     assert code == 0
     capsys.readouterr()
-    assert (repo / "campaigns" / "spring" / "research.md").is_file()
+    assert (repo / "tenants" / TENANT / "campaigns" / "spring" / "research.md").is_file()
 
 
 def test_new_campaign_halts_when_gate_fails(
     cli: None, repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (repo / "customers" / "acme" / "dna.md").write_text(PLACEHOLDER_DNA, encoding="utf-8")
+    (repo / "tenants" / TENANT / "dna.md").write_text(PLACEHOLDER_DNA, encoding="utf-8")
     code = main(["new-campaign", "acme", "--stage", "research"])
     out = capsys.readouterr().out
     assert code == 1
     assert "Stage 0 gate FAILED" in out
-    assert not (repo / "campaigns" / "acme" / "research.md").is_file()
+    assert not (repo / "tenants" / TENANT / "campaigns" / SLUG / "research.md").is_file()
 
 
 def test_new_campaign_provider_override_is_applied(
@@ -134,6 +139,7 @@ def test_run_failure_renders_error_and_discrepancies(
 ) -> None:
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     monkeypatch.setenv("MARKETING_OS_MAX_QA", "1")
+    monkeypatch.setenv("MARKETING_OS_TENANT_ID", TENANT)
     install_scripted_graph(monkeypatch, verdicts=[FAIL_VERDICT])
     code = main(["new-campaign", "acme", "--stage", "research"])
     captured = capsys.readouterr()

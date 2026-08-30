@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Instrument_Sans } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 import { AppShell } from "@/components/shell/app-shell";
@@ -20,10 +21,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={instrumentSans.variable}>
-      <body className="antialiased">
-        <AppShell>{children}</AppShell>
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en" className={instrumentSans.variable}>
+        <body className="antialiased">
+          <AppShell>{children}</AppShell>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

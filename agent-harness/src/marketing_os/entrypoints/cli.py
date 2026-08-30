@@ -2,12 +2,17 @@
 
 Commands::
 
-    marketing-os new-campaign <name> [--slug S] [--stage K] [--provider P]
-    marketing-os check <name> [--slug S]
+    marketing-os new-campaign <slug> [--stage K] [--provider P]
+    marketing-os check <slug>
     marketing-os agents
 
-Mirrors ``/new-campaign <name>``: the Stage 0 gate runs first, then the pipeline.
+Mirrors ``/new-campaign``: the Stage 0 gate runs first, then the pipeline.
 Progress is streamed from the graph's custom events.
+
+The CLI is a **local operator tool**, so there is no request and no token to
+verify. Its tenant therefore comes from configuration (``MARKETING_OS_TENANT_ID``)
+rather than a command-line argument — a business identity typed by the caller is
+exactly what ADR-0013 forbids, whichever entrypoint accepts it.
 """
 
 from __future__ import annotations
@@ -18,11 +23,32 @@ from typing import Any
 
 from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.observability import configure_logging, configure_tracing
-from marketing_os.config import load_settings
+from marketing_os.config import Settings, load_settings
 from marketing_os.entrypoints.env import load_env
-from marketing_os.errors import GateError, GuardrailError, MarketingOSError
+from marketing_os.errors import ConfigError, GateError, GuardrailError, MarketingOSError
 from marketing_os.governance import check_gate
 from marketing_os.governance.gate import GateReport
+
+
+def _resolve_tenant(settings: Settings) -> str:
+    """Return the tenant the CLI operates as.
+
+    Args:
+        settings: The harness settings.
+
+    Returns:
+        The configured tenant id.
+
+    Raises:
+        ConfigError: If no tenant is configured, rather than defaulting to one
+            and writing a business's documents into the wrong place.
+    """
+    if not settings.tenant_id:
+        raise ConfigError(
+            "No tenant configured. Set MARKETING_OS_TENANT_ID to the tenant this "
+            "CLI operates as (the organization id from your IdP)."
+        )
+    return settings.tenant_id
 
 
 def _print_gate(report: GateReport) -> bool:
@@ -35,9 +61,9 @@ def _print_gate(report: GateReport) -> bool:
         ``True`` when the gate passed, ``False`` otherwise.
     """
     if report.ok:
-        print(f"✓ Stage 0 gate passed for customer '{report.customer}', campaign '{report.slug}'.")
+        print(f"✓ Stage 0 gate passed for tenant '{report.tenant}', campaign '{report.slug}'.")
         return True
-    print(f"✗ Stage 0 gate FAILED for customer '{report.customer}', campaign '{report.slug}':")
+    print(f"✗ Stage 0 gate FAILED for tenant '{report.tenant}', campaign '{report.slug}':")
     for issue in report.all_issues:
         print(f"    - {issue}")
     return False
@@ -76,8 +102,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
         The process exit code (0 on pass, 1 on fail).
     """
     settings = load_settings()
-    slug = args.slug or args.name
-    report = check_gate(settings, args.name, slug, store=FilesystemDocumentStore(settings.root))
+    tenant = _resolve_tenant(settings)
+    report = check_gate(settings, tenant, args.slug, store=FilesystemDocumentStore(settings.root))
     return 0 if _print_gate(report) else 1
 
 
@@ -99,7 +125,7 @@ def _cmd_agents(args: argparse.Namespace) -> int:
 
 
 def _cmd_new_campaign(args: argparse.Namespace) -> int:
-    """Run the pipeline (or a single stage) for a customer.
+    """Run the pipeline (or a single stage) for the configured tenant.
 
     Args:
         args: Parsed CLI arguments.
@@ -110,15 +136,16 @@ def _cmd_new_campaign(args: argparse.Namespace) -> int:
     settings = load_settings()
     if args.provider:
         settings.provider = args.provider
-    slug = args.slug or args.name
+    tenant = _resolve_tenant(settings)
+    slug = args.slug
 
-    report = check_gate(settings, args.name, slug, store=FilesystemDocumentStore(settings.root))
+    report = check_gate(settings, tenant, slug, store=FilesystemDocumentStore(settings.root))
     if not _print_gate(report):
         return 1
 
     from marketing_os.graph.runner import run_campaign
 
-    result = run_campaign(settings, args.name, slug, stage=args.stage, on_event=_render_event)
+    result = run_campaign(settings, tenant, slug, stage=args.stage, on_event=_render_event)
     print("\n" + "=" * 60)
     print(f"Campaign '{result.slug}' complete. Stages run: {len(result.stages)}")
     for stage_result in result.stages:
@@ -141,16 +168,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="marketing-os", description="Marketing OS agent graph.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    new_campaign = sub.add_parser("new-campaign", help="Run the pipeline for a customer.")
-    new_campaign.add_argument("name", help="Customer name (folder under customers/).")
-    new_campaign.add_argument("--slug", help="Campaign slug (default: same as customer name).")
+    new_campaign = sub.add_parser("new-campaign", help="Run the pipeline for a campaign.")
+    new_campaign.add_argument("slug", help="Campaign slug.")
     new_campaign.add_argument("--stage", help="Run only this stage (e.g. research).")
     new_campaign.add_argument("--provider", help="Override provider (deepseek|anthropic|openai).")
     new_campaign.set_defaults(func=_cmd_new_campaign)
 
     check = sub.add_parser("check", help="Run only the Stage 0 gate.")
-    check.add_argument("name")
-    check.add_argument("--slug")
+    check.add_argument("slug", help="Campaign slug.")
     check.set_defaults(func=_cmd_check)
 
     agents = sub.add_parser("agents", help="List the specialist agents and their tools.")

@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from conftest import BlockingChatModel, install_scripted_graph
+from conftest import SLUG, TENANT, BlockingChatModel, install_scripted_graph
 from marketing_os.adapters.observability import new_run_id
 from marketing_os.config import Settings
 from marketing_os.errors import RunConflictError
@@ -44,7 +44,7 @@ def _blocking_launch(gate: asyncio.Event, slug: str) -> Any:
             A minimal campaign result.
         """
         await gate.wait()
-        return CampaignResult(customer="acme", slug=slug)
+        return CampaignResult(tenant=TENANT, slug=slug)
 
     return launch
 
@@ -57,7 +57,7 @@ async def _drain(gate: asyncio.Event, registry: RunRegistry) -> None:
         registry: The registry whose tasks should be drained.
     """
     gate.set()
-    for run in registry.active():
+    for run in registry.active(TENANT):
         await run.task
 
 
@@ -69,7 +69,7 @@ async def test_start_rejects_second_run_for_same_slug() -> None:
         run_id=first_id,
         slug="acme",
         stage=None,
-        customer="acme",
+        tenant=TENANT,
         launch=_blocking_launch(gate, "acme"),
     )
 
@@ -78,7 +78,7 @@ async def test_start_rejects_second_run_for_same_slug() -> None:
             run_id=new_run_id(),
             slug="acme",
             stage=None,
-            customer="acme",
+            tenant=TENANT,
             launch=_blocking_launch(gate, "acme"),
         )
 
@@ -96,7 +96,7 @@ async def test_full_and_single_stage_runs_share_the_slug_guard() -> None:
         run_id=new_run_id(),
         slug="acme",
         stage=None,
-        customer="acme",
+        tenant=TENANT,
         launch=_blocking_launch(gate, "acme"),
     )
 
@@ -105,7 +105,7 @@ async def test_full_and_single_stage_runs_share_the_slug_guard() -> None:
             run_id=new_run_id(),
             slug="acme",
             stage="research",
-            customer="acme",
+            tenant=TENANT,
             launch=_blocking_launch(gate, "acme"),
         )
 
@@ -119,18 +119,18 @@ async def test_different_slugs_run_concurrently() -> None:
         run_id=new_run_id(),
         slug="acme",
         stage=None,
-        customer="acme",
+        tenant=TENANT,
         launch=_blocking_launch(gate, "acme"),
     )
     registry.start(
         run_id=new_run_id(),
         slug="beta",
         stage=None,
-        customer="acme",
+        tenant=TENANT,
         launch=_blocking_launch(gate, "beta"),
     )
 
-    assert {run.slug for run in registry.active()} == {"acme", "beta"}
+    assert {run.slug for run in registry.active(TENANT)} == {"acme", "beta"}
     await _drain(gate, registry)
 
 
@@ -142,19 +142,19 @@ async def test_completed_run_frees_its_slug() -> None:
         run_id=new_run_id(),
         slug="acme",
         stage=None,
-        customer="acme",
+        tenant=TENANT,
         launch=_blocking_launch(gate, "acme"),
     )
 
     await run.task
 
     assert registry.active_for_slug("acme") is None
-    assert registry.get(run.run_id) is None
+    assert registry.get(run.run_id, TENANT) is None
     registry.start(
         run_id=new_run_id(),
         slug="acme",
         stage=None,
-        customer="acme",
+        tenant=TENANT,
         launch=_blocking_launch(gate, "acme"),
     )
     await _drain(gate, registry)
@@ -174,23 +174,23 @@ async def test_cancel_aborts_in_flight_call_writes_cancelled_summary_and_deregis
         Returns:
             The structured campaign result (never reached; the run is cancelled).
         """
-        return await arun_campaign(settings, "acme", "acme", stage="research", run_id=run_id)
+        return await arun_campaign(settings, TENANT, SLUG, stage="research", run_id=run_id)
 
-    registry.start(run_id=run_id, slug="acme", stage="research", customer="acme", launch=launch)
+    registry.start(run_id=run_id, slug="acme", stage="research", tenant=TENANT, launch=launch)
     await asyncio.wait_for(model.entered.wait(), timeout=5)
 
-    cancelled = await registry.cancel(run_id)
+    cancelled = await registry.cancel(run_id, TENANT)
 
     assert cancelled is not None
     assert model.was_cancelled is True, "the in-flight LLM call was not aborted"
-    assert registry.get(run_id) is None
+    assert registry.get(run_id, TENANT) is None
     assert registry.active_for_slug("acme") is None
 
-    trace = settings.logs_dir / "acme" / f"{run_id}.jsonl"
+    trace = settings.tenant_logs_dir(TENANT) / SLUG / f"{run_id}.jsonl"
     events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines() if line]
     summaries = [event for event in events if event.get("event") == "run.summary"]
     assert summaries and summaries[-1]["outcome"] == "cancelled"
-    assert not (settings.campaigns_dir / "acme" / "research.md").is_file()
+    assert not (settings.tenant_dir(TENANT) / "campaigns" / SLUG / "research.md").is_file()
 
 
 async def test_build_time_failure_writes_error_summary_and_resolves_failed(
@@ -219,27 +219,25 @@ async def test_build_time_failure_writes_error_summary_and_resolves_failed(
         Returns:
             The structured campaign result (never reached; the build fails).
         """
-        return await arun_campaign(settings, "acme", "acme", stage="research", run_id=run_id)
+        return await arun_campaign(settings, TENANT, SLUG, stage="research", run_id=run_id)
 
-    run = registry.start(
-        run_id=run_id, slug="acme", stage="research", customer="acme", launch=launch
-    )
+    run = registry.start(run_id=run_id, slug="acme", stage="research", tenant=TENANT, launch=launch)
     with pytest.raises(RuntimeError):
         await run.task
 
-    trace = settings.logs_dir / "acme" / f"{run_id}.jsonl"
+    trace = settings.tenant_logs_dir(TENANT) / SLUG / f"{run_id}.jsonl"
     events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines() if line]
     summaries = [event for event in events if event.get("event") == "run.summary"]
     assert summaries and summaries[-1]["outcome"] == "error"
 
-    status = read_run_status(settings, RunRegistry(), run_id)
+    status = read_run_status(settings, RunRegistry(), run_id, TENANT)
     assert status is not None, "build-time failure resolved to 404 instead of a status"
     assert status.status == "failed"
 
 
 async def test_cancel_unknown_run_returns_none() -> None:
     registry = RunRegistry()
-    assert await registry.cancel("does-not-exist") is None
+    assert await registry.cancel("does-not-exist", TENANT) is None
 
 
 async def test_status_is_running_for_a_live_run(settings: Settings) -> None:
@@ -250,11 +248,11 @@ async def test_status_is_running_for_a_live_run(settings: Settings) -> None:
         run_id=run_id,
         slug="acme",
         stage=None,
-        customer="acme",
+        tenant=TENANT,
         launch=_blocking_launch(gate, "acme"),
     )
 
-    status = read_run_status(settings, registry, run_id)
+    status = read_run_status(settings, registry, run_id, TENANT)
 
     assert status is not None
     assert status.status == "running"
@@ -271,7 +269,7 @@ def _write_trace(settings: Settings, slug: str, run_id: str, events: list[dict])
         run_id: The run id (trace filename without extension).
         events: The event dicts to serialise, one per line.
     """
-    path = settings.logs_dir / slug / f"{run_id}.jsonl"
+    path = settings.tenant_logs_dir(TENANT) / slug / f"{run_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
 
@@ -291,7 +289,7 @@ def test_status_maps_terminal_outcome(settings: Settings, outcome: str, expected
             {"event": "run.summary", "outcome": outcome},
         ],
     )
-    status = read_run_status(settings, RunRegistry(), run_id)
+    status = read_run_status(settings, RunRegistry(), run_id, TENANT)
     assert status is not None
     assert status.status == expected
     assert status.slug == "acme"
@@ -300,10 +298,10 @@ def test_status_maps_terminal_outcome(settings: Settings, outcome: str, expected
 def test_status_is_interrupted_when_trace_has_no_summary(settings: Settings) -> None:
     run_id = new_run_id()
     _write_trace(settings, "acme", run_id, [{"event": "stage.start", "stage": "research"}])
-    status = read_run_status(settings, RunRegistry(), run_id)
+    status = read_run_status(settings, RunRegistry(), run_id, TENANT)
     assert status is not None
     assert status.status == "interrupted"
 
 
 def test_status_is_none_for_unknown_run(settings: Settings) -> None:
-    assert read_run_status(settings, RunRegistry(), "no-such-run") is None
+    assert read_run_status(settings, RunRegistry(), "no-such-run", TENANT) is None

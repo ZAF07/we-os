@@ -1,17 +1,45 @@
 """Ports — the interfaces the domain and orchestration depend on.
 
 The model and tool ports are LangChain's own ``BaseChatModel`` and ``BaseTool``,
-so they are not re-declared here. This module defines the two remaining ports
-that benefit from an explicit contract: the QA :class:`Reviewer`, which the
-graph depends on, and the :class:`DocumentStore`, which resolves where tenant
-documents live (ADR-0014). Tests substitute both with hermetic fakes.
+so they are not re-declared here. This module defines the remaining ports that
+benefit from an explicit contract: the QA :class:`Reviewer`, which the graph
+depends on, the :class:`DocumentStore`, which resolves where tenant documents
+live (ADR-0014), and the :class:`TokenVerifier`, which establishes who a caller
+is (ADR-0013). Tests substitute all three with hermetic fakes.
 """
 
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from marketing_os.schemas import ReviewVerdict
+from marketing_os.schemas import ReviewVerdict, VerifiedIdentity
+
+
+@runtime_checkable
+class TokenVerifier(Protocol):
+    """Establishes caller identity by verifying a bearer token's signature.
+
+    The engine verifies tokens itself rather than trusting a frontend to have
+    done so (ADR-0013), so reaching the engine directly cannot bypass tenancy.
+    Implementations are IdP-agnostic: they hold an issuer and a key source, and
+    no vendor SDK appears above this port.
+    """
+
+    def verify(self, token: str) -> VerifiedIdentity:
+        """Verify a bearer token and resolve the identity it carries.
+
+        Args:
+            token: The raw bearer token, without its ``Bearer `` prefix.
+
+        Returns:
+            The verified identity, including the tenant it acts for.
+
+        Raises:
+            UnauthenticatedError: If the token is absent, malformed, expired,
+                wrongly signed, issued for another issuer or audience, or
+                carries no tenant claim.
+        """
+        ...
 
 
 @runtime_checkable

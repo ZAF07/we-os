@@ -14,7 +14,7 @@ import asyncio
 
 import pytest
 
-from conftest import PASS_VERDICT, BlockingChatModel, FakeReviewer
+from conftest import PASS_VERDICT, SLUG, TENANT, BlockingChatModel, FakeReviewer
 from marketing_os.config import Settings
 from marketing_os.graph.graph import build_single_stage_graph
 
@@ -37,7 +37,7 @@ async def test_cancel_aborts_in_flight_llm_call(settings: Settings) -> None:
         settings, "research", model=model, reviewer=FakeReviewer([PASS_VERDICT])
     )
     task = asyncio.create_task(
-        graph.ainvoke({"customer": "acme", "slug": "acme"}, config=_config("cancel"))
+        graph.ainvoke({"tenant": TENANT, "slug": SLUG}, config=_config("cancel"))
     )
 
     await asyncio.wait_for(model.entered.wait(), timeout=5)
@@ -47,4 +47,4 @@ async def test_cancel_aborts_in_flight_llm_call(settings: Settings) -> None:
         await task
 
     assert model.was_cancelled is True, "the in-flight LLM call was not cancelled"
-    assert not (settings.campaigns_dir / "acme" / "research.md").is_file()
+    assert not (settings.tenant_dir(TENANT) / "campaigns" / SLUG / "research.md").is_file()

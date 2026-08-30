@@ -1,40 +1,103 @@
 """Document storage adapters — where tenant documents physically live.
 
 Implements the :class:`~marketing_os.ports.DocumentStore` port (ADR-0014).
-Agents and governance speak markdown and tenant-relative logical paths; the
-adapter decides where a document lives. The filesystem adapter reproduces the
-repository layout exactly — ``dna.md`` resolves to ``customers/<tenant>/dna.md``
-and campaign documents stay under ``campaigns/`` — so local development is
-unchanged. The in-memory adapter backs the fast test suite with nothing on
-disk. A Postgres adapter joins the same contract-conformance suite later.
+Agents and governance speak markdown and tenant-relative logical paths
+(``dna.md``, ``campaigns/<slug>/<name>.md``); the adapter decides where a
+document lives.
+
+Every adapter is **tenant-scoped by construction**: the tenant is part of the
+physical location, not a filter applied afterwards, so there is no unscoped
+query for new code to forget (ADR-0013). The filesystem adapter roots each
+tenant at ``tenants/<tenant>/``; the in-memory adapter keys on the tenant. A
+Postgres adapter joins the same contract-conformance suite later, backstopped
+by row-level security.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from marketing_os.errors import DocumentNotFoundError, ToolError
 
-_DNA_DOCUMENT = "dna.md"
-_CUSTOMERS_DIR = "customers"
+TENANTS_DIR = "tenants"
+
+
+def _tenant_relative_segments(path: str) -> list[str]:
+    """Normalise a logical document path, refusing anything that escapes its tenant.
+
+    Args:
+        path: The tenant-relative logical document path.
+
+    Returns:
+        The clean path segments with ``.`` and ``..`` resolved.
+
+    Raises:
+        ToolError: If the path is absolute, empty, or climbs above the tenant root.
+    """
+    pure = PurePosixPath(path)
+    if pure.is_absolute():
+        raise ToolError(f"Path '{path}' escapes the tenant root.")
+    segments: list[str] = []
+    for part in pure.parts:
+        if part == ".":
+            continue
+        if part == "..":
+            if not segments:
+                raise ToolError(f"Path '{path}' escapes the tenant root.")
+            segments.pop()
+        else:
+            segments.append(part)
+    if not segments:
+        raise ToolError(f"Path '{path}' names no document.")
+    return segments
+
+
+def _tenant_key(tenant: str) -> str:
+    """Validate a tenant id for use as a path segment.
+
+    Args:
+        tenant: The tenant id derived from the verified identity claim.
+
+    Returns:
+        The tenant id unchanged.
+
+    Raises:
+        ToolError: If the tenant id is empty or contains path separators, which
+            would let one tenant's documents resolve into another's directory.
+    """
+    cleaned = tenant.strip()
+    if not cleaned or "/" in cleaned or "\\" in cleaned or cleaned in {".", ".."}:
+        raise ToolError(f"Invalid tenant id: '{tenant}'.")
+    return cleaned
 
 
 class FilesystemDocumentStore:
-    """Serves documents from the repository filesystem in today's exact layout.
+    """Serves each tenant's documents from its own directory under ``tenants/``.
 
-    This is the single-tenant local-development layout: only the Brand DNA is
-    mapped per tenant (``customers/<tenant>/dna.md``); campaign paths resolve
-    to the shared ``campaigns/`` tree regardless of tenant. Real tenant
-    isolation is the Postgres adapter's job (ADR-0014).
+    The tenant is a path segment, so a document can only ever be reached by
+    naming the tenant that owns it: there is no call shape that returns another
+    tenant's document, and a logical path attempting to climb out of its tenant
+    directory is refused rather than resolved.
     """
 
     def __init__(self, root: Path) -> None:
         """Initialise the store.
 
         Args:
-            root: The repository root all documents resolve under.
+            root: The repository root the ``tenants/`` tree lives under.
         """
         self.root = root.resolve()
+
+    def _tenant_root(self, tenant: str) -> Path:
+        """Return the directory holding one tenant's documents.
+
+        Args:
+            tenant: The tenant the documents belong to.
+
+        Returns:
+            The resolved ``tenants/<tenant>/`` directory.
+        """
+        return (self.root / TENANTS_DIR / _tenant_key(tenant)).resolve()
 
     def _resolve(self, tenant: str, path: str) -> Path:
         """Map a tenant-relative document path to its filesystem location.
@@ -47,14 +110,12 @@ class FilesystemDocumentStore:
             The resolved absolute path.
 
         Raises:
-            ToolError: If the path escapes the repository root.
+            ToolError: If the path escapes the tenant's own directory.
         """
-        if path == _DNA_DOCUMENT:
-            resolved = (self.root / _CUSTOMERS_DIR / tenant / _DNA_DOCUMENT).resolve()
-        else:
-            resolved = (self.root / path).resolve()
-        if not resolved.is_relative_to(self.root):
-            raise ToolError(f"Path '{path}' escapes the repository root.")
+        tenant_root = self._tenant_root(tenant)
+        resolved = tenant_root.joinpath(*_tenant_relative_segments(path)).resolve()
+        if not resolved.is_relative_to(tenant_root):
+            raise ToolError(f"Path '{path}' escapes the tenant root.")
         return resolved
 
     def read(self, tenant: str, path: str) -> str:
@@ -132,7 +193,12 @@ class FilesystemDocumentStore:
 
 
 class InMemoryDocumentStore:
-    """Holds documents in a per-tenant dict; nothing touches the filesystem."""
+    """Holds documents keyed by ``(tenant, path)``; nothing touches the filesystem.
+
+    Keying on the tenant gives the same guarantee as the filesystem adapter's
+    per-tenant directory: a lookup that does not name the owning tenant simply
+    misses, so the fast test suite exercises the real scoping rule.
+    """
 
     def __init__(self) -> None:
         """Initialise the empty store."""

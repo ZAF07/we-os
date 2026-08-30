@@ -15,11 +15,52 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
 
 from marketing_os.config import Settings
-from marketing_os.schemas import Discrepancy, ReviewVerdict
+from marketing_os.schemas import Discrepancy, ReviewVerdict, VerifiedIdentity
 
 Handler = Callable[[list[BaseMessage], int], AIMessage]
 
+"""A tenant id and a campaign slug are distinct things, so the fixtures use
+different strings for them — sharing one string would hide code that confuses
+the two."""
+
+TENANT = "org_acme"
+OTHER_TENANT = "org_rival"
+SLUG = "acme"
+
 PLACEHOLDER_DNA = "# Brand DNA — Acme\n\n## Business\n- **Business name:** <name>\n"
+
+
+def identity_for(tenant: str = TENANT) -> VerifiedIdentity:
+    """Build a verified identity for a tenant, as the auth dependency would.
+
+    Args:
+        tenant: The tenant the caller acts for.
+
+    Returns:
+        A :class:`VerifiedIdentity` suitable for overriding ``get_identity``.
+    """
+    return VerifiedIdentity(
+        user_id=f"usr_{tenant}",
+        tenant_id=tenant,
+        email=f"owner@{tenant}.example",
+        business_name="Acme Climbing Gym",
+    )
+
+
+def authenticate(app: Any, tenant: str = TENANT) -> None:
+    """Override the API's auth dependency to act as a verified tenant.
+
+    Mirrors what a real bearer token would produce, so no test contacts a live
+    IdP while still exercising every tenant-scoping path behind the dependency.
+
+    Args:
+        app: The FastAPI application to override.
+        tenant: The tenant the overridden identity acts for.
+    """
+    from marketing_os.entrypoints.api.app import get_identity
+
+    app.dependency_overrides[get_identity] = lambda: identity_for(tenant)
+
 
 PASS_VERDICT = ReviewVerdict(passed=True, summary="ok")
 FAIL_VERDICT = ReviewVerdict(
@@ -333,7 +374,10 @@ def _write(path: Path, text: str) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """Create a minimal Marketing OS repo with valid DNA and goal for 'acme'.
+    """Create a minimal Marketing OS repo with a valid DNA and goal for one tenant.
+
+    Tenant-owned documents live under ``tenants/<tenant>/``; everything else in
+    the tree is code-shipped material the read sandbox serves.
 
     Args:
         tmp_path: The pytest temporary directory.
@@ -345,8 +389,8 @@ def repo(tmp_path: Path) -> Path:
     _write(tmp_path / ".claude" / "rules" / "operating-principles.md", _RULES_MD)
     _write(tmp_path / "templates" / "brand-dna.md", _DNA_TEMPLATE)
     _write(tmp_path / "templates" / "campaign-goal.md", _GOAL_TEMPLATE)
-    _write(tmp_path / "customers" / "acme" / "dna.md", _DNA_FILLED)
-    _write(tmp_path / "campaigns" / "acme" / "goal.md", _GOAL_FILLED)
+    _write(tmp_path / "tenants" / TENANT / "dna.md", _DNA_FILLED)
+    _write(tmp_path / "tenants" / TENANT / "campaigns" / SLUG / "goal.md", _GOAL_FILLED)
     _write(tmp_path / "guardrails" / "shared.md", "- DNA-grounded.\n- Explains why.\n")
     _write(tmp_path / "guardrails" / "research.md", "- Covers customer/competitor/market.\n")
     return tmp_path

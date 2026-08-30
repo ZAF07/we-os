@@ -195,12 +195,16 @@ def _path_anchor(slug: str) -> str:
     )
 
 
-def _stage_task(slug: str, customer: str, stage: Stage) -> str:
-    """Format the task brief for a stage with its repo paths filled in.
+def _stage_task(slug: str, stage: Stage) -> str:
+    """Format the task brief for a stage with its document paths filled in.
+
+    The paths are tenant-relative logical document paths, not repository paths:
+    the Brand DNA is simply ``dna.md``, because a tenant has exactly one, and the
+    document store resolves it for whichever tenant the run belongs to. The
+    tenant therefore never appears in a path the model can see or alter.
 
     Args:
         slug: The campaign slug.
-        customer: The customer name.
         stage: The pipeline stage.
 
     Returns:
@@ -208,7 +212,7 @@ def _stage_task(slug: str, customer: str, stage: Stage) -> str:
     """
     return stage.task.format(
         goal_path=f"campaigns/{slug}/goal.md",
-        dna_path=f"customers/{customer}/dna.md",
+        dna_path="dna.md",
         prereq_path=(f"campaigns/{slug}/{stage.prerequisite}" if stage.prerequisite else ""),
         deliverable_path=stage_document(slug, stage),
     )
@@ -229,24 +233,24 @@ def make_gate_node(settings: Settings, store: DocumentStore) -> CampaignNode:
         """Run the DNA and goal gate, halting the run if it fails.
 
         Args:
-            state: The campaign state carrying ``customer`` and ``slug``.
+            state: The campaign state carrying ``tenant`` and ``slug``.
 
         Returns:
             A state update: the loaded DNA and governance on success, or an error
             and halt flag on failure.
         """
-        customer = state["customer"]
+        tenant = state["tenant"]
         slug = state["slug"]
-        _emit("gate.start", customer=customer, slug=slug)
-        report = check_gate(settings, customer, slug, store=store)
+        _emit("gate.start", tenant=tenant, slug=slug)
+        report = check_gate(settings, tenant, slug, store=store)
         if not report.ok:
-            _emit("gate.failed", customer=customer, slug=slug, issues=report.all_issues)
+            _emit("gate.failed", tenant=tenant, slug=slug, issues=report.all_issues)
             return {
                 "error": {"type": "gate", "issues": list(report.all_issues)},
                 "halt": True,
             }
-        dna_text = store.read(customer, "dna.md")
-        _emit("gate.passed", customer=customer, slug=slug)
+        dna_text = store.read(tenant, "dna.md")
+        _emit("gate.passed", tenant=tenant, slug=slug)
         return {
             "dna_text": dna_text,
             "governance": load_governance(settings),
@@ -273,15 +277,15 @@ def make_enter_node(stage: Stage, store: DocumentStore) -> CampaignNode:
         """Validate the prerequisite and seed the stage's task message.
 
         Args:
-            state: The campaign state carrying the customer, slug, and DNA.
+            state: The campaign state carrying the tenant, slug, and DNA.
 
         Returns:
             A state update seeding a fresh specialist conversation, or an error
             and halt flag if the prerequisite deliverable is missing.
         """
         slug = state["slug"]
-        customer = state["customer"]
-        if not prerequisite_met(store, customer, slug, stage):
+        tenant = state["tenant"]
+        if not prerequisite_met(store, tenant, slug, stage):
             _emit("stage.blocked", slug=slug, stage=stage.key, prerequisite=stage.prerequisite)
             return {
                 "error": {
@@ -293,7 +297,7 @@ def make_enter_node(stage: Stage, store: DocumentStore) -> CampaignNode:
                 "route": "end",
             }
         _emit("stage.start", slug=slug, stage=stage.key, agent=stage.agent)
-        task = _stage_task(slug, customer, stage)
+        task = _stage_task(slug, stage)
         task_body = f"{_path_anchor(slug)}\n\n# Your task\n\n{task}"
         return {
             "messages": _fresh_conversation(state["dna_text"], task_body),
@@ -326,7 +330,7 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> A
         The agent's tool-use loop is awaited (``ainvoke``) so every LLM call runs
         on the event loop; cancelling the run's task aborts the in-flight LLM
         request inside the loop rather than only between stages (see ADR-0009).
-        The run ``slug`` and ``customer`` are passed into the agent state so the
+        The run ``slug`` and ``tenant`` are passed into the agent state so the
         ``write_file`` tool can scope writes to ``campaigns/<slug>/`` under the
         right tenant at call time.
 
@@ -339,7 +343,7 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> A
         inbound = list(state["messages"])
         with get_usage_metadata_callback() as callback:
             result = await agent.ainvoke(
-                {"messages": inbound, "slug": state["slug"], "customer": state["customer"]},
+                {"messages": inbound, "slug": state["slug"], "tenant": state["tenant"]},
                 config={
                     "recursion_limit": recursion_limit,
                     "run_name": f"specialist:{stage.key}",
@@ -381,12 +385,12 @@ def make_review_node(
             outcome, a revision message, a recorded stage result, or an error.
         """
         slug = state["slug"]
-        customer = state["customer"]
+        tenant = state["tenant"]
         rel = stage_document(slug, stage)
-        if not store.exists(customer, rel):
+        if not store.exists(tenant, rel):
             return _handle_missing_deliverable(state, stage, rel, budget)
 
-        text = store.read(customer, rel)
+        text = store.read(tenant, rel)
         with get_usage_metadata_callback() as callback:
             verdict = await reviewer.areview(stage.key, text)
         qa_iterations = state.get("qa_iterations", 0)
@@ -502,7 +506,7 @@ def _handle_missing_deliverable(
             "route": "fail",
         }
     _emit("stage.save_retry", slug=slug, stage=stage.key, attempt=save_retries + 1)
-    task = _stage_task(slug, state["customer"], stage)
+    task = _stage_task(slug, stage)
     save_body = (
         f"{_path_anchor(slug)}\n\n# Your task\n\n{task}\n\n# Important\n\nYou did NOT save "
         f"your deliverable. You MUST call the write_file tool to save it to {rel}, then stop."

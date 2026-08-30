@@ -14,20 +14,23 @@ class MarketingOSError(Exception):
     """Base class for every error raised by the harness.
 
     Each subclass carries its own presentation — the HTTP status an entrypoint
-    maps it to and the process exit code — so callers dispatch on the type rather
-    than re-deciding the mapping at every seam.
+    maps it to, the ``type`` discriminator the frozen API contract names it by,
+    and the process exit code — so callers dispatch on the type rather than
+    re-deciding the mapping at every seam.
 
     Attributes:
         detail: An optional structured payload (stage, discrepancies, …) the API
             returns to the client; populated by the runner for run failures.
         run_log: An optional repo-relative path to the run's JSONL trace.
         http_status: The HTTP status code an API entrypoint returns for this error.
+        error_type: The contract's ``Error.type`` discriminator for this error.
         exit_code: The process exit code a CLI entrypoint returns for this error.
     """
 
     detail: dict[str, Any] | None = None
     run_log: str | None = None
     http_status: int = 500
+    error_type: str = "internal"
     exit_code: int = 1
 
 
@@ -35,6 +38,20 @@ class ConfigError(MarketingOSError):
     """Settings are missing or invalid (e.g. no API key for the active provider)."""
 
     http_status = 500
+    error_type = "internal"
+
+
+class UnauthenticatedError(MarketingOSError):
+    """The request carried no identity, or one that did not verify.
+
+    Raised by the token verifier for every failure mode — absent, malformed,
+    expired, wrongly signed, wrong issuer or audience, or carrying no tenant
+    claim. The reasons are deliberately not distinguished to the caller, so a
+    probe learns nothing about why a token was refused.
+    """
+
+    http_status = 401
+    error_type = "unauthenticated"
 
 
 class GateError(MarketingOSError):
@@ -45,6 +62,7 @@ class GateError(MarketingOSError):
     """
 
     http_status = 409
+    error_type = "gate_failed"
 
     def __init__(self, message: str, missing: list[str] | None = None) -> None:
         """Initialise the error.
@@ -55,7 +73,12 @@ class GateError(MarketingOSError):
         """
         super().__init__(message)
         self.missing: list[str] = missing or []
-        self.detail = {"type": "gate", "message": message, "issues": self.missing}
+        self.detail = {
+            "type": self.error_type,
+            "status": self.http_status,
+            "message": message,
+            "missing_fields": self.missing,
+        }
 
 
 class RunConflictError(MarketingOSError):
@@ -67,6 +90,7 @@ class RunConflictError(MarketingOSError):
     """
 
     http_status = 409
+    error_type = "run_conflict"
 
     def __init__(self, slug: str, active_run_id: str) -> None:
         """Initialise the error.
@@ -80,7 +104,8 @@ class RunConflictError(MarketingOSError):
         self.slug = slug
         self.active_run_id = active_run_id
         self.detail = {
-            "type": "slug_busy",
+            "type": self.error_type,
+            "status": self.http_status,
             "message": message,
             "active_run_id": active_run_id,
         }
@@ -90,6 +115,7 @@ class PipelineError(MarketingOSError):
     """A stage was started out of order or its prerequisite deliverable is absent."""
 
     http_status = 409
+    error_type = "validation"
 
 
 class GuardrailError(MarketingOSError):
@@ -99,6 +125,7 @@ class GuardrailError(MarketingOSError):
     """
 
     http_status = 422
+    error_type = "validation"
 
     def __init__(self, message: str, discrepancies: list | None = None) -> None:
         """Initialise the error.
@@ -112,9 +139,14 @@ class GuardrailError(MarketingOSError):
 
 
 class DocumentNotFoundError(MarketingOSError):
-    """A requested document does not exist in the document store for the tenant."""
+    """A requested document does not exist in the document store for the tenant.
+
+    A document belonging to another tenant raises this too: cross-tenant access
+    is indistinguishable from absence, so nothing leaks across the boundary.
+    """
 
     http_status = 404
+    error_type = "not_found"
 
 
 class ToolError(MarketingOSError):
@@ -125,12 +157,14 @@ class ToolError(MarketingOSError):
     """
 
     http_status = 502
+    error_type = "internal"
 
 
 class ProviderError(MarketingOSError):
     """An LLM provider adapter failed in a way the SDK's own retries did not cover."""
 
     http_status = 502
+    error_type = "internal"
 
 
 def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> MarketingOSError:
@@ -138,9 +172,11 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
 
     The graph records why a run halted as a plain, JSON-serialisable dict on
     ``state["error"]`` (its ``type`` is one of ``gate`` / ``pipeline`` / ``save`` /
-    ``guardrail``). This is the one place that maps those strings to the typed
-    exception hierarchy, building the human message and the structured ``detail``
-    payload once so no entrypoint re-encodes the taxonomy.
+    ``guardrail``). Those are the graph's internal discriminators; the ``type``
+    on the returned payload is the exception's ``error_type``, which is the name
+    the frozen API contract uses. This is the one place that maps between them,
+    building the human message and the structured ``detail`` payload once so no
+    entrypoint re-encodes the taxonomy.
 
     Args:
         error: The ``state["error"]`` dict describing the halt.
@@ -180,7 +216,15 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
         message = f"Run halted: {error}"
         exc = PipelineError(message)
         detail = {"message": message}
-    detail.update({"type": kind, "stage": stage, "run_log": run_log})
+    detail.update(
+        {
+            "type": exc.error_type,
+            "status": exc.http_status,
+            "halt_reason": kind,
+            "stage": stage,
+            "run_log": run_log,
+        }
+    )
     exc.detail = detail
     exc.run_log = run_log
     return exc

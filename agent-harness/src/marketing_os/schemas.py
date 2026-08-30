@@ -11,6 +11,27 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class VerifiedIdentity(BaseModel):
+    """Who the caller is, as established by verifying their token.
+
+    Only ever constructed by a :class:`~marketing_os.ports.TokenVerifier` from a
+    signature-checked token — never from a caller-supplied value (ADR-0013). The
+    tenant is the unit of ownership: one tenant is exactly one business, so
+    ``tenant_id`` scopes every document the request may touch.
+
+    Attributes:
+        user_id: The IdP's stable subject identifier for the signed-in person.
+        tenant_id: The business the caller acts for, derived from the verified claim.
+        email: The signed-in person's email address, when the token carries one.
+        business_name: The tenant's display name, when the token carries one.
+    """
+
+    user_id: str
+    tenant_id: str
+    email: str | None = None
+    business_name: str | None = None
+
+
 class Discrepancy(BaseModel):
     """One issue the QA reviewer found between a deliverable and its rubric.
 
@@ -103,14 +124,14 @@ class CampaignResult(BaseModel):
     """The outcome of running a campaign through the pipeline.
 
     Attributes:
-        customer: The customer name the campaign was run for.
+        tenant: The tenant name the campaign was run for.
         slug: The campaign slug.
         stages: The per-stage results in pipeline order.
         usage: The aggregated token usage across every model call.
         run_log: The repo-relative path of the run's JSONL trace, if written.
     """
 
-    customer: str
+    tenant: str
     slug: str
     stages: list[StageResult] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)

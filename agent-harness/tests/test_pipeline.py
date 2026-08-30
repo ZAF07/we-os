@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from conftest import SLUG, TENANT
 from marketing_os.adapters.documents import FilesystemDocumentStore
-from marketing_os.governance import PIPELINE, deliverable_path, prerequisite_met
+from marketing_os.governance import PIPELINE, prerequisite_met
 from marketing_os.governance.pipeline import DIRECTOR, PIPELINE_BY_KEY, stage_document
 
 
@@ -46,33 +47,27 @@ def test_creative_brief_task_briefs_against_the_plans_placements():
 def test_first_stage_has_no_prerequisite(settings):
     store = FilesystemDocumentStore(settings.root)
     research = PIPELINE_BY_KEY["research"]
-    assert prerequisite_met(store, "acme", "acme", research) is True
+    assert prerequisite_met(store, TENANT, SLUG, research) is True
 
 
 def test_stage_blocked_until_prerequisite_exists(settings):
     store = FilesystemDocumentStore(settings.root)
     brand = PIPELINE_BY_KEY["brand-strategy"]
     # research.md does not exist yet -> blocked
-    assert prerequisite_met(store, "acme", "acme", brand) is False
+    assert prerequisite_met(store, TENANT, SLUG, brand) is False
     # create the prerequisite deliverable -> unblocked
-    store.write("acme", "campaigns/acme/research.md", "findings")
-    assert prerequisite_met(store, "acme", "acme", brand) is True
+    store.write(TENANT, f"campaigns/{SLUG}/research.md", "findings")
+    assert prerequisite_met(store, TENANT, SLUG, brand) is True
 
 
 def test_creative_brief_blocked_until_performance_plan_exists(settings):
     store = FilesystemDocumentStore(settings.root)
     brief = PIPELINE_BY_KEY["creative-brief"]
-    assert prerequisite_met(store, "acme", "acme", brief) is False
-    store.write("acme", "campaigns/acme/performance-plan.md", "plan")
-    assert prerequisite_met(store, "acme", "acme", brief) is True
-
-
-def test_deliverable_path(settings):
-    research = PIPELINE_BY_KEY["research"]
-    p = deliverable_path(settings, "acme", research)
-    assert p == settings.campaigns_dir / "acme" / "research.md"
+    assert prerequisite_met(store, TENANT, SLUG, brief) is False
+    store.write(TENANT, f"campaigns/{SLUG}/performance-plan.md", "plan")
+    assert prerequisite_met(store, TENANT, SLUG, brief) is True
 
 
 def test_stage_document_is_the_tenant_relative_path():
     research = PIPELINE_BY_KEY["research"]
-    assert stage_document("acme", research) == "campaigns/acme/research.md"
+    assert stage_document(SLUG, research) == "campaigns/acme/research.md"
