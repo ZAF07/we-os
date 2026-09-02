@@ -45,7 +45,7 @@ The identifier for a single **campaign** — the durable thing. It names the cam
 _Avoid_: id, name, key, thread.
 
 **Run**:
-A single **execution attempt** of a campaign's pipeline, identified by a unique `run_id`. A campaign may accumulate many runs over its life — one per attempt — but **at most one run per campaign may be active at a time**. That guard is a **claim** on `(tenant, slug)` held in the Run Store, so it holds across every worker rather than within one process; a second concurrent run of the same campaign is rejected. Each run has its own Run Trace. The slug names the campaign; the run_id names one attempt to advance it. A run's **status** is one of: **running** (executing now), **completed** (finished ok), **failed** (halted on an error), **cancelled** (stopped on operator request), or **interrupted** (the worker executing it died — a crash or a deploy — and a later worker reclaimed it). See [ADR-0010](docs/adr/0010-background-job-run-model.md) for the background-job model and [ADR-0009](docs/adr/0009-async-cancellable-pipeline-execution.md) for the cancellable async foundation it rests on.
+A single **execution attempt** of a campaign's pipeline, identified by a unique `run_id`. A campaign may accumulate many runs over its life — one per attempt — but **one campaign is run by one person at a time**. That guard is a **claim** on `(tenant, slug)` held in the Run Store and stamped with the user who took it. A second run is refused whether it comes from the same person in another tab or from a colleague at the same business: both would write the same deliverables. Only the person holding the claim may cancel the run; to a colleague it reads as absent, exactly as another business's run does. Each run has its own Run Trace. The slug names the campaign; the run_id names one attempt to advance it. A run's **status** is one of: **running** (executing now), **completed** (finished ok), **failed** (halted on an error), **cancelled** (stopped on operator request), or **interrupted** (the process running it died — a crash or a deploy — and the next start resolved it). See [ADR-0010](docs/adr/0010-background-job-run-model.md) for the background-job model and [ADR-0009](docs/adr/0009-async-cancellable-pipeline-execution.md) for the cancellable async foundation it rests on.
 _Avoid_: job (use for the background execution mechanism only), execution, session, thread.
 
 **Abandoning a Run**:
@@ -57,17 +57,15 @@ The key LangGraph stores a run's resumable state under. It names one tenant's ca
 _Avoid_: thread id (as a bare term), session, conversation.
 
 **Run Store**:
-Where each run's claim and lifecycle status live. Shared and durable in production (Postgres), in-process for the fast tests and single-worker local runs. A worker **heartbeats** the runs it is executing; a starting worker **reclaims** any run whose heartbeat has gone stale, resolving it as `interrupted` rather than leaving it `running` forever. The heartbeat is what distinguishes a run genuinely live on a peer from one a dead process abandoned, which is what makes reclaiming safe with several workers.
+Where each run's claim, its owner, and its lifecycle status live. Durable (Postgres) in production, in-process for the fast tests and local runs. On startup the service **reclaims** every run still marked running, resolving it as `interrupted` — safe precisely because there is only ever one Worker.
 _Avoid_: queue, scheduler, job table.
 
 **Worker**:
-One running copy of the engine. More than one may run at once, and a request from a business may reach any of them. So for every kind of state the system holds, one question decides what the product can do: **is it reachable from every worker, or only from the one that produced it?** Shared state can be asked about from anywhere; worker-local state can only be asked about where it was made.
-_Avoid_: instance, node, server, replica — none of them make the shared-or-local question obvious.
+One running copy of the engine. **we-OS runs exactly one.** That is an assumption the design leans on, not a deployment preference: on startup the service resolves every run still marked running as `interrupted`, because in a single-process world nothing else could be executing it. A second copy would resolve the first's live runs on boot. Running more than one is therefore a change to make deliberately, not a knob to turn (see [ADR-0025](docs/adr/0025-one-campaign-one-person-and-a-single-worker.md)).
+_Avoid_: instance, node, server, replica.
 
 **Run Trace**:
-The ordered record of what a Run did — every event its stages emitted, ending in a terminal summary. It answers two different questions for a business: *what is happening now* (the live progress feed during a run) and *what happened* (the history afterwards). A Run Trace is a Tenant-Owned Document, so a run id is unfindable outside the tenant that owns it.
-
-A run's **status** is shared across Workers; its Run Trace is currently **worker-local**. The consequence is domain-visible, not merely technical: with several Workers a business can always find out *whether* its run is still going, but can only watch it happen if the request lands on the Worker that ran it (see [ADR-0024](docs/adr/0024-platform-owned-tenant-ids-and-explicit-run-abandonment.md)).
+The ordered record of what a Run did — every event its stages emitted, ending in a terminal summary. It answers two questions for a business: *what is happening now* (the live feed during a run) and *what happened* (the history afterwards). A Run Trace is a file on the one Worker's disk, which is all it needs to be while there is one Worker. It is a Tenant-Owned Document, so a run id is unfindable outside the tenant that owns it.
 _Avoid_: log, audit trail, event log, history.
 
 **Marketing Director**:
@@ -200,9 +198,9 @@ Setting `MARKETING_OS_POSTGRES_DSN` moves four things at once, because they are 
 
 - `tenants(tenant_id, name, external_auth_id)` — the Tenant Directory.
 - `documents(tenant_id, path, content)` — Tenant-Owned Documents, with **row-level security** scoping every query to the tenant set on its transaction, so a forgotten filter returns nothing rather than everything.
-- `runs(run_id, tenant_id, slug, status, worker_id, heartbeat_at)` — the Run Store, whose partial unique index on `(tenant_id, slug) WHERE status = 'running'` is what makes the one-active-run-per-campaign guard hold across workers.
+- `runs(run_id, tenant_id, user_id, slug, status)` — the Run Store, whose partial unique index on `(tenant_id, slug) WHERE status = 'running'` is what makes the one-campaign-one-person guard a constraint rather than a check.
 - The LangGraph checkpointer's own tables, which make a run resumable across a process boundary — the hard prerequisite for Approval Gates.
 
-Run **traces** stay node-local JSONL files, so with several workers a run's status is answerable anywhere but its event stream is not (see [ADR-0024](docs/adr/0024-platform-owned-tenant-ids-and-explicit-run-abandonment.md)).
+Run **traces** stay local files under `logs/`. The service is a single process, so the copy serving a stream is always the one that wrote the file (see [ADR-0025](docs/adr/0025-one-campaign-one-person-and-a-single-worker.md)).
 
 The service connects as an ordinary (non-superuser) role, so RLS constrains it and it cannot alter its own schema; `marketing-os init-db` provisions the database as a separate operator step. Guardrails, the Knowledge Library and the Questionnaire join Postgres in later slices.

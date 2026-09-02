@@ -22,7 +22,6 @@ Run with:  uvicorn marketing_os.entrypoints.api.app:app --reload
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -73,26 +72,14 @@ _LOGGER = get_logger("marketing_os.api")
 load_env()
 
 
-async def _heartbeat_runs(registry: RunRegistry, interval: float) -> None:
-    """Report this worker's live runs to the shared store, forever.
-
-    Args:
-        registry: The registry whose local runs are reported.
-        interval: Seconds between reports.
-    """
-    while True:
-        await asyncio.sleep(interval)
-        registry.heartbeat()
-
-
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Open the service's stores, resolve runs a dead worker left, then serve.
+    """Open the service's stores, resolve runs a crash left behind, then serve.
 
-    Reclaiming on startup is what turns a crash or a deploy from "runs vanish
-    and stay ``running`` forever" into "runs are resolved as ``interrupted`` and
-    their campaigns start clean". Runs still being heartbeated by a live peer
-    are untouched, so this is safe with several workers.
+    Reclaiming on startup turns a crash or a deploy from "runs vanish and stay
+    ``running`` forever" into "runs are resolved as ``interrupted`` and their
+    campaigns start clean". It is an unconditional sweep, which is only correct
+    because the service is a single process (ADR-0025).
 
     Args:
         _: The FastAPI application (unused).
@@ -109,13 +96,13 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
         await backend.open()
 
     registry = get_registry()
-    _LOGGER.info("worker.started worker_id=%s postgres=%s", registry.worker_id, backend is not None)
-    await registry.reclaim_abandoned()
-    heartbeat = asyncio.create_task(_heartbeat_runs(registry, settings.run_heartbeat_seconds))
+    _LOGGER.info("service.started postgres=%s", backend is not None)
+    reclaimed = await registry.reclaim_abandoned()
+    if reclaimed:
+        _LOGGER.info("service.reclaimed runs=%d", len(reclaimed))
     try:
         yield
     finally:
-        heartbeat.cancel()
         if backend is not None:
             await backend.close()
         reset_providers()
@@ -342,18 +329,12 @@ def get_registry() -> RunRegistry:
 
     One instance per process (tests reset it with ``get_registry.cache_clear()``,
     mirroring :func:`get_settings`). The claims and statuses it reads and writes
-    live in the run store, which is shared when Postgres is configured, so the
-    one-active-run-per-campaign guard spans workers.
+    live in the run store, so both survive a restart.
 
     Returns:
-        The worker's :class:`RunRegistry`.
+        The process's :class:`RunRegistry`.
     """
-    settings = get_settings()
-    return RunRegistry(
-        get_run_store(),
-        checkpointer=get_checkpointer(),
-        stale_after=settings.run_stale_after_seconds,
-    )
+    return RunRegistry(get_run_store(), checkpointer=get_checkpointer())
 
 
 _BACKED_PROVIDERS = (
@@ -589,6 +570,7 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
             slug=slug,
             stage=body.stage,
             tenant=tenant,
+            user_id=identity.user_id,
             launch=launch,
         )
     except RunConflictError as exc:
@@ -649,9 +631,13 @@ async def cancel_run(run_id: str, identity: Identity) -> dict[str, object]:
     campaign starts at stage 1. Without that, a durable checkpointer would
     resume the work the owner just cancelled (ADR-0014).
 
+    Only the person who started a run may cancel it. A colleague's run is
+    reported as absent rather than refused, so the two cases stay
+    indistinguishable exactly as another tenant's does.
+
     Args:
         run_id: The id of the run to cancel.
-        identity: The verified identity whose tenant owns the run.
+        identity: The verified identity that must own the run.
 
     Returns:
         The cancelled run's id, slug, and ``cancelled`` status.
@@ -659,7 +645,7 @@ async def cancel_run(run_id: str, identity: Identity) -> dict[str, object]:
     Raises:
         HTTPException: 404 if the caller's tenant has no live run with that id.
     """
-    cancelled = await get_registry().cancel(run_id, identity.tenant_id)
+    cancelled = await get_registry().cancel(run_id, identity.tenant_id, identity.user_id)
     if cancelled is None:
         raise _http_error(DocumentNotFoundError(f"No active run '{run_id}'"))
     return {"run_id": run_id, "slug": cancelled.slug, "status": CANCELLED}
@@ -669,6 +655,10 @@ async def cancel_run(run_id: str, identity: Identity) -> dict[str, object]:
 def list_runs(slug: str, identity: Identity) -> dict[str, object]:
     """List the run-log traces recorded for a campaign.
 
+    The list comes from the run store, so it covers runs executed by every
+    worker rather than only those whose trace files happen to be on this one.
+    Traces written before the store existed are appended from disk.
+
     Args:
         slug: The campaign slug.
         identity: The verified identity whose tenant owns the campaign.
@@ -677,7 +667,10 @@ def list_runs(slug: str, identity: Identity) -> dict[str, object]:
         The campaign slug and the available run ids (newest first).
     """
     settings = get_settings()
-    runs = list_run_ids(settings.tenant_logs_dir(identity.tenant_id), slug)
+    tenant = identity.tenant_id
+    recorded = [record.run_id for record in get_registry().for_campaign(tenant, slug)]
+    on_disk = list_run_ids(settings.tenant_logs_dir(tenant), slug)
+    runs = recorded + [run_id for run_id in on_disk if run_id not in recorded]
     return {"slug": slug, "runs": runs}
 
 

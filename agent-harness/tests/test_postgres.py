@@ -8,9 +8,10 @@ where the expensive bugs live:
 - **Row-level security.** Tenant isolation is the highest-severity bug class in
   this work, and a dict cannot demonstrate that a query which *forgot* its
   tenant predicate still returns nothing across tenants.
-- **The run claim as a database constraint.** "One active run per campaign" only
-  holds across workers if Postgres refuses the second claim; a check-then-insert
-  in Python would pass a single-process test and lose the race in production.
+- **The run claim as a database constraint.** "One campaign, one person at a
+  time" only holds if Postgres refuses the second claim; a check-then-insert in
+  Python would pass a single-threaded test and lose the race under two
+  simultaneous requests.
 - **A checkpointer that survives the process.** The whole reason Postgres is a
   hard prerequisite for approval gates.
 
@@ -130,52 +131,52 @@ def test_resolving_the_same_organization_twice_reuses_its_tenant(postgres_pool: 
 # --- The shared run claim -------------------------------------------------------
 
 
-def _record(run_id: str, *, tenant: str = TENANT, slug: str = SLUG, worker: str) -> RunRecord:
+def _record(
+    run_id: str, *, tenant: str = TENANT, slug: str = SLUG, user: str = "usr_a"
+) -> RunRecord:
     """Build a running run record.
 
     Args:
         run_id: The run's id.
         tenant: The tenant the run belongs to.
         slug: The campaign the run claims.
-        worker: The worker claiming it.
+        user: The person claiming it.
 
     Returns:
         The record to claim.
     """
-    now = time.time()
     return RunRecord(
         run_id=run_id,
         tenant_id=tenant,
         slug=slug,
+        user_id=user,
         stage=None,
         status="running",
-        worker_id=worker,
-        started_at=now,
-        heartbeat_at=now,
+        started_at=time.time(),
     )
 
 
-def test_a_second_worker_is_refused_the_same_campaign(postgres_pool: Any) -> None:
-    """Two stores, two workers, one database — the constraint is what holds."""
-    first_worker = PostgresRunStore(postgres_pool)
-    second_worker = PostgresRunStore(postgres_pool)
+def test_a_colleague_is_refused_the_same_campaign(postgres_pool: Any) -> None:
+    """The database constraint is what holds, not a check in Python."""
+    store = PostgresRunStore(postgres_pool)
     held = new_run_id()
-    first_worker.claim(_record(held, worker="wrk_a"))
+    store.claim(_record(held, user="usr_a"))
 
     with pytest.raises(RunConflictError) as refused:
-        second_worker.claim(_record(new_run_id(), worker="wrk_b"))
+        store.claim(_record(new_run_id(), user="usr_b"))
 
     assert refused.value.active_run_id == held
+    assert refused.value.active_user_id == "usr_a"
 
 
-def test_finishing_a_run_frees_its_campaign_for_another_worker(postgres_pool: Any) -> None:
+def test_finishing_a_run_frees_its_campaign_for_a_colleague(postgres_pool: Any) -> None:
     store = PostgresRunStore(postgres_pool)
     first = new_run_id()
-    store.claim(_record(first, worker="wrk_a"))
+    store.claim(_record(first, user="usr_a"))
 
     store.finish(first, "completed")
     second = new_run_id()
-    store.claim(_record(second, worker="wrk_b"))
+    store.claim(_record(second, user="usr_b"))
 
     assert store.active_for_campaign(TENANT, SLUG) is not None
     assert store.active_for_campaign(TENANT, SLUG).run_id == second
@@ -187,8 +188,8 @@ def test_two_tenants_may_hold_the_same_slug_at_once(postgres_pool: Any) -> None:
     mine = new_run_id()
     theirs = new_run_id()
 
-    store.claim(_record(mine, worker="wrk_a"))
-    store.claim(_record(theirs, tenant=OTHER_TENANT, worker="wrk_a"))
+    store.claim(_record(mine))
+    store.claim(_record(theirs, tenant=OTHER_TENANT))
 
     assert [record.run_id for record in store.active(TENANT)] == [mine]
     assert [record.run_id for record in store.active(OTHER_TENANT)] == [theirs]
@@ -197,41 +198,40 @@ def test_two_tenants_may_hold_the_same_slug_at_once(postgres_pool: Any) -> None:
 def test_a_run_belonging_to_another_tenant_is_unfindable(postgres_pool: Any) -> None:
     store = PostgresRunStore(postgres_pool)
     run_id = new_run_id()
-    store.claim(_record(run_id, worker="wrk_a"))
+    store.claim(_record(run_id))
 
     assert store.get(run_id, OTHER_TENANT) is None
 
 
-def test_a_run_a_dead_worker_left_running_is_reclaimed(postgres_pool: Any) -> None:
+def test_a_run_a_crash_left_running_is_reclaimed(postgres_pool: Any) -> None:
     """Survives a restart: the run is resolved, not left ``running`` forever."""
     store = PostgresRunStore(postgres_pool)
     abandoned = new_run_id()
-    store.claim(_record(abandoned, worker="wrk_dead"))
+    store.claim(_record(abandoned))
 
-    reclaimed = store.reclaim_stale(now=time.time(), stale_after=0.0, status="interrupted")
+    reclaimed = store.reclaim_running("interrupted")
 
     assert [record.run_id for record in reclaimed] == [abandoned]
     assert store.get(abandoned, TENANT).status == "interrupted"
     assert store.active_for_campaign(TENANT, SLUG) is None
 
 
-def test_a_heartbeated_run_is_left_alone_by_a_restarting_peer(postgres_pool: Any) -> None:
+def test_reclaiming_leaves_finished_runs_alone(postgres_pool: Any) -> None:
+    """A restart resolves live runs; it does not rewrite history."""
     store = PostgresRunStore(postgres_pool)
-    live = new_run_id()
-    store.claim(_record(live, worker="wrk_live"))
-    store.heartbeat([live], time.time())
+    finished = new_run_id()
+    store.claim(_record(finished))
+    store.finish(finished, "completed")
 
-    reclaimed = store.reclaim_stale(now=time.time(), stale_after=60.0, status="interrupted")
-
-    assert reclaimed == []
-    assert store.get(live, TENANT).status == "running"
+    assert store.reclaim_running("interrupted") == []
+    assert store.get(finished, TENANT).status == "completed"
 
 
 def test_a_late_callback_cannot_resurrect_a_cancelled_run(postgres_pool: Any) -> None:
-    """The worker's own task finishing must not overwrite a cancellation it lost."""
+    """A task finishing must not overwrite a cancellation that already landed."""
     store = PostgresRunStore(postgres_pool)
     run_id = new_run_id()
-    store.claim(_record(run_id, worker="wrk_a"))
+    store.claim(_record(run_id))
     store.finish(run_id, "cancelled")
 
     store.finish(run_id, "completed")

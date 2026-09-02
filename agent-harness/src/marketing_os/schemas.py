@@ -189,30 +189,28 @@ class CampaignResult(BaseModel):
 class RunRecord(BaseModel):
     """One execution attempt of a campaign's pipeline, as the run store records it.
 
-    The record is what makes the one-active-run-per-campaign guard hold across
-    workers: the store claims ``(tenant_id, slug)`` durably, so a second worker
-    is refused rather than racing on the same deliverables. ``heartbeat_at`` is
-    touched while the run executes, which is how a restarted process tells a run
-    that is genuinely live on a peer from one its own crash abandoned.
+    The record is what makes the one-active-run-per-campaign guard real: the
+    store claims ``(tenant_id, slug)`` durably, so a second request is refused
+    rather than racing on the same deliverables. The claim also names the person
+    who took it, because a campaign is driven by one person at a time — a
+    colleague in the same business is refused as firmly as a second tab is.
 
     Attributes:
         run_id: The unique id of this execution attempt, and its trace filename.
         tenant_id: The tenant the run belongs to.
+        user_id: The person who started the run, and the only one who may
+            cancel it while it is in flight.
         slug: The campaign slug the run claims.
         stage: The single stage being run, or ``None`` for the full pipeline.
         status: One of ``running``, ``completed``, ``failed``, ``cancelled``, or
             ``interrupted``.
-        worker_id: The process that claimed the run.
         started_at: When the run was claimed, as a UTC epoch timestamp.
-        heartbeat_at: When the owning worker last reported the run alive, as a
-            UTC epoch timestamp.
     """
 
     run_id: str
     tenant_id: str
     slug: str
+    user_id: str = ""
     stage: str | None = None
     status: str = "running"
-    worker_id: str = ""
     started_at: float = 0.0
-    heartbeat_at: float = 0.0

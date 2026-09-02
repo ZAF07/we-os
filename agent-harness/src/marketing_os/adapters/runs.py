@@ -1,16 +1,14 @@
 """Run store adapters — where the one-active-run-per-campaign claim is held.
 
 Implements the :class:`~marketing_os.ports.RunStore` port. The claim is the
-point: two runs of the same campaign write the same deliverable documents, so
-the guard must be atomic. Holding it in a dict makes it atomic within one
-process; holding it in Postgres (see :mod:`marketing_os.adapters.postgres.runs`)
-makes it atomic across every worker, which is what lets the service run more
-than one.
+point: two runs of the same campaign write the same deliverable documents, so a
+second one is refused — including when it comes from a colleague in the same
+business, since two people driving one campaign would overwrite each other's
+work.
 
-The store also carries each run's lifecycle status, so a status query no longer
-depends on a JSONL trace being on the same machine that ran it, and a restarted
-process can resolve the runs its predecessor was executing rather than leaving
-them ``running`` forever.
+The store also carries each run's lifecycle status, so a status outlives the
+process that produced it and a restart can resolve the runs it was holding
+rather than leaving them ``running`` forever.
 """
 
 from __future__ import annotations
@@ -51,7 +49,7 @@ class InMemoryRunStore:
         """
         held = self.active_for_campaign(record.tenant_id, record.slug)
         if held is not None:
-            raise RunConflictError(record.slug, held.run_id)
+            raise RunConflictError(record.slug, held.run_id, held.user_id)
         stored = record.model_copy(update={"status": RUNNING})
         self._records[stored.run_id] = stored
         return stored
@@ -114,33 +112,35 @@ class InMemoryRunStore:
                 return record
         return None
 
-    def heartbeat(self, run_ids: list[str], now: float) -> None:
-        """Report that runs are still executing on their owning worker.
+    def for_campaign(self, tenant: str, slug: str) -> list[RunRecord]:
+        """Return every run recorded for a campaign, newest first.
 
         Args:
-            run_ids: The runs this worker is still executing.
-            now: The current UTC epoch timestamp.
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+
+        Returns:
+            The campaign's runs whatever their status.
         """
-        for run_id in run_ids:
-            record = self._records.get(run_id)
-            if record is not None and record.status == RUNNING:
-                self._records[run_id] = record.model_copy(update={"heartbeat_at": now})
+        matching = [
+            record
+            for record in self._records.values()
+            if record.tenant_id == tenant and record.slug == slug
+        ]
+        return sorted(matching, key=lambda record: record.started_at, reverse=True)
 
-    def reclaim_stale(self, *, now: float, stale_after: float, status: str) -> list[RunRecord]:
-        """Resolve runs whose owning worker stopped reporting them alive.
+    def reclaim_running(self, status: str) -> list[RunRecord]:
+        """Resolve every run still marked running, and return them.
 
         Args:
-            now: The current UTC epoch timestamp.
-            stale_after: How many seconds without a heartbeat mark a run abandoned.
-            status: The terminal status to record for abandoned runs.
+            status: The terminal status to record for the abandoned runs.
 
         Returns:
             The records that were resolved.
         """
-        cutoff = now - stale_after
         reclaimed: list[RunRecord] = []
         for run_id, record in list(self._records.items()):
-            if record.status != RUNNING or record.heartbeat_at > cutoff:
+            if record.status != RUNNING:
                 continue
             resolved = record.model_copy(update={"status": status})
             self._records[run_id] = resolved

@@ -49,7 +49,13 @@ from marketing_os.errors import RunConflictError
 from marketing_os.governance.pipeline import PIPELINE
 from marketing_os.graph.checkpoints import clear_campaign_threads, thread_id
 from marketing_os.graph.registry import RunRegistry, read_run_status
-from marketing_os.schemas import CampaignResult
+from marketing_os.schemas import CampaignResult, RunRecord
+
+"""One campaign is run by one person at a time, so the fixtures need two people
+in the same business — the colleague is the case the guard exists for."""
+
+USER = "usr_owner"
+COLLEAGUE = "usr_colleague"
 
 
 def _client(repo: Path) -> TestClient:
@@ -321,16 +327,18 @@ def _launch_forever() -> object:
     return launch
 
 
-async def test_a_restarted_worker_resolves_runs_its_predecessor_abandoned(
+async def test_a_restart_resolves_runs_the_previous_process_died_holding(
     settings: Settings,
 ) -> None:
     """A crash must leave a terminal status, not a run stuck ``running`` forever."""
     store = InMemoryRunStore()
-    crashed = RunRegistry(store, worker_id="wrk_old", stale_after=0.0)
+    crashed = RunRegistry(store)
     run_id = new_run_id()
-    crashed.start(run_id=run_id, slug=SLUG, stage=None, tenant=TENANT, launch=_launch_forever())
+    crashed.start(
+        run_id=run_id, slug=SLUG, stage=None, tenant=TENANT, user_id=USER, launch=_launch_forever()
+    )
 
-    restarted = RunRegistry(store, worker_id="wrk_new", stale_after=0.0)
+    restarted = RunRegistry(store)
     reclaimed = await restarted.reclaim_abandoned()
 
     assert [record.run_id for record in reclaimed] == [run_id]
@@ -344,63 +352,125 @@ async def test_a_restarted_worker_resolves_runs_its_predecessor_abandoned(
     task.cancel()
 
 
-async def test_a_restart_leaves_a_run_a_live_peer_is_still_heartbeating() -> None:
-    """Reclaiming must not kill work a sibling worker is genuinely still doing."""
+async def test_a_restart_leaves_finished_runs_alone() -> None:
+    """Only runs still marked running are swept; history is not rewritten."""
     store = InMemoryRunStore()
-    live = RunRegistry(store, worker_id="wrk_live", stale_after=60.0)
-    run_id = new_run_id()
-    live.start(run_id=run_id, slug=SLUG, stage=None, tenant=TENANT, launch=_launch_forever())
-    live.heartbeat()
+    registry = RunRegistry(store)
+    finished = new_run_id()
+    store.claim(RunRecord(run_id=finished, tenant_id=TENANT, slug="other", user_id=USER))
+    store.finish(finished, "completed")
 
-    restarted = RunRegistry(store, worker_id="wrk_new", stale_after=60.0)
-    reclaimed = await restarted.reclaim_abandoned()
+    reclaimed = await registry.reclaim_abandoned()
 
     assert reclaimed == []
-    still_live = restarted.get(run_id, TENANT)
-    assert still_live is not None and still_live.status == "running"
-
-    task = live.task_for(run_id)
-    assert task is not None
-    task.cancel()
+    record = registry.get(finished, TENANT)
+    assert record is not None and record.status == "completed"
 
 
-# --- More than one worker -------------------------------------------------------
+# --- One campaign is run by one person at a time --------------------------------
 
 
-async def test_a_second_worker_cannot_claim_a_campaign_another_worker_holds() -> None:
-    """The guard is the point of a shared store: two workers, one run per campaign."""
-    store = InMemoryRunStore()
-    first = RunRegistry(store, worker_id="wrk_a")
-    second = RunRegistry(store, worker_id="wrk_b")
+async def test_a_colleague_cannot_start_a_run_on_a_campaign_someone_else_is_running() -> None:
+    """Two people driving one campaign would overwrite each other's deliverables."""
+    registry = RunRegistry(InMemoryRunStore())
     held = new_run_id()
-    first.start(run_id=held, slug=SLUG, stage=None, tenant=TENANT, launch=_launch_forever())
+    registry.start(
+        run_id=held, slug=SLUG, stage=None, tenant=TENANT, user_id=USER, launch=_launch_forever()
+    )
 
     with pytest.raises(RunConflictError) as refused:
-        second.start(
+        registry.start(
             run_id=new_run_id(),
             slug=SLUG,
             stage="research",
             tenant=TENANT,
+            user_id=COLLEAGUE,
             launch=_launch_forever(),
         )
 
     assert refused.value.active_run_id == held
+    assert refused.value.active_user_id == USER
+    assert "someone else in your business" in str(refused.value)
 
-    task = first.task_for(held)
+    task = registry.task_for(held)
     assert task is not None
     task.cancel()
 
 
+async def test_a_colleague_cannot_cancel_a_run_they_did_not_start() -> None:
+    """A run belongs to whoever started it, for as long as it is in flight."""
+    registry = RunRegistry(InMemoryRunStore())
+    run_id = new_run_id()
+    registry.start(
+        run_id=run_id, slug=SLUG, stage=None, tenant=TENANT, user_id=USER, launch=_launch_forever()
+    )
+
+    assert await registry.cancel(run_id, TENANT, COLLEAGUE) is None
+    still_running = registry.get(run_id, TENANT)
+    assert still_running is not None and still_running.status == "running"
+
+    task = registry.task_for(run_id)
+    assert task is not None
+    task.cancel()
+
+
+async def test_the_person_who_started_a_run_can_cancel_it() -> None:
+    registry = RunRegistry(InMemoryRunStore())
+    run_id = new_run_id()
+    registry.start(
+        run_id=run_id, slug=SLUG, stage=None, tenant=TENANT, user_id=USER, launch=_launch_forever()
+    )
+
+    cancelled = await registry.cancel(run_id, TENANT, USER)
+
+    assert cancelled is not None
+    assert registry.active_for_campaign(TENANT, SLUG) is None
+
+
+async def test_a_campaign_is_claimable_again_once_its_run_finishes() -> None:
+    """The lock is on the active run, not on the campaign forever."""
+    registry = RunRegistry(InMemoryRunStore())
+    first = new_run_id()
+    registry.start(
+        run_id=first, slug=SLUG, stage=None, tenant=TENANT, user_id=USER, launch=_launch_forever()
+    )
+    task = registry.task_for(first)
+    assert task is not None
+    task.cancel()
+    await registry.cancel(first, TENANT, USER)
+
+    registry.start(
+        run_id=new_run_id(),
+        slug=SLUG,
+        stage=None,
+        tenant=TENANT,
+        user_id=COLLEAGUE,
+        launch=_launch_forever(),
+    )
+
+    held = registry.active_for_campaign(TENANT, SLUG)
+    assert held is not None and held.user_id == COLLEAGUE
+    running = registry.task_for(held.run_id)
+    if running is not None:
+        running.cancel()
+
+
 async def test_two_tenants_may_run_the_same_slug_at_the_same_time() -> None:
     """Slugs are chosen by businesses, so the guard is per campaign, not per name."""
-    store = InMemoryRunStore()
-    registry = RunRegistry(store)
+    registry = RunRegistry(InMemoryRunStore())
     mine = new_run_id()
     theirs = new_run_id()
 
-    registry.start(run_id=mine, slug=SLUG, stage=None, tenant=TENANT, launch=_launch_forever())
     registry.start(
-        run_id=theirs, slug=SLUG, stage=None, tenant=OTHER_TENANT, launch=_launch_forever()
+        run_id=mine, slug=SLUG, stage=None, tenant=TENANT, user_id=USER, launch=_launch_forever()
+    )
+    registry.start(
+        run_id=theirs,
+        slug=SLUG,
+        stage=None,
+        tenant=OTHER_TENANT,
+        user_id=USER,
+        launch=_launch_forever(),
     )
 
     assert [record.run_id for record in registry.active(TENANT)] == [mine]

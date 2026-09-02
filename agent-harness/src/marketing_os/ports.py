@@ -183,13 +183,13 @@ class TenantDirectory(Protocol):
 
 @runtime_checkable
 class RunStore(Protocol):
-    """Durable, shared record of run state and the one-active-run-per-campaign claim.
+    """Durable record of run state and the one-active-run-per-campaign claim.
 
-    Claiming is the load-bearing operation: it must be atomic across processes,
-    because the guard's whole purpose is stopping two runs from writing the same
-    campaign's deliverables. Every read is tenant-scoped for the same reason the
-    :class:`DocumentStore`'s is — a run id belonging to another business must be
-    unfindable, not merely refused (ADR-0013).
+    Claiming is the load-bearing operation, because the guard's whole purpose is
+    stopping two runs from writing the same campaign's deliverables. Every read
+    is tenant-scoped for the same reason the :class:`DocumentStore`'s is — a run
+    id belonging to another business must be unfindable, not merely refused
+    (ADR-0013).
     """
 
     def claim(self, record: RunRecord) -> RunRecord:
@@ -255,28 +255,34 @@ class RunStore(Protocol):
         """
         ...
 
-    def heartbeat(self, run_ids: list[str], now: float) -> None:
-        """Report that runs are still executing on their owning worker.
+    def for_campaign(self, tenant: str, slug: str) -> list[RunRecord]:
+        """Return every run recorded for a campaign, newest first.
+
+        Listing from the store rather than from disk is what makes a campaign's
+        run history complete when several workers are running: each worker only
+        has the trace files it wrote itself.
 
         Args:
-            run_ids: The runs this worker is still executing.
-            now: The current UTC epoch timestamp.
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+
+        Returns:
+            The campaign's runs whatever their status.
         """
         ...
 
-    def reclaim_stale(self, *, now: float, stale_after: float, status: str) -> list[RunRecord]:
-        """Resolve runs whose owning worker stopped reporting them alive.
+    def reclaim_running(self, status: str) -> list[RunRecord]:
+        """Resolve every run still marked running, and return them.
 
-        This is what a restarted process calls so runs its predecessor was
-        executing get a terminal status instead of staying ``running`` forever.
-        A run whose worker is still heartbeating it is not stale, so it is left
-        alone and a restart cannot kill another worker's work.
+        Called on startup. The service runs as a single process, so a run left
+        ``running`` in the store can only be one its predecessor died holding —
+        nothing else could be executing it. That assumption is what lets this be
+        an unconditional sweep instead of a heartbeat protocol, and it is why
+        running two copies of the service would be wrong rather than merely
+        unsupported: the second would resolve the first's live runs on boot.
 
         Args:
-            now: The current UTC epoch timestamp.
-            stale_after: How many seconds without a heartbeat mark a run
-                abandoned.
-            status: The terminal status to record for abandoned runs.
+            status: The terminal status to record for the abandoned runs.
 
         Returns:
             The records that were resolved.

@@ -24,7 +24,7 @@ A LangGraph `thread_id` was the bare campaign slug. Slugs are chosen by business
 
 Under the old ephemeral checkpointer, cancel-as-abandon was free: state died with the run, so the next run of a campaign necessarily began at stage 1. Durable checkpoints reverse the default — resuming is what happens unless something prevents it. Cancelling therefore now (a) releases the campaign claim and (b) **clears the campaign's checkpoint threads**, both the full-pipeline thread and every per-stage thread. Omitting (b) turns "a cancelled run starts clean" into "resume from the last checkpoint" — a change that passes review because nothing looks wrong, and which surfaces as a business's cancelled work reappearing. Reclaiming a crashed worker's run abandons it the same way, for the same reason.
 
-Restart survival uses a **heartbeat** rather than a startup sweep. Each worker reports the runs it is executing; a starting worker resolves only runs whose heartbeat has gone stale. A sweep that resolved every `running` row on boot would work for one worker and, the moment there are two, kill a live peer's work on every deploy.
+Restart survival originally used a **heartbeat** so a starting worker resolved only runs whose owner had gone quiet. With a single process that indirection buys nothing, and [ADR-0025](0025-one-campaign-one-person-and-a-single-worker.md) replaced it with an unconditional sweep. The reasoning is preserved here because it is exactly what has to come back if the service is ever scaled out.
 
 ## The service does not own its own schema
 
@@ -37,7 +37,7 @@ RLS is applied to `documents` and not to `runs`: reclaiming runs after a worker 
 - **Keep the Clerk org id as the tenant id** — rejected: cheaper today, unmigratable later, and it spreads a vendor identifier through every table, path and thread id in the system.
 - **Mint platform ids everywhere, including on the filesystem** — rejected: it would orphan every existing `tenants/<org_…>/` directory and demand a registry file to hold pairings the filesystem layer has no need for.
 - **Clear checkpoints lazily, by starting each run on a fresh thread id** — rejected: it makes abandonment implicit again and leaves unbounded dead state in the checkpoint tables.
-- **Resolve every `running` run on startup** — rejected: correct for one worker, destructive for more than one, which is the whole point of the shared registry.
+- **Resolve every `running` run on startup** — rejected at the time as destructive with more than one worker; adopted later by [ADR-0025](0025-one-campaign-one-person-and-a-single-worker.md), once one worker became the rule.
 - **Let the service run its own migrations on boot** — rejected: it requires giving the runtime the DDL rights that would let it remove its own RLS policy.
 
 ## Consequences
@@ -45,4 +45,4 @@ RLS is applied to `documents` and not to `runs`: reclaiming runs after a worker 
 - Amends [ADR-0013](0013-multi-tenant-saas-with-dual-verified-jwt.md): the tenant is still derived from the verified claim, but through the Tenant Directory rather than directly from it. `TokenVerifier` now returns `VerifiedClaims` (naming the IdP organization); `VerifiedIdentity` carries the resolved `tenant_id` alongside the `organization_id` it came from.
 - The one-active-run guard is keyed by `(tenant, slug)` rather than by slug alone — previously two tenants running the same slug blocked each other.
 - Deploying requires one operator step before the first boot. `marketing-os init-db` is idempotent and safe to re-run.
-- **Running more than one worker is now safe for the guard, but not yet complete.** Run *claims* and *statuses* are shared, so the concurrency guard holds and any worker can answer `GET /runs/{id}`. Run **traces** are still node-local JSONL files, so `GET /runs/{id}/stream` and the trace-read endpoint only return events on the worker that executed the run. Moving traces into shared storage is the remaining piece; until then, deploy one worker, or put sticky routing in front of several.
+- **Superseded in part by [ADR-0025](0025-one-campaign-one-person-and-a-single-worker.md):** the service now runs as a single process, and the run claim names the person holding it. The durable store, the explicit abandonment and the platform tenant ids all stand; the heartbeat protocol this ADR described was replaced by an unconditional sweep on startup.

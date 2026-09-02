@@ -82,32 +82,43 @@ class GateError(MarketingOSError):
 
 
 class RunConflictError(MarketingOSError):
-    """A run was requested for a slug that already has an active run.
+    """A run was requested for a campaign someone is already running.
 
-    At most one run per slug may be active at a time (both full-pipeline and
-    single-stage runs write into ``campaigns/<slug>/``), so a second request is
-    rejected. Carries the ``run_id`` of the run already in flight.
+    At most one run per campaign may be active at a time — both full-pipeline
+    and single-stage runs write into ``campaigns/<slug>/`` — and that run
+    belongs to the person who started it. A colleague in the same business is
+    refused too, and told so plainly: two people driving one campaign would
+    overwrite each other's deliverables.
     """
 
     http_status = 409
     error_type = "run_conflict"
 
-    def __init__(self, slug: str, active_run_id: str) -> None:
+    def __init__(self, slug: str, active_run_id: str, active_user_id: str = "") -> None:
         """Initialise the error.
 
         Args:
-            slug: The campaign slug that already has an active run.
-            active_run_id: The id of the run already in flight for the slug.
+            slug: The campaign that already has an active run.
+            active_run_id: The id of the run already in flight.
+            active_user_id: The user who started it, when known, so the caller
+                is told a colleague is working on it rather than left guessing.
         """
         message = f"Campaign '{slug}' already has an active run '{active_run_id}'."
+        if active_user_id:
+            message = (
+                f"Campaign '{slug}' is being run by someone else in your business "
+                f"(run '{active_run_id}'). Wait for it to finish, or ask them to cancel it."
+            )
         super().__init__(message)
         self.slug = slug
         self.active_run_id = active_run_id
+        self.active_user_id = active_user_id
         self.detail = {
             "type": self.error_type,
             "status": self.http_status,
             "message": message,
             "active_run_id": active_run_id,
+            "active_user_id": active_user_id,
         }
 
 

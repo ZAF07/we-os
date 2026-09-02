@@ -73,6 +73,7 @@ In this version `knowledge/` is **read-only** to agents. A planned future capabi
 - **Verify, don't assume.** Run the relevant command and report the real result.
 - **Ask when genuinely blocked** on a decision only I can make; otherwise pick the
   sensible default, state it, and proceed.
+- **Always be concise and clear in your responses**. Speak in plain simple english with no jargon or fancy words. Be clear. No need say many words when few can do trick.
 - **Don't stage, commit or push** unless I ask.
 
 ---

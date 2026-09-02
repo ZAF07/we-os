@@ -19,10 +19,12 @@ Three tables (ADR-0014):
     "documents require a registered tenant".
 
 ``runs``
-    The one-active-run-per-campaign claim and each run's lifecycle status. The
-    partial unique index is what makes the claim atomic across workers: a second
-    ``running`` row for the same ``(tenant_id, slug)`` cannot exist, so the guard
-    is Postgres's to enforce rather than a check some new call site can forget.
+    The one-active-run-per-campaign claim, who holds it, and each run's
+    lifecycle status. The partial unique index is what makes the claim real: a
+    second ``running`` row for the same ``(tenant_id, slug)`` cannot exist, so
+    the guard is Postgres's to enforce rather than a check some new call site
+    can forget. ``user_id`` records the person driving the campaign, since one
+    campaign is run by one person at a time.
 
 **Creating the schema is an operator step, not a boot step.** The service
 connects as an ordinary role that deliberately has no rights to create tables —
@@ -39,10 +41,10 @@ extends the policy to the table's owner. It does **not** extend to superusers or
 roles with ``BYPASSRLS``: the application must connect as an ordinary role, which
 is what :func:`grant_application_role_sql` provisions.
 
-RLS is applied to ``documents`` and not to ``runs`` because reclaiming runs after
-a worker dies is a cross-tenant maintenance sweep with no tenant in scope; the
-runs queries carry an explicit ``tenant_id`` predicate on every tenant-facing
-path instead.
+RLS is applied to ``documents`` and not to ``runs`` because resolving runs left
+over from a crash is a cross-tenant maintenance sweep with no tenant in scope;
+the runs queries carry an explicit ``tenant_id`` predicate on every
+tenant-facing path instead.
 """
 
 from __future__ import annotations
@@ -75,19 +77,18 @@ CREATE POLICY documents_tenant_isolation ON documents
     WITH CHECK (tenant_id = current_setting('{TENANT_SETTING}', true));
 
 CREATE TABLE IF NOT EXISTS runs (
-    run_id       text PRIMARY KEY,
-    tenant_id    text NOT NULL,
-    slug         text NOT NULL,
-    stage        text,
-    status       text NOT NULL,
-    worker_id    text NOT NULL,
-    started_at   double precision NOT NULL DEFAULT 0,
-    heartbeat_at double precision NOT NULL DEFAULT 0
+    run_id     text PRIMARY KEY,
+    tenant_id  text NOT NULL,
+    user_id    text NOT NULL DEFAULT '',
+    slug       text NOT NULL,
+    stage      text,
+    status     text NOT NULL,
+    started_at double precision NOT NULL DEFAULT 0
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_campaign
     ON runs (tenant_id, slug) WHERE status = 'running';
-CREATE INDEX IF NOT EXISTS runs_by_heartbeat ON runs (status, heartbeat_at);
+CREATE INDEX IF NOT EXISTS runs_by_status ON runs (status);
 """
 
 

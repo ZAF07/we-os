@@ -9,6 +9,7 @@ not exist.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from conftest import (
     PLACEHOLDER_DNA,
     SLUG,
     TENANT,
+    BlockingChatModel,
     authenticate,
     install_scripted_graph,
 )
@@ -368,3 +370,56 @@ def test_settings_expose_no_customer_vocabulary() -> None:
     """'customer' means a person the business sells to — never the business itself."""
     settings = Settings()
     assert not [name for name in dir(settings) if "customer" in name.lower()]
+
+
+# --- One campaign is run by one person at a time --------------------------------
+
+
+def test_a_colleague_cannot_start_or_cancel_a_run_someone_else_is_driving(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two people in one business must not drive one campaign at once.
+
+    They share a tenant, so tenant scoping cannot separate them — the run's own
+    owner does. Driven over HTTP because that is where a business meets the rule.
+    """
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    from marketing_os.entrypoints.api.app import app
+
+    install_scripted_graph(monkeypatch, model_factory=BlockingChatModel)
+
+    with _client(repo, TENANT) as owner:
+        started = owner.post(f"/campaigns/{SLUG}/run", json={"stage": "research"})
+        assert started.status_code == 202
+        run_id = started.json()["run_id"]
+
+        authenticate(app, TENANT, user="usr_colleague")
+        refused = owner.post(f"/campaigns/{SLUG}/run", json={"stage": "research"})
+        assert refused.status_code == 409
+        assert refused.json()["type"] == "run_conflict"
+        assert "someone else in your business" in refused.json()["message"]
+
+        assert owner.post(f"/runs/{run_id}/cancel").status_code == 404
+
+        authenticate(app, TENANT)
+        assert owner.post(f"/runs/{run_id}/cancel").status_code == 200
+
+
+def test_a_campaign_is_free_for_a_colleague_once_the_run_ends(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lock is on the active run, not on the campaign for good."""
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    from marketing_os.entrypoints.api.app import app
+
+    install_scripted_graph(monkeypatch)
+
+    with _client(repo, TENANT) as client:
+        first = client.post(f"/campaigns/{SLUG}/run", json={"stage": "research"}).json()["run_id"]
+        for _ in range(200):
+            if client.get(f"/runs/{first}").json().get("status") == "completed":
+                break
+            time.sleep(0.02)
+
+        authenticate(app, TENANT, user="usr_colleague")
+        assert client.post(f"/campaigns/{SLUG}/run", json={"stage": "research"}).status_code == 202

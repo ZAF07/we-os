@@ -205,12 +205,6 @@ class Settings:
             makes Postgres the system of record (ADR-0014): documents, the
             tenant directory, the run registry and the LangGraph checkpointer
             all move there together, because they are one durability decision.
-        run_heartbeat_seconds: How often a worker reports the runs it is
-            executing as still alive.
-        run_stale_after_seconds: How long a run may go unreported before a
-            restarting process treats it as abandoned and resolves it. Must
-            comfortably exceed ``run_heartbeat_seconds``, or a live run is
-            reclaimed out from under its own worker.
     """
 
     provider: str = field(
@@ -258,12 +252,6 @@ class Settings:
         default_factory=lambda: (
             os.environ.get("MARKETING_OS_POSTGRES_DSN") or os.environ.get("DATABASE_URL") or None
         )
-    )
-    run_heartbeat_seconds: float = field(
-        default_factory=lambda: float(os.environ.get("MARKETING_OS_RUN_HEARTBEAT", "15"))
-    )
-    run_stale_after_seconds: float = field(
-        default_factory=lambda: float(os.environ.get("MARKETING_OS_RUN_STALE_AFTER", "90"))
     )
 
     @property

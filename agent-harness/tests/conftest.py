@@ -38,17 +38,20 @@ SLUG = "acme"
 PLACEHOLDER_DNA = "# Brand DNA — Acme\n\n## Business\n- **Business name:** <name>\n"
 
 
-def identity_for(tenant: str = TENANT) -> VerifiedIdentity:
-    """Build a verified identity for a tenant, as the auth dependency would.
+def identity_for(tenant: str = TENANT, user: str | None = None) -> VerifiedIdentity:
+    """Build a verified identity for a person at a tenant, as the auth dependency would.
 
     Args:
         tenant: The tenant the caller acts for.
+        user: The signed-in person; defaults to that tenant's owner. Pass a
+            second value to act as a colleague at the same business, which is
+            what the one-campaign-one-person guard is about.
 
     Returns:
         A :class:`VerifiedIdentity` suitable for overriding ``get_identity``.
     """
     return VerifiedIdentity(
-        user_id=f"usr_{tenant}",
+        user_id=user or f"usr_{tenant}",
         tenant_id=tenant,
         organization_id=f"org_idp_{tenant}",
         email=f"owner@{tenant}.example",
@@ -56,8 +59,8 @@ def identity_for(tenant: str = TENANT) -> VerifiedIdentity:
     )
 
 
-def authenticate(app: Any, tenant: str = TENANT) -> None:
-    """Override the API's auth dependency to act as a verified tenant.
+def authenticate(app: Any, tenant: str = TENANT, user: str | None = None) -> None:
+    """Override the API's auth dependency to act as a verified person at a tenant.
 
     Mirrors what a real bearer token would produce, so no test contacts a live
     IdP while still exercising every tenant-scoping path behind the dependency.
@@ -65,10 +68,11 @@ def authenticate(app: Any, tenant: str = TENANT) -> None:
     Args:
         app: The FastAPI application to override.
         tenant: The tenant the overridden identity acts for.
+        user: The signed-in person; defaults to that tenant's owner.
     """
     from marketing_os.entrypoints.api.app import get_identity
 
-    app.dependency_overrides[get_identity] = lambda: identity_for(tenant)
+    app.dependency_overrides[get_identity] = lambda: identity_for(tenant, user)
 
 
 PASS_VERDICT = ReviewVerdict(passed=True, summary="ok")
