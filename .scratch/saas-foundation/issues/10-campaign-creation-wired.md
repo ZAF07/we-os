@@ -38,4 +38,4 @@ End-to-end behaviour: a business owner creates a campaign from the interface, se
 
 ## Blocked by
 
-- [06 — Questionnaire → Brand DNA → DNA Gate](06-questionnaire-to-brand-dna-to-gate.md)
+- [06 — Questionnaire → Brand DNA → DNA Gate](archive/06-questionnaire-to-brand-dna-to-gate.md)
