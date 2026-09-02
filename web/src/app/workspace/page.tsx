@@ -49,7 +49,9 @@ async function loadWorkspace(): Promise<WorkspaceData | { error: string }> {
       if (!(error instanceof EngineError && error.status === 404)) throw error;
     }
     const first = files.find((file) => file.name !== "goal.md") ?? files[0];
-    const preview = first ? await getDeliverable(CAMPAIGN_SLUG, first.name) : null;
+    const preview = first
+      ? await getDeliverable(CAMPAIGN_SLUG, first.name)
+      : null;
     return { me, gate, files, preview };
   } catch (error) {
     const message =
@@ -88,8 +90,8 @@ function GateCard({ gate }: { gate: GateReport }) {
           <>
             <p className="mb-3 flex items-center gap-2 text-sm text-amber-700">
               <AlertCircle className="size-4 shrink-0" />
-              {gate.issues.length} item{gate.issues.length === 1 ? "" : "s"} stand
-              between you and starting work.
+              {gate.issues.length} item{gate.issues.length === 1 ? "" : "s"}{" "}
+              stand between you and starting work.
             </p>
             <ul className="space-y-1.5">
               {gate.issues.map((issue) => (

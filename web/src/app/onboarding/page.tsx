@@ -1,367 +1,191 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWizard } from "@/components/wizard/use-wizard";
 import { Field, WizardShell } from "@/components/wizard/wizard";
-import type { OnboardingData } from "@/lib/onboarding";
+import type { Question, Questionnaire } from "@/lib/engine";
+import {
+  answersById,
+  questionSteps,
+  toAnswerPayload,
+  unansweredRequired,
+  type QuestionStep,
+} from "@/lib/onboarding";
 import { useDemoStore } from "@/lib/store";
 
-const STEPS = ["Business", "Customers", "Positioning", "Voice", "Compliance"];
+import { loadOnboarding, saveAnswers } from "./actions";
 
-const EMPTY: OnboardingData = {
-  companyName: "",
-  companyDescription: "",
-  industry: "",
-  products: "",
-  website: "",
-  segments: [
-    { name: "", desc: "" },
-    { name: "", desc: "" },
-    { name: "", desc: "" },
-  ],
-  problems: "",
-  valueProp: "",
-  promise: "",
-  differentiators: "",
-  claims: "",
-  competitors: "",
-  avoid: "",
-  personality: "",
-  tone: "",
-  writingStyle: "",
-  prohibitedTerms: "",
-  restricted: "",
-  disclaimers: "",
-};
+/** Input types rendered as a multi-line control rather than a single line. */
+const MULTILINE_TYPES = new Set(["textarea", "list"]);
 
-type TextField = Exclude<keyof OnboardingData, "segments">;
+/**
+ * Renders one published question as its labeled input.
+ *
+ * The control comes from the question's own `input_type`, and the
+ * question's "why we ask" and help text are shown with it, so the
+ * wizard explains every question without the frontend knowing what any
+ * of them are (ADR-0018).
+ *
+ * Args:
+ *   question: The published question to render.
+ *   value: The answer entered so far.
+ *   error: Whether to show the required-field error.
+ *   onChange: Called with the new answer text.
+ *
+ * Returns:
+ *   The field element.
+ */
+function QuestionField({
+  question,
+  value,
+  error,
+  onChange,
+}: {
+  question: Question;
+  value: string;
+  error: boolean;
+  onChange: (value: string) => void;
+}) {
+  const control = {
+    id: question.id,
+    value,
+    placeholder: question.help_text,
+    onChange: (
+      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    ) => onChange(event.target.value),
+  };
+  return (
+    <Field
+      label={question.text}
+      htmlFor={question.id}
+      required={question.required}
+      error={error}
+      hint={`Why we ask: ${question.why_we_ask}`}
+    >
+      {MULTILINE_TYPES.has(question.input_type) ? (
+        <Textarea {...control} />
+      ) : (
+        <Input {...control} />
+      )}
+    </Field>
+  );
+}
 
-const REQUIRED_BY_STEP: TextField[][] = [
-  ["companyName", "companyDescription", "industry", "products"],
-  ["problems"],
-  ["valueProp", "promise", "differentiators"],
-  ["personality", "tone"],
-  ["restricted"],
-];
-
-/** Renders the multi-step company-onboarding wizard. */
+/** Renders the onboarding wizard from the published question set. */
 export default function OnboardingPage() {
   const router = useRouter();
   const completeOnboarding = useDemoStore((state) => state.completeOnboarding);
   const setBrandIdx = useDemoStore((state) => state.setBrandIdx);
-  const [data, setData] = useState<OnboardingData>(EMPTY);
 
-  const setField = (field: TextField) => (value: string) =>
-    setData((prev) => ({ ...prev, [field]: value }));
+  const [questionnaire, setQuestionnaire] = useState<Questionnaire | null>(
+    null,
+  );
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [failure, setFailure] = useState<string | null>(null);
 
-  const setSegment = (index: number, key: "name" | "desc", value: string) =>
-    setData((prev) => ({
-      ...prev,
-      segments: prev.segments.map((segment, i) =>
-        i === index ? { ...segment, [key]: value } : segment,
-      ),
-    }));
+  useEffect(() => {
+    loadOnboarding()
+      .then(({ questionnaire: published, dna }) => {
+        setQuestionnaire(published);
+        setAnswers(answersById(dna.answers));
+      })
+      .catch(() =>
+        setFailure("We could not load your questions. Refresh to try again."),
+      );
+  }, []);
 
-  const missing = (field: TextField) => !data[field].trim();
-  const segmentMissing = (key: "name" | "desc") =>
-    !data.segments[0][key].trim();
+  const steps: QuestionStep[] = questionnaire
+    ? questionSteps(questionnaire)
+    : [];
 
-  const stepIncomplete = (step: number) => {
-    if (REQUIRED_BY_STEP[step].some(missing)) return true;
-    if (step === 1 && (segmentMissing("name") || segmentMissing("desc"))) {
-      return true;
+  const stepIncomplete = (step: number) =>
+    steps.length > 0 && unansweredRequired(steps[step], answers).length > 0;
+
+  const persist = async () => {
+    const payload = toAnswerPayload(answers);
+    if (!payload.length) return;
+    try {
+      await saveAnswers(payload);
+      setFailure(null);
+    } catch {
+      setFailure("We could not save your answers. Check your connection.");
     }
-    return false;
   };
 
   const { step, attempted, back, next } = useWizard({
-    stepCount: STEPS.length,
+    stepCount: Math.max(steps.length, 1),
     isStepIncomplete: stepIncomplete,
     onFinish: () => {
-      completeOnboarding(data);
-      setBrandIdx(0);
-      router.push("/brand");
+      void persist().then(() => {
+        if (!questionnaire) return;
+        completeOnboarding(questionnaire, answers);
+        setBrandIdx(0);
+        router.push("/brand");
+      });
     },
   });
 
-  const showError = (field: TextField) => attempted && missing(field);
+  if (!questionnaire) {
+    return (
+      <main className="flex-1 px-4 py-6 md:px-8 md:py-7">
+        <p className="text-[13px] text-muted-foreground">
+          {failure ?? "Loading your questions…"}
+        </p>
+      </main>
+    );
+  }
 
-  const text = (field: TextField) => ({
-    id: field,
-    value: data[field],
-    onChange: (
-      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-    ) => setField(field)(event.target.value),
-  });
+  const current = steps[step];
+  const answered = Object.values(answers).filter((value) =>
+    value.trim(),
+  ).length;
 
   return (
     <WizardShell
-      title="Set up your company"
-      subtitle="The durable context every campaign is grounded in — reviewable any time on the Brand screen."
-      note="AI extraction from your documents isn't available yet — enter the essentials manually."
-      steps={STEPS}
+      title="Tell us about your business"
+      subtitle="We only ask for facts you already know. Your positioning, messaging and channels are ours to produce — you approve them as the work goes."
+      note={
+        answered > 0
+          ? `${answered} answered so far — saved as you go, so you can leave and come back.`
+          : "Answers save as you go, so you can leave and come back."
+      }
+      steps={steps.map((item) => item.name)}
       current={step}
       error={
-        attempted && stepIncomplete(step)
+        failure ??
+        (attempted && stepIncomplete(step)
           ? "Fill in the required fields to continue."
-          : undefined
+          : undefined)
       }
       nextLabel="Finish onboarding"
-      onBack={back}
-      onNext={next}
+      onBack={() => {
+        void persist();
+        back();
+      }}
+      onNext={() => {
+        if (!stepIncomplete(step)) void persist();
+        next();
+      }}
     >
-      {step === 0 && (
-        <>
-          <Field
-            label="Company name"
-            htmlFor="companyName"
-            required
-            error={showError("companyName")}
-          >
-            <Input {...text("companyName")} placeholder="Fernway" />
-          </Field>
-          <Field
-            label="Company description"
-            htmlFor="companyDescription"
-            required
-            error={showError("companyDescription")}
-          >
-            <Textarea
-              {...text("companyDescription")}
-              placeholder="What the business does, for whom, and how it makes money."
-            />
-          </Field>
-          <Field
-            label="Industry & category"
-            htmlFor="industry"
-            required
-            error={showError("industry")}
-          >
-            <Input
-              {...text("industry")}
-              placeholder="Premium home care · refill subscriptions"
-            />
-          </Field>
-          <Field
-            label="Products or services"
-            htmlFor="products"
-            required
-            error={showError("products")}
-            hint="One per line: Name — description"
-          >
-            <Textarea
-              {...text("products")}
-              placeholder={"Starter Set — forever bottle + first 3 refills"}
-            />
-          </Field>
-          <Field label="Website" htmlFor="website">
-            <Input {...text("website")} placeholder="https://…" />
-          </Field>
-        </>
-      )}
-
-      {step === 1 && (
-        <>
-          <Field
-            label="Primary customer segment"
-            htmlFor="segment-0-name"
-            required
-            error={attempted && segmentMissing("name")}
-          >
-            <Input
-              id="segment-0-name"
-              value={data.segments[0].name}
-              onChange={(event) => setSegment(0, "name", event.target.value)}
-              placeholder="Low-waste households (28–45)"
-            />
-          </Field>
-          <Field
-            label="What defines them"
-            htmlFor="segment-0-desc"
-            required
-            error={attempted && segmentMissing("desc")}
-          >
-            <Textarea
-              id="segment-0-desc"
-              value={data.segments[0].desc}
-              onChange={(event) => setSegment(0, "desc", event.target.value)}
-              placeholder="Practical, cost-aware, already buying eco."
-            />
-          </Field>
-          {[1, 2].map((index) => (
-            <Field
-              key={index}
-              label={`Segment ${index + 1} (optional)`}
-              htmlFor={`segment-${index}-name`}
-            >
-              <div className="flex flex-col gap-1.5">
-                <Input
-                  id={`segment-${index}-name`}
-                  value={data.segments[index].name}
-                  onChange={(event) =>
-                    setSegment(index, "name", event.target.value)
-                  }
-                  placeholder="Segment name"
-                />
-                <Input
-                  id={`segment-${index}-desc`}
-                  aria-label={`Segment ${index + 1} description`}
-                  value={data.segments[index].desc}
-                  onChange={(event) =>
-                    setSegment(index, "desc", event.target.value)
-                  }
-                  placeholder="What defines them"
-                />
-              </div>
-            </Field>
-          ))}
-          <Field
-            label="Customer problems & pain points"
-            htmlFor="problems"
-            required
-            error={showError("problems")}
-          >
-            <Textarea
-              {...text("problems")}
-              placeholder="What they struggle with today, in their words."
-            />
-          </Field>
-        </>
-      )}
-
-      {step === 2 && (
-        <>
-          <Field
-            label="Core value proposition"
-            htmlFor="valueProp"
-            required
-            error={showError("valueProp")}
-          >
-            <Textarea
-              {...text("valueProp")}
-              placeholder="The single idea the company owns."
-            />
-          </Field>
-          <Field
-            label="Primary customer promise"
-            htmlFor="promise"
-            required
-            error={showError("promise")}
-          >
-            <Input
-              {...text("promise")}
-              placeholder="What every customer can count on."
-            />
-          </Field>
-          <Field
-            label="Key differentiators"
-            htmlFor="differentiators"
-            required
-            error={showError("differentiators")}
-          >
-            <Textarea
-              {...text("differentiators")}
-              placeholder="Why customers choose you over the alternatives."
-            />
-          </Field>
-          <Field
-            label="Defensible claims"
-            htmlFor="claims"
-            hint="One per line: Claim — evidence backing it"
-          >
-            <Textarea
-              {...text("claims")}
-              placeholder={'"Costs $0.31 per clean" — internal pricing model'}
-            />
-          </Field>
-          <Field
-            label="Main competitors"
-            htmlFor="competitors"
-            hint="One per line: Name — how we differ"
-          >
-            <Textarea
-              {...text("competitors")}
-              placeholder="Blueland — owns tablets; we own liquid concentrate"
-            />
-          </Field>
-          <Field label="Positioning to avoid" htmlFor="avoid">
-            <Input
-              {...text("avoid")}
-              placeholder="Topics or comparisons never to lead with."
-            />
-          </Field>
-        </>
-      )}
-
-      {step === 3 && (
-        <>
-          <Field
-            label="Brand personality"
-            htmlFor="personality"
-            required
-            error={showError("personality")}
-          >
-            <Input
-              {...text("personality")}
-              placeholder="Plainspoken, confident, warm."
-            />
-          </Field>
-          <Field
-            label="Tone of voice"
-            htmlFor="tone"
-            required
-            error={showError("tone")}
-          >
-            <Textarea
-              {...text("tone")}
-              placeholder="Short sentences. Real numbers. Never preachy."
-            />
-          </Field>
-          <Field label="Writing style" htmlFor="writingStyle">
-            <Input
-              {...text("writingStyle")}
-              placeholder="Specific over superlative."
-            />
-          </Field>
-          <Field
-            label="Prohibited terminology"
-            htmlFor="prohibitedTerms"
-            hint="One per line: Term — why it's off-limits"
-          >
-            <Textarea
-              {...text("prohibitedTerms")}
-              placeholder={'"eco-warrior" — alienates the practical buyer'}
-            />
-          </Field>
-        </>
-      )}
-
-      {step === 4 && (
-        <>
-          <Field
-            label="Restricted claims & terminology"
-            htmlFor="restricted"
-            required
-            error={showError("restricted")}
-            hint="One per line: Term — why it must never appear"
-          >
-            <Textarea
-              {...text("restricted")}
-              placeholder={'"non-toxic" — regulatory risk'}
-            />
-          </Field>
-          <Field label="Required disclaimers" htmlFor="disclaimers">
-            <Textarea
-              {...text("disclaimers")}
-              placeholder="Anything legal requires on published assets."
-            />
-          </Field>
-        </>
-      )}
+      {current.questions.map((question) => (
+        <QuestionField
+          key={question.id}
+          question={question}
+          value={answers[question.id] ?? ""}
+          error={
+            attempted &&
+            question.required &&
+            !(answers[question.id] ?? "").trim()
+          }
+          onChange={(value) =>
+            setAnswers((previous) => ({ ...previous, [question.id]: value }))
+          }
+        />
+      ))}
     </WizardShell>
   );
 }

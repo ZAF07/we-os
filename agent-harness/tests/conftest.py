@@ -23,7 +23,14 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
 
 from marketing_os.config import Settings
-from marketing_os.schemas import Discrepancy, ReviewVerdict, VerifiedIdentity
+from marketing_os.questionnaire import SEED_QUESTIONNAIRE, render_brand_dna
+from marketing_os.schemas import (
+    BrandDnaRecord,
+    Discrepancy,
+    DnaAnswer,
+    ReviewVerdict,
+    VerifiedIdentity,
+)
 
 Handler = Callable[[list[BaseMessage], int], AIMessage]
 
@@ -323,22 +330,46 @@ _GOAL_TEMPLATE = """\
 - **Offer / promotion:** <if any>
 """
 
-_DNA_FILLED = """\
-# Brand DNA — Acme
+"""The Brand DNA a business has after completing onboarding: the rendered
+projection of a complete set of answers to the published question set. Building
+it from the seed rather than hand-writing it is deliberate — the gate derives
+its Required fields from that same set (ADR-0018), so a hand-written fixture
+would drift out of the gate the moment a question was added."""
 
-## Business
-- **Business name:** Acme Climbing Gym
-- **What they sell:** Monthly bouldering memberships and intro classes
 
-## Customers
-- **Primary segment(s):** Urban 22-35 beginners curious about climbing
+def filled_dna_answers() -> BrandDnaRecord:
+    """Answer every Required question in the seed set, as an onboarded business has.
 
-## Differentiation
-- **Why customers choose them over alternatives:** Only gym with free coached intro sessions
+    Returns:
+        A complete Brand DNA record at the seed questionnaire's version.
+    """
+    written = {
+        "q_business_name": "Acme Climbing Gym",
+        "q_what_they_sell": "Monthly bouldering memberships and intro classes",
+        "q_category": "Boutique fitness — indoor bouldering",
+        "q_price_point": "$90 a month, $25 for an intro class",
+        "q_segments": "Urban 22-35 beginners curious about climbing",
+        "q_pain_points": "Gyms are boring and they do not know how to start climbing",
+        "q_why_chosen": "Only gym in the city with free coached intro sessions",
+        "q_geography": "Inner-city Melbourne, 10km radius",
+        "q_languages": "English",
+        "q_budget_range": "$3,000 a month including ad spend",
+        "q_hard_constraints": "No injury or fitness-outcome claims",
+        "q_competitors": "BigBox Fitness, two independent gyms",
+    }
+    return BrandDnaRecord(
+        questionnaire_version=SEED_QUESTIONNAIRE.version,
+        updated_at="2026-09-01T10:00:00Z",
+        answers=[
+            DnaAnswer(question_id=question_id, answer=answer)
+            for question_id, answer in written.items()
+        ],
+    )
 
-## Recommended
-- **Competitors:** BigBox Fitness, two independent gyms
-"""
+
+_DNA_FILLED = render_brand_dna(
+    SEED_QUESTIONNAIRE, filled_dna_answers(), business_name="Acme Climbing Gym"
+)
 
 _GOAL_FILLED = """\
 # Campaign Goal — Acme Spring

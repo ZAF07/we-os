@@ -149,6 +149,18 @@ class GuardrailError(MarketingOSError):
         self.discrepancies = discrepancies or []
 
 
+class ValidationError(MarketingOSError):
+    """A caller supplied input the harness refuses — the contract's 422.
+
+    Distinct from :class:`GateError`, which is about work being blocked by
+    incomplete governance inputs rather than about the request itself being
+    malformed.
+    """
+
+    http_status = 422
+    error_type = "validation"
+
+
 class DocumentNotFoundError(MarketingOSError):
     """A requested document does not exist in the document store for the tenant.
 

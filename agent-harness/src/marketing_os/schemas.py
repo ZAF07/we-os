@@ -214,3 +214,150 @@ class RunRecord(BaseModel):
     stage: str | None = None
     status: str = "running"
     started_at: float = 0.0
+
+
+class Question(BaseModel):
+    """One admin-curated question the business owner answers about their business.
+
+    A question asks only for a fact the owner uniquely knows. Crafted artifacts —
+    positioning, value proposition, messaging, brand voice, channel selection —
+    are produced by the engine and approved at the stage gates, never asked for
+    here (ADR-0018).
+
+    Attributes:
+        id: The stable question id answers reference; it survives rewording.
+        field: The Brand DNA field this question populates, which is also the
+            label the DNA Gate checks and the renderer writes.
+        section: The Brand DNA section the field is rendered under.
+        text: The question as the owner reads it.
+        why_we_ask: Why the question is asked, so every question explains itself.
+        help_text: What a good answer looks like.
+        input_type: How the wizard renders the input.
+        required: Whether an answer is Required — Required answers feed the DNA
+            Gate, recommended ones only sharpen the work.
+        options: The choices for ``select`` and ``multi_select`` inputs.
+    """
+
+    id: str
+    field: str
+    section: str
+    text: str
+    why_we_ask: str
+    help_text: str
+    input_type: str = "text"
+    required: bool = True
+    options: list[str] = Field(default_factory=list)
+
+
+class Questionnaire(BaseModel):
+    """One published version of the admin-curated question set.
+
+    The single artifact driving the onboarding wizard, the shape of the rendered
+    Brand DNA, and what the DNA Gate enforces as Required — so the three cannot
+    drift apart (ADR-0018).
+
+    Attributes:
+        version: The published version number, which answers record so a tenant
+            answering an older set is prompted rather than silently blocked.
+        published_at: When the version was published, as an ISO-8601 timestamp.
+        questions: The questions in the order the wizard asks them.
+    """
+
+    version: int
+    published_at: str
+    questions: list[Question] = Field(default_factory=list)
+
+    @property
+    def required_questions(self) -> list[Question]:
+        """Return the Required questions, whose fields the DNA Gate enforces."""
+        return [question for question in self.questions if question.required]
+
+    def question(self, question_id: str) -> Question | None:
+        """Return one question by id.
+
+        Args:
+            question_id: The stable question id.
+
+        Returns:
+            The question, or ``None`` when this version has no such question.
+        """
+        return next((q for q in self.questions if q.id == question_id), None)
+
+
+class DnaAnswer(BaseModel):
+    """One business owner's answer to one questionnaire question.
+
+    Attributes:
+        question_id: The question this answers.
+        answer: The answer text, exactly as the owner wrote it.
+    """
+
+    question_id: str
+    answer: str
+
+
+class BrandDnaRecord(BaseModel):
+    """A tenant's structured Brand DNA answers and the version they were given against.
+
+    The structured answers are the source of truth; the markdown agents read is
+    a derived projection rendered from them (ADR-0018).
+
+    Attributes:
+        questionnaire_version: The question-set version the answers were given
+            against, which is what makes "your DNA predates a newer version"
+            answerable rather than a silent gate failure.
+        updated_at: When an answer was last saved, as an ISO-8601 timestamp, or
+            ``None`` when the business has answered nothing yet.
+        answers: The answers, one per answered question.
+    """
+
+    questionnaire_version: int
+    updated_at: str | None = None
+    answers: list[DnaAnswer] = Field(default_factory=list)
+
+    def answer_for(self, question_id: str) -> str | None:
+        """Return the answer text for a question.
+
+        Args:
+            question_id: The stable question id.
+
+        Returns:
+            The answer text, or ``None`` when the question is unanswered.
+        """
+        return next((a.answer for a in self.answers if a.question_id == question_id), None)
+
+
+class MissingField(BaseModel):
+    """One Required Brand DNA field the business has not yet supplied.
+
+    Attributes:
+        question_id: The question that would supply the field.
+        field: The Brand DNA field's label.
+        label: The question text, so the report reads as a prompt to answer
+            rather than as an internal field name.
+    """
+
+    question_id: str
+    field: str
+    label: str
+
+
+class DnaCompleteness(BaseModel):
+    """What stands between a business and starting work.
+
+    Attributes:
+        complete: Whether every Required field is answered.
+        questionnaire_version: The published version the report was computed against.
+        required_total: How many Required fields the published version has.
+        required_answered: How many of them this business has answered.
+        missing: Every unanswered Required field, named exactly.
+        unanswered_new_questions: Question ids a newer published version added
+            that this business's answers predate — surfaced as a prompt.
+    """
+
+    complete: bool
+    questionnaire_version: int
+    required_total: int
+    required_answered: int
+    missing: list[MissingField] = Field(default_factory=list)
+    unanswered_new_questions: list[str] = Field(default_factory=list)

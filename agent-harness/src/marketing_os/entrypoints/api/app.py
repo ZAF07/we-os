@@ -3,6 +3,10 @@
 Endpoints:
   GET  /health                          -> liveness; the only unauthenticated route
   GET  /me                              -> the verified identity and its tenant
+  GET  /questionnaire                   -> the published question set
+  GET  /brand-dna                       -> the tenant's answers and rendered markdown
+  GET  /brand-dna/completeness          -> what still stands between them and a run
+  POST /brand-dna/answers               -> save answers, returning the updated report
   POST /campaigns                       -> scaffold a campaign goal from the template
   GET  /campaigns/{slug}/gate           -> Stage 0 gate report
   GET  /campaigns/{slug}/deliverables   -> list written deliverables
@@ -46,6 +50,7 @@ from marketing_os.adapters.observability import (
     read_events,
     tail_trace,
 )
+from marketing_os.adapters.questionnaire import InMemoryAnswerStore, InMemoryQuestionnaireStore
 from marketing_os.adapters.runs import CANCELLED, RUNNING, InMemoryRunStore
 from marketing_os.adapters.tenants import PassthroughTenantDirectory
 from marketing_os.config import Settings, load_settings
@@ -57,12 +62,28 @@ from marketing_os.errors import (
     MarketingOSError,
     RunConflictError,
     UnauthenticatedError,
+    ValidationError,
 )
 from marketing_os.governance import check_gate
 from marketing_os.graph.registry import RunRegistry, read_run_status, resolve_trace_path
 from marketing_os.graph.runner import arun_campaign
-from marketing_os.ports import DocumentStore, RunStore, TenantDirectory, TokenVerifier
-from marketing_os.schemas import CampaignResult, VerifiedIdentity
+from marketing_os.ports import (
+    AnswerStore,
+    DocumentStore,
+    QuestionnaireStore,
+    RunStore,
+    TenantDirectory,
+    TokenVerifier,
+)
+from marketing_os.questionnaire import completeness, render_brand_dna
+from marketing_os.schemas import (
+    BrandDnaRecord,
+    CampaignResult,
+    DnaAnswer,
+    DnaCompleteness,
+    Questionnaire,
+    VerifiedIdentity,
+)
 
 if TYPE_CHECKING:
     from marketing_os.adapters.postgres import PostgresBackend
@@ -252,6 +273,35 @@ def get_run_store() -> RunStore:
 
 
 @lru_cache(maxsize=1)
+def get_questionnaire_store() -> QuestionnaireStore:
+    """Return the process-wide store holding the published question set.
+
+    Returns:
+        The Postgres store when a DSN is configured — where an admin publishes a
+        new version without a deploy — otherwise an in-process store, which
+        serves the code-shipped seed set.
+    """
+    backend = get_backend()
+    if backend is not None:
+        return backend.questionnaires
+    return InMemoryQuestionnaireStore()
+
+
+@lru_cache(maxsize=1)
+def get_answer_store() -> AnswerStore:
+    """Return the process-wide store holding each business's Brand DNA answers.
+
+    Returns:
+        The Postgres store when a DSN is configured, otherwise an in-process
+        store, which loses answers on restart and is for local work only.
+    """
+    backend = get_backend()
+    if backend is not None:
+        return backend.answers
+    return InMemoryAnswerStore()
+
+
+@lru_cache(maxsize=1)
 def get_token_verifier() -> TokenVerifier:
     """Return the process-wide verifier for inbound bearer tokens.
 
@@ -343,6 +393,8 @@ _BACKED_PROVIDERS = (
     get_tenant_directory,
     get_checkpointer,
     get_run_store,
+    get_questionnaire_store,
+    get_answer_store,
     get_registry,
 )
 
@@ -355,6 +407,19 @@ def reset_providers() -> None:
     """
     for provider in _BACKED_PROVIDERS:
         provider.cache_clear()
+
+
+class DnaAnswersUpsert(BaseModel):
+    """Request body for saving Brand DNA answers.
+
+    Upsert rather than replace, so the wizard can save partway and resume, and a
+    single answer can be edited later without resending the rest.
+
+    Attributes:
+        answers: The answers to save; at least one.
+    """
+
+    answers: list[DnaAnswer]
 
 
 class CreateCampaign(BaseModel):
@@ -411,6 +476,156 @@ def me(identity: Identity) -> dict[str, object]:
     }
 
 
+DNA_DOCUMENT = "dna.md"
+
+
+def read_brand_dna(tenant: str) -> tuple[Questionnaire, BrandDnaRecord]:
+    """Return the published question set and one business's answers to it.
+
+    Args:
+        tenant: The tenant whose answers to read.
+
+    Returns:
+        The published questionnaire and the tenant's record.
+    """
+    return get_questionnaire_store().published(), get_answer_store().read(tenant)
+
+
+def project_brand_dna(identity: VerifiedIdentity, record: BrandDnaRecord) -> str:
+    """Render a business's answers to markdown and store it as their Brand DNA.
+
+    The structured answers are the source of truth; ``dna.md`` is their canonical
+    projection, and it is rewritten on every save so the document the specialists
+    read and the document the gate checks can never lag the answers (ADR-0018).
+
+    Args:
+        identity: The verified identity whose tenant owns the DNA.
+        record: The business's answers.
+
+    Returns:
+        The rendered markdown, as written to the document store.
+    """
+    questionnaire = get_questionnaire_store().published()
+    markdown = render_brand_dna(
+        questionnaire,
+        record,
+        business_name=identity.business_name or identity.tenant_id,
+    )
+    get_document_store().write(identity.tenant_id, DNA_DOCUMENT, markdown)
+    return markdown
+
+
+def dna_completeness(tenant: str) -> DnaCompleteness:
+    """Return the completeness report for a business's Brand DNA.
+
+    Args:
+        tenant: The tenant whose DNA to report on.
+
+    Returns:
+        The report, naming every missing Required field and every question a
+        newer published version added that this business has not been shown.
+    """
+    published, record = read_brand_dna(tenant)
+    answered_against = get_questionnaire_store().version(record.questionnaire_version)
+    return completeness(published, record, answered_against=answered_against)
+
+
+@app.get("/questionnaire")
+def questionnaire(identity: Identity) -> Questionnaire:
+    """Return the currently published question set.
+
+    The single artifact driving the onboarding wizard, the shape of the rendered
+    Brand DNA, and what the DNA Gate enforces as Required — so the wizard renders
+    entirely from this rather than hardcoding questions (ADR-0018). The set is
+    the same for every business, but reading it still needs a verified caller:
+    the questions are the platform's curation, not public material.
+
+    Args:
+        identity: The verified identity (unused; the set is platform-wide).
+
+    Returns:
+        The published question set.
+    """
+    return get_questionnaire_store().published()
+
+
+@app.get("/brand-dna")
+def brand_dna(identity: Identity) -> dict[str, object]:
+    """Return a business's Brand DNA in both its forms.
+
+    Args:
+        identity: The verified identity whose tenant owns the DNA.
+
+    Returns:
+        The question-set version answered, when it was last saved, the canonical
+        markdown projection, and the structured answers behind it.
+    """
+    questionnaire_version, record = read_brand_dna(identity.tenant_id)
+    return {
+        "questionnaire_version": record.questionnaire_version or questionnaire_version.version,
+        "updated_at": record.updated_at,
+        "markdown": render_brand_dna(
+            questionnaire_version,
+            record,
+            business_name=identity.business_name or identity.tenant_id,
+        ),
+        "answers": [answer.model_dump() for answer in record.answers],
+    }
+
+
+@app.get("/brand-dna/completeness")
+def brand_dna_completeness(identity: Identity) -> DnaCompleteness:
+    """Report what stands between a business and starting work.
+
+    Args:
+        identity: The verified identity whose tenant owns the DNA.
+
+    Returns:
+        The completeness report, naming every unanswered Required field and any
+        question a newer published version added.
+    """
+    return dna_completeness(identity.tenant_id)
+
+
+@app.post("/brand-dna/answers")
+def answer_brand_dna(body: DnaAnswersUpsert, identity: Identity) -> DnaCompleteness:
+    """Save questionnaire answers and report what remains.
+
+    Every save re-renders the Brand DNA markdown, so the document the gate reads
+    is never behind the answers. The report comes back with the save so the
+    wizard shows progress without a second request.
+
+    Args:
+        body: The answers to save.
+        identity: The verified identity whose tenant owns the DNA.
+
+    Returns:
+        The updated completeness report.
+
+    Raises:
+        HTTPException: 422 if no answers were sent, or one names a question the
+            published set does not ask — a silently dropped answer would look
+            saved to the business and be absent from their DNA.
+    """
+    published = get_questionnaire_store().published()
+    if not body.answers:
+        raise _http_error(ValidationError("Send at least one answer."))
+    unknown = [
+        answer.question_id
+        for answer in body.answers
+        if published.question(answer.question_id) is None
+    ]
+    if unknown:
+        raise _http_error(
+            ValidationError(
+                f"The published questionnaire does not ask: {', '.join(sorted(unknown))}."
+            )
+        )
+    get_answer_store().upsert(identity.tenant_id, version=published.version, answers=body.answers)
+    project_brand_dna(identity, get_answer_store().read(identity.tenant_id))
+    return dna_completeness(identity.tenant_id)
+
+
 @app.post("/campaigns")
 def create_campaign(body: CreateCampaign, identity: Identity) -> dict[str, object]:
     """Scaffold a campaign goal from the template and report the gate.
@@ -437,7 +652,9 @@ def create_campaign(body: CreateCampaign, identity: Identity) -> dict[str, objec
             raise HTTPException(500, "campaign-goal template missing")
         store.write(tenant, goal_document, template.read_text(encoding="utf-8"))
         created = True
-    report = check_gate(settings, tenant, slug, store=store)
+    report = check_gate(
+        settings, tenant, slug, store=store, questionnaire=get_questionnaire_store().published()
+    )
     return {
         "slug": slug,
         "goal_created_from_template": created,
@@ -458,7 +675,13 @@ def gate(slug: str, identity: Identity) -> dict[str, object]:
         The gate status and any issues.
     """
     settings = get_settings()
-    report = check_gate(settings, identity.tenant_id, slug, store=get_document_store())
+    report = check_gate(
+        settings,
+        identity.tenant_id,
+        slug,
+        store=get_document_store(),
+        questionnaire=get_questionnaire_store().published(),
+    )
     return {"ok": report.ok, "issues": report.all_issues}
 
 
@@ -543,7 +766,9 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
     settings = get_settings()
     store = get_document_store()
     tenant = identity.tenant_id
-    report = check_gate(settings, tenant, slug, store=store)
+    report = check_gate(
+        settings, tenant, slug, store=store, questionnaire=get_questionnaire_store().published()
+    )
     if not report.ok:
         raise _http_error(GateError("Stage 0 gate failed", missing=report.all_issues))
     run_id = new_run_id()

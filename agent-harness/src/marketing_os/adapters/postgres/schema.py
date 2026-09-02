@@ -1,6 +1,6 @@
 """The Postgres schema the harness owns, and how tenant isolation is enforced in it.
 
-Three tables (ADR-0014):
+Five tables (ADR-0014, ADR-0018):
 
 ``tenants``
     The pairing the identity provider cannot be trusted to hold. ``tenant_id``
@@ -26,6 +26,23 @@ Three tables (ADR-0014):
     can forget. ``user_id`` records the person driving the campaign, since one
     campaign is run by one person at a time.
 
+``questionnaires``
+    The admin-curated question set, one row per published version, holding its
+    questions as JSON. It is deliberately **not** tenant-partitioned: every
+    business answers the same curated questions, and the version an admin
+    publishes is what the wizard renders and what the DNA Gate enforces as
+    Required (ADR-0018). Versioning it in the database is what lets the admin
+    improve onboarding without a deploy.
+
+``dna_answers``
+    Each business's answers to those questions — the *source of truth* for the
+    Brand DNA, of which the markdown in ``documents`` is a derived projection.
+    One row per ``(tenant_id, question_id)``, so saving partway through
+    onboarding, resuming, and editing one answer later are all the same upsert.
+    ``questionnaire_version`` records which published version the answer was
+    given against, which is what makes "your DNA predates a newer question"
+    answerable as a prompt rather than a silent gate failure.
+
 **Creating the schema is an operator step, not a boot step.** The service
 connects as an ordinary role that deliberately has no rights to create tables —
 handing the runtime DDL privileges to save one deployment command is how an
@@ -33,18 +50,21 @@ application ends up owning its own security boundary. ``marketing-os init-db``
 provisions with an administrative DSN; the service only checks the tables are
 there and says what to run if they are not.
 
-**Row-level security backstops the ``documents`` scoping.** Every read and write
-runs inside a transaction that has set ``marketing_os.tenant_id``, and the policy
-admits only rows matching it — so even a query that forgot its ``WHERE
-tenant_id`` clause returns nothing across tenants. ``FORCE ROW LEVEL SECURITY``
-extends the policy to the table's owner. It does **not** extend to superusers or
-roles with ``BYPASSRLS``: the application must connect as an ordinary role, which
-is what :func:`grant_application_role_sql` provisions.
+**Row-level security backstops the tenant-partitioned tables.** Every read and
+write of ``documents`` and ``dna_answers`` runs inside a transaction that has set
+``marketing_os.tenant_id``, and the policy admits only rows matching it — so even
+a query that forgot its ``WHERE tenant_id`` clause returns nothing across
+tenants. ``FORCE ROW LEVEL SECURITY`` extends the policy to the table's owner. It
+does **not** extend to superusers or roles with ``BYPASSRLS``: the application
+must connect as an ordinary role, which is what
+:func:`grant_application_role_sql` provisions.
 
-RLS is applied to ``documents`` and not to ``runs`` because resolving runs left
-over from a crash is a cross-tenant maintenance sweep with no tenant in scope;
-the runs queries carry an explicit ``tenant_id`` predicate on every
-tenant-facing path instead.
+RLS is applied to the two tenant-partitioned tables and not to ``runs``, because
+resolving runs left over from a crash is a cross-tenant maintenance sweep with no
+tenant in scope; the runs queries carry an explicit ``tenant_id`` predicate on
+every tenant-facing path instead. ``questionnaires`` is not partitioned at all —
+the question set is the same for every business — so there is nothing for a
+policy to scope.
 """
 
 from __future__ import annotations
@@ -89,10 +109,32 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_campaign
     ON runs (tenant_id, slug) WHERE status = 'running';
 CREATE INDEX IF NOT EXISTS runs_by_status ON runs (status);
+
+CREATE TABLE IF NOT EXISTS questionnaires (
+    version      integer PRIMARY KEY,
+    published_at timestamptz NOT NULL DEFAULT now(),
+    questions    jsonb NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dna_answers (
+    tenant_id            text NOT NULL,
+    question_id          text NOT NULL,
+    answer               text NOT NULL,
+    questionnaire_version integer NOT NULL,
+    updated_at           timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, question_id)
+);
+
+ALTER TABLE dna_answers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dna_answers FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS dna_answers_tenant_isolation ON dna_answers;
+CREATE POLICY dna_answers_tenant_isolation ON dna_answers
+    USING (tenant_id = current_setting('{TENANT_SETTING}', true))
+    WITH CHECK (tenant_id = current_setting('{TENANT_SETTING}', true));
 """
 
 
-TABLES = ("tenants", "documents", "runs")
+TABLES = ("tenants", "documents", "runs", "questionnaires", "dna_answers")
 
 
 def ensure_schema(connection: Any) -> None:
@@ -131,7 +173,7 @@ def grant_application_role_sql(role: str) -> str:
 
     Row-level security does not constrain superusers, so the application must
     connect as an ordinary role for the ``documents`` policy to mean anything.
-    The grant covers every table in the schema — the harness's three plus the
+    The grant covers every table in the schema — the harness's five plus the
     checkpointer's own — and deliberately stops short of any right to create,
     alter or drop.
 

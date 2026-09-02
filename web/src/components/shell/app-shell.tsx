@@ -139,7 +139,9 @@ function UserCard() {
       />
       <div className="min-w-0 leading-tight">
         <div className="truncate text-[13px] font-semibold">
-          {user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "Signed in"}
+          {user?.fullName ??
+            user?.primaryEmailAddress?.emailAddress ??
+            "Signed in"}
         </div>
         <div className="truncate text-[11.5px] text-muted-foreground">
           {businessName} workspace

@@ -1,81 +1,121 @@
-import {
-  BRAND_SECTIONS,
-  type BrandEntry,
-  type BrandSection,
-} from "@/lib/mock-data";
+import type { DnaAnswer, Question, Questionnaire } from "@/lib/engine";
+import { BRAND_SECTIONS, type BrandSection } from "@/lib/mock-data";
 
-export interface OnboardingSegment {
-  name: string;
-  desc: string;
-}
+/** The question whose answer lists the audience segments campaigns target. */
+const AUDIENCE_QUESTION_ID = "q_segments";
 
-export interface OnboardingData {
-  companyName: string;
-  companyDescription: string;
-  industry: string;
-  products: string;
-  website: string;
-  segments: OnboardingSegment[];
-  problems: string;
-  valueProp: string;
-  promise: string;
-  differentiators: string;
-  claims: string;
-  competitors: string;
-  avoid: string;
-  personality: string;
-  tone: string;
-  writingStyle: string;
-  prohibitedTerms: string;
-  restricted: string;
-  disclaimers: string;
-}
-
+/** Separates a written entry's name from its detail on one line. */
 const LINE_SEPARATOR = /\s+[—–-]\s+/;
 
+/** Stands in for the business name in section descriptions. */
+const BUSINESS_LABEL = "your business";
+
+export interface QuestionStep {
+  name: string;
+  questions: Question[];
+}
+
 /**
- * Parses a multi-line "Name — detail" text block into brand entries.
+ * Groups the published questions into wizard steps, one per Brand DNA
+ * section, preserving the order the questionnaire asks them in.
+ *
+ * The wizard derives its steps from the question set rather than
+ * hardcoding them, so publishing a new version reshapes onboarding with
+ * no frontend change (ADR-0018).
  *
  * Args:
- *   text: One entry per line; an em/en dash or hyphen separates the
- *     entry name from its detail.
- *   warn: Whether the entries render as restricted-language warnings.
+ *   questionnaire: The published question set.
  *
  * Returns:
- *   One brand entry per non-empty line.
+ *   One step per section, in first-asked order.
  */
-export function parseEntries(text: string, warn?: boolean): BrandEntry[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const parts = line.split(LINE_SEPARATOR);
-      return {
-        k: parts[0].trim(),
-        v: parts.slice(1).join(" — ").trim(),
-        warn,
-      };
-    });
+export function questionSteps(questionnaire: Questionnaire): QuestionStep[] {
+  const steps: QuestionStep[] = [];
+  for (const question of questionnaire.questions) {
+    const existing = steps.find((step) => step.name === question.section);
+    if (existing) {
+      existing.questions.push(question);
+      continue;
+    }
+    steps.push({ name: question.section, questions: [question] });
+  }
+  return steps;
+}
+
+/**
+ * Builds the answer lookup the wizard edits, seeded from what was saved.
+ *
+ * Args:
+ *   answers: The answers already stored for the business.
+ *
+ * Returns:
+ *   Answer text keyed by question id.
+ */
+export function answersById(answers: DnaAnswer[]): Record<string, string> {
+  return Object.fromEntries(
+    answers.map((answer) => [answer.question_id, answer.answer]),
+  );
+}
+
+/**
+ * Returns the Required questions in a step that have no answer yet.
+ *
+ * Args:
+ *   step: The wizard step to check.
+ *   answers: Answer text keyed by question id.
+ *
+ * Returns:
+ *   The unanswered Required questions, which block advancing.
+ */
+export function unansweredRequired(
+  step: QuestionStep,
+  answers: Record<string, string>,
+): Question[] {
+  return step.questions.filter(
+    (question) => question.required && !(answers[question.id] ?? "").trim(),
+  );
+}
+
+/**
+ * Converts the wizard's answer lookup into the payload the engine takes,
+ * dropping blanks so an untouched field is never saved as an answer.
+ *
+ * Args:
+ *   answers: Answer text keyed by question id.
+ *
+ * Returns:
+ *   One entry per non-blank answer.
+ */
+export function toAnswerPayload(answers: Record<string, string>): DnaAnswer[] {
+  return Object.entries(answers)
+    .filter(([, answer]) => answer.trim())
+    .map(([question_id, answer]) => ({ question_id, answer: answer.trim() }));
 }
 
 /**
  * Returns the audience segment names campaigns can target.
  *
+ * The segments live in the Brand DNA answer to the audience question,
+ * one per line. Until the Campaign screens are wired to the engine
+ * (tracked separately), the fixture segments stand in when the business
+ * has not answered that question.
+ *
  * Args:
- *   data: Completed onboarding entries, or null before onboarding.
+ *   answers: Answer text keyed by question id, or null before onboarding.
  *
  * Returns:
- *   Onboarded segment names when available, otherwise the fixture
- *   Audience segments with their rank prefix stripped.
+ *   The segment names to offer.
  */
-export function audienceSegmentOptions(data: OnboardingData | null): string[] {
-  if (data) {
-    const names = data.segments
-      .map((segment) => segment.name.trim())
-      .filter(Boolean);
-    if (names.length) return names;
-  }
+export function audienceSegmentOptions(
+  answers: Record<string, string> | null,
+): string[] {
+  const written = (answers?.[AUDIENCE_QUESTION_ID] ?? "")
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
+    .map((line) => line.split(LINE_SEPARATOR)[0].trim())
+    .filter(Boolean);
+  if (written.length) return written;
+
   const fixture = BRAND_SECTIONS.find(
     (section) => section.name === "Audience segments",
   );
@@ -85,102 +125,46 @@ export function audienceSegmentOptions(data: OnboardingData | null): string[] {
 }
 
 /**
- * Builds the Brand screen sections, overlaying completed onboarding
- * data on the fixture sections.
+ * Builds the Brand screen sections, overlaying the business's own Brand
+ * DNA answers on the fixture sections.
+ *
+ * Only the sections the questionnaire actually covers are replaced; the
+ * rest remain fixtures until the Brand screen is wired to the engine.
  *
  * Args:
- *   data: Completed onboarding entries, or null before onboarding.
+ *   questionnaire: The published question set, or null before it loads.
+ *   answers: Answer text keyed by question id, or null before onboarding.
  *
  * Returns:
- *   The nine brand sections; sections the wizard covers are replaced
- *   with the operator's entries and marked verified "Just now".
+ *   The brand sections to render.
  */
 export function brandSectionsWithOnboarding(
-  data: OnboardingData | null,
+  questionnaire: Questionnaire | null,
+  answers: Record<string, string> | null,
 ): BrandSection[] {
-  if (!data) return BRAND_SECTIONS;
+  if (!questionnaire || !answers) return BRAND_SECTIONS;
 
-  const overrides = new Map<string, Pick<BrandSection, "desc" | "entries">>();
-
-  overrides.set("Positioning", {
-    desc: `The single idea ${data.companyName} owns and the frame every campaign starts from.`,
-    entries: [
-      { k: "Core value proposition", v: data.valueProp },
-      { k: "Customer promise", v: data.promise },
-      { k: "Key differentiators", v: data.differentiators },
-      ...(data.avoid ? [{ k: "Avoid", v: data.avoid }] : []),
-    ],
-  });
-
-  const products = parseEntries(data.products);
-  if (products.length) {
-    overrides.set("Products & services", {
-      desc: "What we sell, in the language we sell it in.",
-      entries: products,
-    });
-  }
-
-  overrides.set("Audience segments", {
-    desc: "Who we speak to, ranked by strategic priority.",
-    entries: [
-      ...data.segments
-        .filter((segment) => segment.name.trim())
-        .map((segment, index) => ({
-          k: `${index + 1} · ${segment.name}`,
-          v: segment.desc,
-        })),
-      ...(data.problems
-        ? [{ k: "Problems & pain points", v: data.problems }]
-        : []),
-    ],
-  });
-
-  overrides.set("Voice & tone", {
-    desc: `How ${data.companyName} sounds, everywhere.`,
-    entries: [
-      { k: "Personality", v: data.personality },
-      { k: "Tone of voice", v: data.tone },
-      ...(data.writingStyle
-        ? [{ k: "Writing style", v: data.writingStyle }]
-        : []),
-    ],
-  });
-
-  const claims = parseEntries(data.claims);
-  if (claims.length) {
-    overrides.set("Claims & evidence", {
-      desc: "Every claim we make in public, with what backs it.",
-      entries: claims,
-    });
-  }
-
-  const restricted = parseEntries(
-    [data.restricted, data.prohibitedTerms].filter(Boolean).join("\n"),
-    true,
+  const answered = questionnaire.questions.filter((question) =>
+    (answers[question.id] ?? "").trim(),
   );
-  if (restricted.length) {
-    overrides.set("Restricted language", {
-      desc: "Words and claims that must never appear in published assets.",
-      entries: [
-        ...restricted,
-        ...(data.disclaimers
-          ? [{ k: "Required disclaimers", v: data.disclaimers }]
-          : []),
-      ],
-    });
-  }
+  if (!answered.length) return BRAND_SECTIONS;
 
-  const competitors = parseEntries(data.competitors);
-  if (competitors.length) {
-    overrides.set("Competitors", {
-      desc: "Who we are compared against and how we differ.",
-      entries: competitors,
-    });
-  }
+  const fromDna: BrandSection[] = questionSteps({
+    ...questionnaire,
+    questions: answered,
+  }).map((step) => ({
+    name: step.name,
+    verified: "Just now",
+    desc: `What ${BUSINESS_LABEL} told us about ${step.name.toLowerCase()}.`,
+    entries: step.questions.map((question) => ({
+      k: question.field,
+      v: answers[question.id],
+    })),
+  }));
 
-  return BRAND_SECTIONS.map((section) => {
-    const override = overrides.get(section.name);
-    if (!override) return section;
-    return { ...section, ...override, verified: "Just now" };
-  });
+  const covered = new Set(fromDna.map((section) => section.name));
+  return [
+    ...fromDna,
+    ...BRAND_SECTIONS.filter((section) => !covered.has(section.name)),
+  ];
 }

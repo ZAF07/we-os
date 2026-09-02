@@ -29,7 +29,9 @@ import pytest
 from conftest import OTHER_TENANT, SLUG, TENANT, install_scripted_graph
 from marketing_os.adapters.observability import new_run_id
 from marketing_os.adapters.postgres import (
+    PostgresAnswerStore,
     PostgresDocumentStore,
+    PostgresQuestionnaireStore,
     PostgresRunStore,
     PostgresTenantDirectory,
 )
@@ -38,7 +40,8 @@ from marketing_os.config import Settings
 from marketing_os.errors import RunConflictError
 from marketing_os.graph.checkpoints import clear_campaign_threads, thread_id
 from marketing_os.graph.runner import arun_campaign
-from marketing_os.schemas import RunRecord
+from marketing_os.questionnaire import SEED_QUESTIONNAIRE
+from marketing_os.schemas import DnaAnswer, RunRecord
 
 pytestmark = pytest.mark.slow
 
@@ -289,3 +292,63 @@ async def test_clearing_a_campaigns_threads_removes_its_durable_state(
         await clear_campaign_threads(saver, TENANT, SLUG)
 
         assert await saver.aget_tuple(thread) is None
+
+
+# --- The questionnaire and Brand DNA answers ------------------------------------
+
+
+def test_a_published_question_set_survives_the_process(postgres_pool: Any) -> None:
+    store = PostgresQuestionnaireStore(postgres_pool)
+    assert store.published().version == SEED_QUESTIONNAIRE.version  # falls back to the seed
+
+    newer = SEED_QUESTIONNAIRE.model_copy(
+        update={"version": SEED_QUESTIONNAIRE.version + 1, "published_at": "2026-09-02T09:00:00Z"}
+    )
+    store.publish(newer)
+
+    reopened = PostgresQuestionnaireStore(postgres_pool)
+    assert reopened.published().version == newer.version
+    assert [q.id for q in reopened.published().questions] == [q.id for q in newer.questions]
+    assert reopened.version(SEED_QUESTIONNAIRE.version).version == SEED_QUESTIONNAIRE.version
+
+
+def test_a_query_with_no_tenant_scope_returns_no_answers_across_tenants(
+    postgres_pool: Any,
+) -> None:
+    # The RLS policy is what makes this true, not the WHERE clause: the query
+    # below deliberately has no tenant predicate at all.
+    PostgresAnswerStore(postgres_pool).upsert(
+        TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$90")]
+    )
+    with postgres_pool.connection() as connection:
+        connection.execute("SELECT set_config(%s, %s, true)", (TENANT_SETTING, OTHER_TENANT))
+        rows = connection.execute("SELECT question_id FROM dna_answers").fetchall()
+    assert rows == []
+
+
+def test_one_business_cannot_read_anothers_brand_dna_answers(postgres_pool: Any) -> None:
+    store = PostgresAnswerStore(postgres_pool)
+    store.upsert(TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$90")])
+    assert store.read(TENANT).answer_for("q_price_point") == "$90"
+    assert store.read(OTHER_TENANT).answers == []
+
+
+def test_editing_one_answer_leaves_the_rest_and_advances_the_version(
+    postgres_pool: Any,
+) -> None:
+    store = PostgresAnswerStore(postgres_pool)
+    store.upsert(
+        TENANT,
+        version=1,
+        answers=[
+            DnaAnswer(question_id="q_business_name", answer="Acme"),
+            DnaAnswer(question_id="q_price_point", answer="$90"),
+        ],
+    )
+    store.upsert(TENANT, version=2, answers=[DnaAnswer(question_id="q_price_point", answer="$120")])
+
+    record = store.read(TENANT)
+    assert record.answer_for("q_business_name") == "Acme"
+    assert record.answer_for("q_price_point") == "$120"
+    assert record.questionnaire_version == 2
+    assert record.updated_at is not None

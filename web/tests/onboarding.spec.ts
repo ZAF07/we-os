@@ -1,14 +1,52 @@
 import { expect, test } from "@playwright/test";
 
-test("required-field validation blocks advancing past an incomplete step", async ({
+/**
+ * The wizard renders entirely from the engine's published question set,
+ * so these assert on what the seed set actually asks — including the
+ * four fields the old wizard never collected — rather than on any
+ * question hardcoded in the frontend.
+ */
+const FIRST_STEP_QUESTIONS = [
+  "What is your business called?",
+  "What do you sell?",
+  "What category or industry are you in?",
+  "What do your main products or services cost?",
+];
+
+const CRAFTED_ARTIFACT_QUESTIONS = [
+  "Core value proposition",
+  "Primary customer promise",
+  "Key differentiators",
+  "Brand personality",
+  "Tone of voice",
+];
+
+test("the wizard renders the published questions, each explaining itself", async ({
   page,
 }) => {
   await page.goto("/onboarding");
 
   await expect(page.getByText("Step 1 of 5")).toBeVisible();
-  await expect(
-    page.getByText("AI extraction from your documents isn't available yet"),
-  ).toBeVisible();
+  for (const question of FIRST_STEP_QUESTIONS) {
+    await expect(page.getByText(question)).toBeVisible();
+  }
+  await expect(page.getByText(/^Why we ask:/).first()).toBeVisible();
+});
+
+test("onboarding never asks for work the engine owes the business", async ({
+  page,
+}) => {
+  await page.goto("/onboarding");
+
+  for (const label of CRAFTED_ARTIFACT_QUESTIONS) {
+    await expect(page.getByText(label, { exact: true })).toHaveCount(0);
+  }
+});
+
+test("required-field validation blocks advancing past an incomplete step", async ({
+  page,
+}) => {
+  await page.goto("/onboarding");
 
   await page.getByRole("button", { name: "Next →" }).click();
   await expect(
@@ -17,95 +55,64 @@ test("required-field validation blocks advancing past an incomplete step", async
   await expect(page.getByText("Step 1 of 5")).toBeVisible();
 });
 
-test("completing onboarding populates the Brand screen with entered data", async ({
+test("answers save partway and are still there on return", async ({ page }) => {
+  await page.goto("/onboarding");
+
+  await page.getByLabel("What is your business called?").fill("Acme Coffee");
+  await page
+    .getByLabel("What do you sell?")
+    .fill("Specialty coffee kits and subscriptions");
+  await page.getByLabel("What category or industry are you in?").fill("Coffee");
+  await page
+    .getByLabel("What do your main products or services cost?")
+    .fill("$18–24 a bag");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await expect(page.getByText("Step 2 of 5")).toBeVisible();
+
+  await page.goto("/onboarding");
+  await expect(page.getByLabel("What is your business called?")).toHaveValue(
+    "Acme Coffee",
+  );
+  await expect(page.getByText(/answered so far/)).toBeVisible();
+});
+
+test("completing the questionnaire lands on the Brand screen with the answers", async ({
   page,
 }) => {
   await page.goto("/onboarding");
 
-  await page.getByLabel("Company name").fill("Acme Coffee");
-  await page
-    .getByLabel("Company description")
-    .fill("Specialty coffee kits for busy people.");
-  await page.getByLabel("Industry & category").fill("Specialty coffee");
-  await page
-    .getByLabel("Products or services")
-    .fill("Acme Brew Kit — dripper, filters and beans");
-  await page.getByRole("button", { name: "Next →" }).click();
+  const answers: Record<string, string> = {
+    "What is your business called?": "Acme Coffee",
+    "What do you sell?": "Specialty coffee kits and subscriptions",
+    "What category or industry are you in?": "Specialty coffee",
+    "What do your main products or services cost?": "$18–24 a bag",
+    "Who buys from you? Describe each distinct group, most important first.":
+      "Urban commuters",
+    "What problems do those buyers hire you to solve?":
+      "Long queues at cafes before work.",
+    "When a customer picks you over an alternative, what decided it?":
+      "We ship within a day of roasting.",
+    "Where do you serve customers?": "Australia-wide, online only",
+    "What languages do your customers speak?": "English",
+    "What can you spend on marketing in a typical month?": "$2,000 a month",
+    "What must never appear in your marketing?": "No health claims.",
+  };
 
-  await expect(page.getByText("Step 2 of 5")).toBeVisible();
-  await page.getByLabel("Primary customer segment").fill("Urban commuters");
-  await page
-    .getByLabel("What defines them")
-    .first()
-    .fill("Grab coffee on the go, value speed over ritual.");
-  await page
-    .getByLabel("Customer problems & pain points")
-    .fill("Long queues at cafes before work.");
-  await page.getByRole("button", { name: "Next →" }).click();
-
-  await expect(page.getByText("Step 3 of 5")).toBeVisible();
-  await page
-    .getByLabel("Core value proposition")
-    .fill("Cafe-quality coffee in 90 seconds.");
-  await page
-    .getByLabel("Primary customer promise")
-    .fill("Cafe taste without the queue.");
-  await page
-    .getByLabel("Key differentiators")
-    .fill("Patented 90-second brew method.");
-  await page
-    .getByLabel("Main competitors")
-    .fill("Blue Bottle — we win on speed");
-  await page.getByRole("button", { name: "Next →" }).click();
-
-  await expect(page.getByText("Step 4 of 5")).toBeVisible();
-  await page.getByLabel("Brand personality").fill("Energetic and direct");
-  await page.getByLabel("Tone of voice").fill("Snappy, friendly, concrete.");
-  await page.getByRole("button", { name: "Next →" }).click();
-
-  await expect(page.getByText("Step 5 of 5")).toBeVisible();
-  await page
-    .getByLabel("Restricted claims & terminology")
-    .fill('"world\'s best" — unverifiable superlative');
+  for (let step = 1; step <= 4; step += 1) {
+    for (const [label, value] of Object.entries(answers)) {
+      const field = page.getByLabel(label);
+      if (await field.count()) await field.fill(value);
+    }
+    await page.getByRole("button", { name: "Next →" }).click();
+  }
   await page.getByRole("button", { name: "Finish onboarding" }).click();
 
   await expect(page).toHaveURL("/brand");
-  await expect(
-    page.getByRole("heading", { name: "Positioning" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Cafe-quality coffee in 90 seconds."),
-  ).toBeVisible();
-  await expect(page.getByText("Cafe taste without the queue.")).toBeVisible();
+  await expect(page.getByText("Acme Coffee")).toBeVisible();
   await expect(page.getByText("Last verified Just now")).toBeVisible();
 
   const index = page.getByRole("navigation", { name: "Brand sections" });
-  await index.getByRole("button", { name: "Audience segments" }).click();
-  await expect(page.getByText("1 · Urban commuters")).toBeVisible();
-  await expect(
-    page.getByText("Grab coffee on the go, value speed over ritual."),
-  ).toBeVisible();
-
-  await index.getByRole("button", { name: "Voice & tone" }).click();
-  await expect(page.getByText("Snappy, friendly, concrete.")).toBeVisible();
-
-  await index.getByRole("button", { name: "Restricted language" }).click();
-  await expect(page.getByText('"world\'s best"')).toBeVisible();
-  await expect(page.getByText("RESTRICTED").first()).toBeVisible();
-
-  await index.getByRole("button", { name: "Competitors" }).click();
-  await expect(page.getByText("Blue Bottle")).toBeVisible();
-
-  // The shell names the signed-in organization — the real tenant — rather than
-  // whatever was typed into the onboarding mockup, which creates no tenant.
-  // Onboarding's own persistence is asserted by the Brand-screen checks below.
-  await expect(page.getByText(/ workspace$/)).toBeVisible();
-
-  await page.reload();
-  await expect(page.getByText(/ workspace$/)).toBeVisible();
-  await expect(page.getByText("Blue Bottle")).toBeVisible();
-  await index.getByRole("button", { name: "Positioning" }).click();
-  await expect(
-    page.getByText("Cafe-quality coffee in 90 seconds."),
-  ).toBeVisible();
+  await index.getByRole("button", { name: "Reach & constraints" }).click();
+  await expect(page.getByText("Australia-wide, online only")).toBeVisible();
+  await expect(page.getByText("$2,000 a month")).toBeVisible();
 });

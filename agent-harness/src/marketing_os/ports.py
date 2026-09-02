@@ -8,7 +8,9 @@ live (ADR-0014), the :class:`TenantDirectory`, which maps an identity provider's
 organization onto the platform tenant that owns those documents, the
 :class:`RunStore`, which holds run state durably so the one-active-run-per-campaign
 guard survives a restart and spans workers, and the :class:`TokenVerifier`, which
-establishes who a caller is (ADR-0013). Tests substitute all of them with
+establishes who a caller is (ADR-0013), and the :class:`QuestionnaireStore` and
+:class:`AnswerStore`, which hold the admin-curated question set and each
+business's answers to it (ADR-0018). Tests substitute all of them with
 hermetic fakes.
 """
 
@@ -16,7 +18,15 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from marketing_os.schemas import ReviewVerdict, RunRecord, Tenant, VerifiedClaims
+from marketing_os.schemas import (
+    BrandDnaRecord,
+    DnaAnswer,
+    Questionnaire,
+    ReviewVerdict,
+    RunRecord,
+    Tenant,
+    VerifiedClaims,
+)
 
 
 @runtime_checkable
@@ -286,5 +296,97 @@ class RunStore(Protocol):
 
         Returns:
             The records that were resolved.
+        """
+        ...
+
+
+@runtime_checkable
+class QuestionnaireStore(Protocol):
+    """Holds the published versions of the admin-curated question set.
+
+    The question set is platform-wide, not tenant-scoped: every business answers
+    the same curated questions. It is versioned and editable without a deploy,
+    because the admin sharpens onboarding as they learn from real businesses
+    (ADR-0018).
+    """
+
+    def published(self) -> Questionnaire:
+        """Return the currently published question set.
+
+        Returns:
+            The highest published version, or the code-shipped seed when nothing
+            has been published — a fresh deployment still has a usable onboarding.
+        """
+        ...
+
+    def version(self, version: int) -> Questionnaire | None:
+        """Return one published version by number.
+
+        Needed to answer "which questions is this business seeing for the first
+        time?" honestly: a question is new only when the version they answered
+        did not ask it.
+
+        Args:
+            version: The published version number.
+
+        Returns:
+            That version, or ``None`` when it was never published.
+        """
+        ...
+
+    def publish(self, questionnaire: Questionnaire) -> Questionnaire:
+        """Publish a new version of the question set.
+
+        Args:
+            questionnaire: The version to publish.
+
+        Returns:
+            The published version.
+
+        Raises:
+            ValidationError: If the version does not advance past the current
+                one. Republishing an older version would silently loosen the DNA
+                Gate for every business at once.
+        """
+        ...
+
+
+@runtime_checkable
+class AnswerStore(Protocol):
+    """Tenant-scoped storage for a business's Brand DNA answers.
+
+    The structured answers are the source of truth; the markdown the agents read
+    is rendered from them (ADR-0018). Scoping is by construction, exactly as the
+    :class:`DocumentStore`'s is: a read that does not name the owning tenant
+    finds nothing.
+    """
+
+    def read(self, tenant: str) -> BrandDnaRecord:
+        """Return a business's answers and the question-set version they were given against.
+
+        Args:
+            tenant: The tenant whose answers to read.
+
+        Returns:
+            The record, empty at version 0 when the business has answered
+            nothing — an unstarted onboarding is not an error.
+        """
+        ...
+
+    def upsert(self, tenant: str, *, version: int, answers: list[DnaAnswer]) -> BrandDnaRecord:
+        """Save answers, replacing any previous answer to the same question.
+
+        Upsert rather than replace is what lets onboarding be saved partway and
+        resumed, and any single answer be edited later, without the caller
+        resending everything it already stored.
+
+        Args:
+            tenant: The tenant the answers belong to.
+            version: The published question-set version the answers were given
+                against, recorded so a later version can be surfaced as a prompt.
+            answers: The answers to save.
+
+        Returns:
+            The business's full record after the save.
         """
         ...
