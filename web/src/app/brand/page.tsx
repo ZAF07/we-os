@@ -8,8 +8,9 @@ import { cn } from "@/lib/utils";
 export default function BrandPage() {
   const brandIdx = useDemoStore((state) => state.brandIdx);
   const setBrandIdx = useDemoStore((state) => state.setBrandIdx);
+  const questionnaire = useDemoStore((state) => state.questionnaire);
   const onboarding = useDemoStore((state) => state.onboarding);
-  const sections = brandSectionsWithOnboarding(onboarding);
+  const sections = brandSectionsWithOnboarding(questionnaire, onboarding);
   const section = sections[brandIdx] ?? sections[0];
 
   return (

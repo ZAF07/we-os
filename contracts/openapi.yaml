@@ -125,6 +125,7 @@ paths:
                 questions:
                   - id: q_business_name
                     field: Business name
+                    section: Business
                     text: What is your business called?
                     why_we_ask: Every recommendation is grounded in your business, starting with its name.
                     help_text: Use the name your customers know you by.
@@ -132,13 +133,15 @@ paths:
                     required: true
                   - id: q_price_point
                     field: Price point
+                    section: Business
                     text: What do your main products or services cost?
                     why_we_ask: Positioning and channel choices differ for premium and value offers.
                     help_text: Rough ranges are fine, e.g. "$6–9 per drink".
                     input_type: text
                     required: true
                   - id: q_segments
-                    field: Audience segments
+                    field: Primary segment(s)
+                    section: Customers
                     text: Who buys from you? Describe each distinct group and rank them.
                     why_we_ask: A campaign targets one specific segment, never everyone.
                     help_text: 2–4 groups, most important first.
@@ -976,7 +979,7 @@ components:
 
     Question:
       type: object
-      required: [id, field, text, why_we_ask, help_text, input_type, required]
+      required: [id, field, section, text, why_we_ask, help_text, input_type, required]
       properties:
         id:
           type: string
@@ -984,6 +987,12 @@ components:
         field:
           type: string
           description: The Brand DNA field this question populates.
+        section:
+          type: string
+          description: |
+            The Brand DNA section the field renders under, and the wizard step
+            the question is asked in — so the question set shapes onboarding's
+            structure as well as its content.
         text:
           type: string
         why_we_ask:

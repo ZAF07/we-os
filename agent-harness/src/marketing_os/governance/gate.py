@@ -6,11 +6,20 @@ Reproduces the orchestrator's three blocking checks:
   3. The campaign goal (`campaigns/<slug>/goal.md`) exists with its Required
      fields filled.
 
-Tenant documents resolve through the DocumentStore port; the templates that
-define what "Required" means stay code-shipped and are read from the repo. Which
-fields are "Required" is read from the templates' `## Required` section, so
-adding a Required field to a template automatically tightens the gate — no code
-change. Fails by raising `GateError` with the exact offending fields.
+Tenant documents resolve through the DocumentStore port. What "Required" means
+has two sources, both outside this module so neither can drift from the gate:
+
+  * The **Brand DNA**'s Required fields come from the **published question set**
+    when one is supplied, so publishing a question set with a new Required
+    question tightens the gate with no code change (ADR-0018). Without one — the
+    CLI, and any caller with no questionnaire store — it falls back to
+    `templates/brand-dna.md`, which is the same rule against the hand-authored
+    template.
+  * The **campaign goal**'s Required fields always come from
+    `templates/campaign-goal.md`, which is code-shipped: the goal is authored per
+    campaign and has no questionnaire behind it.
+
+Fails by raising `GateError` with the exact offending fields.
 """
 
 from __future__ import annotations
@@ -22,6 +31,8 @@ from pathlib import Path
 from marketing_os.config import Settings
 from marketing_os.errors import GateError
 from marketing_os.ports import DocumentStore
+from marketing_os.questionnaire import required_dna_fields
+from marketing_os.schemas import Questionnaire
 
 _FIELD_RE = re.compile(r"^\s*-\s*\*\*(.+?):\*\*\s*(.*)$")
 _PLACEHOLDER_RE = re.compile(r"^<[^>]*>$")
@@ -84,6 +95,30 @@ def _is_placeholder(value: str) -> bool:
     return v == "" or bool(_PLACEHOLDER_RE.match(v))
 
 
+def validate_fields(labels: list[str], doc_text: str) -> list[str]:
+    """Validate a document against an explicit list of Required field labels.
+
+    The one place a document is checked, whether the labels came from a template
+    or from the published question set.
+
+    Args:
+        labels: The Required field labels the document must fill.
+        doc_text: The document text to validate.
+
+    Returns:
+        Human-readable issues, one per missing or placeholder Required field;
+        empty when the document passes.
+    """
+    values = field_map(doc_text)
+    issues: list[str] = []
+    for label in labels:
+        if label not in values:
+            issues.append(f"missing Required field: '{label}'")
+        elif _is_placeholder(values[label]):
+            issues.append(f"placeholder/empty Required field: '{label}'")
+    return issues
+
+
 def validate_document(template_path: Path, doc_text: str) -> list[str]:
     """Validate a document's Required fields against its template.
 
@@ -95,15 +130,7 @@ def validate_document(template_path: Path, doc_text: str) -> list[str]:
         Human-readable issues, one per missing or placeholder Required field;
         empty when the document passes.
     """
-    labels = required_fields(template_path)
-    values = field_map(doc_text)
-    issues: list[str] = []
-    for label in labels:
-        if label not in values:
-            issues.append(f"missing Required field: '{label}'")
-        elif _is_placeholder(values[label]):
-            issues.append(f"placeholder/empty Required field: '{label}'")
-    return issues
+    return validate_fields(required_fields(template_path), doc_text)
 
 
 @dataclass
@@ -126,7 +153,14 @@ class GateReport:
         return [f"DNA: {i}" for i in self.dna_issues] + [f"Goal: {i}" for i in self.goal_issues]
 
 
-def check_gate(settings: Settings, tenant: str, slug: str, *, store: DocumentStore) -> GateReport:
+def check_gate(
+    settings: Settings,
+    tenant: str,
+    slug: str,
+    *,
+    store: DocumentStore,
+    questionnaire: Questionnaire | None = None,
+) -> GateReport:
     """Run the gate and return a report (does not raise).
 
     Args:
@@ -134,23 +168,31 @@ def check_gate(settings: Settings, tenant: str, slug: str, *, store: DocumentSto
         tenant: The tenant the campaign runs for.
         slug: The campaign slug.
         store: The document store the DNA and goal resolve through.
+        questionnaire: The published question set, when the caller has one. Its
+            Required questions define the Required Brand DNA fields, so the
+            questionnaire and the gate cannot drift apart. Omitted, the gate
+            falls back to the hand-authoring template.
 
     Returns:
         The structured gate report.
     """
     dna_document = "dna.md"
     goal_document = f"campaigns/{slug}/goal.md"
-    dna_template = settings.templates_dir / "brand-dna.md"
     goal_template = settings.templates_dir / "campaign-goal.md"
+    dna_labels = (
+        required_dna_fields(questionnaire)
+        if questionnaire is not None
+        else required_fields(settings.templates_dir / "brand-dna.md")
+    )
 
     report = GateReport(tenant=tenant, slug=slug)
     if not store.exists(tenant, dna_document):
         report.dna_issues.append(
-            f"no Brand DNA at {store.describe(tenant, dna_document)}. Author it from "
-            "templates/brand-dna.md, filling every Required field."
+            f"no Brand DNA at {store.describe(tenant, dna_document)}. Complete the "
+            "onboarding questionnaire, answering every Required question."
         )
     else:
-        report.dna_issues.extend(validate_document(dna_template, store.read(tenant, dna_document)))
+        report.dna_issues.extend(validate_fields(dna_labels, store.read(tenant, dna_document)))
 
     if not store.exists(tenant, goal_document):
         report.goal_issues.append(
@@ -164,7 +206,14 @@ def check_gate(settings: Settings, tenant: str, slug: str, *, store: DocumentSto
     return report
 
 
-def enforce_gate(settings: Settings, tenant: str, slug: str, *, store: DocumentStore) -> GateReport:
+def enforce_gate(
+    settings: Settings,
+    tenant: str,
+    slug: str,
+    *,
+    store: DocumentStore,
+    questionnaire: Questionnaire | None = None,
+) -> GateReport:
     """Run the gate and raise GateError if it does not pass.
 
     Args:
@@ -172,6 +221,8 @@ def enforce_gate(settings: Settings, tenant: str, slug: str, *, store: DocumentS
         tenant: The tenant the campaign runs for.
         slug: The campaign slug.
         store: The document store the DNA and goal resolve through.
+        questionnaire: The published question set defining the Required Brand
+            DNA fields, when the caller has one.
 
     Returns:
         The passing gate report.
@@ -179,7 +230,7 @@ def enforce_gate(settings: Settings, tenant: str, slug: str, *, store: DocumentS
     Raises:
         GateError: If the gate does not pass, carrying the offending fields.
     """
-    report = check_gate(settings, tenant, slug, store=store)
+    report = check_gate(settings, tenant, slug, store=store, questionnaire=questionnaire)
     if not report.ok:
         raise GateError(
             "Stage 0 gate failed — work cannot begin until these are fixed:\n  - "

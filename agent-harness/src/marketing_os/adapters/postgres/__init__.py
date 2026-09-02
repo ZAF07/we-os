@@ -11,14 +11,20 @@ from __future__ import annotations
 from typing import Any
 
 from marketing_os.adapters.postgres.documents import PostgresDocumentStore
+from marketing_os.adapters.postgres.questionnaire import (
+    PostgresAnswerStore,
+    PostgresQuestionnaireStore,
+)
 from marketing_os.adapters.postgres.runs import PostgresRunStore
 from marketing_os.adapters.postgres.schema import ensure_schema, missing_tables
 from marketing_os.adapters.postgres.tenants import PostgresTenantDirectory
 from marketing_os.errors import ConfigError
 
 __all__ = [
+    "PostgresAnswerStore",
     "PostgresBackend",
     "PostgresDocumentStore",
+    "PostgresQuestionnaireStore",
     "PostgresRunStore",
     "PostgresTenantDirectory",
     "ensure_schema",
@@ -29,13 +35,14 @@ __all__ = [
 class PostgresBackend:
     """Owns one connection pool and the adapters and checkpointer built over it.
 
-    A single object because the four pieces share a lifetime: the pool must be
+    A single object because the parts share a lifetime: the pool must be
     open before any of them is used and closed after all of them are done. The
     service opens one in its lifespan and hands the parts out through its
     dependency providers.
 
-    The document, tenant and run adapters use a **synchronous** pool because the
-    :class:`~marketing_os.ports.DocumentStore` port is synchronous; the LangGraph
+    The document, tenant, run, questionnaire and answer adapters use a
+    **synchronous** pool because the :class:`~marketing_os.ports.DocumentStore`
+    port is synchronous; the LangGraph
     checkpointer uses its own asynchronous connection because the graph is driven
     with ``astream`` (ADR-0009).
     """
@@ -101,6 +108,16 @@ class PostgresBackend:
     def runs(self) -> PostgresRunStore:
         """Return the run store over this backend's pool."""
         return PostgresRunStore(self._pool)
+
+    @property
+    def questionnaires(self) -> PostgresQuestionnaireStore:
+        """Return the questionnaire store over this backend's pool."""
+        return PostgresQuestionnaireStore(self._pool)
+
+    @property
+    def answers(self) -> PostgresAnswerStore:
+        """Return the Brand DNA answer store over this backend's pool."""
+        return PostgresAnswerStore(self._pool)
 
     @property
     def checkpointer(self) -> Any:

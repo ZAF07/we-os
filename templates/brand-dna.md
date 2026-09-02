@@ -1,6 +1,7 @@
-# Brand DNA — <CUSTOMER NAME>
+# Brand DNA — <BUSINESS NAME>
 
-> Copy this file to `customers/<name>/dna.md` and fill every **Required** field with real, specific information.
+> The Brand DNA is normally authored by answering the onboarding Questionnaire, which renders this document for you (see ADR-0018).
+> This template is the hand-authoring path: copy it to `tenants/<tenant>/dna.md` and fill every **Required** field with real, specific information.
 > This is the single source of truth the agent strictly abides by. Vague or placeholder answers produce vague, generic campaigns.
 > Replace every `<...>` placeholder. Leaving a Required field as a placeholder will block the agent.
 
@@ -34,4 +35,4 @@
 - **Common objections:** <reasons prospects hesitate or say no>
 - **Baseline metrics:** <current conversion rate, CAC, traffic, bookings/month — whatever exists>
 
-<!-- Add anything else that is true and specific about this customer. More real detail = less generic output. -->
+<!-- Add anything else that is true and specific about this business. More real detail = less generic output. -->

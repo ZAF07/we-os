@@ -41,7 +41,10 @@ export class EngineError extends Error {
  * Throws:
  *   EngineError: When the engine answers with a non-2xx status.
  */
-export async function engineFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function engineFetch<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
   const { getToken } = await auth();
   const token = await getToken();
 
@@ -57,7 +60,8 @@ export async function engineFetch<T>(path: string, init: RequestInit = {}): Prom
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    const detail = (body as { detail?: Record<string, unknown> }).detail ?? body;
+    const detail =
+      (body as { detail?: Record<string, unknown> }).detail ?? body;
     throw new EngineError(response.status, detail as Record<string, unknown>);
   }
 
@@ -107,7 +111,9 @@ export function getGate(slug: string): Promise<GateReport> {
  *   slug: The campaign slug.
  */
 export function getDeliverables(slug: string): Promise<DeliverableList> {
-  return engineFetch<DeliverableList>(`/campaigns/${encodeURIComponent(slug)}/deliverables`);
+  return engineFetch<DeliverableList>(
+    `/campaigns/${encodeURIComponent(slug)}/deliverables`,
+  );
 }
 
 export interface Deliverable extends DeliverableFile {
@@ -121,8 +127,89 @@ export interface Deliverable extends DeliverableFile {
  *   slug: The campaign slug.
  *   name: The deliverable filename, e.g. `research.md`.
  */
-export function getDeliverable(slug: string, name: string): Promise<Deliverable> {
+export function getDeliverable(
+  slug: string,
+  name: string,
+): Promise<Deliverable> {
   return engineFetch<Deliverable>(
     `/campaigns/${encodeURIComponent(slug)}/deliverables/${encodeURIComponent(name)}`,
   );
+}
+
+export interface Question {
+  id: string;
+  field: string;
+  section: string;
+  text: string;
+  why_we_ask: string;
+  help_text: string;
+  input_type: string;
+  required: boolean;
+  options: string[];
+}
+
+export interface Questionnaire {
+  version: number;
+  published_at: string;
+  questions: Question[];
+}
+
+export interface DnaAnswer {
+  question_id: string;
+  answer: string;
+}
+
+export interface BrandDna {
+  questionnaire_version: number;
+  updated_at: string | null;
+  markdown: string;
+  answers: DnaAnswer[];
+}
+
+export interface MissingField {
+  question_id: string;
+  field: string;
+  label: string;
+}
+
+export interface DnaCompleteness {
+  complete: boolean;
+  questionnaire_version: number;
+  required_total: number;
+  required_answered: number;
+  missing: MissingField[];
+  unanswered_new_questions: string[];
+}
+
+/** Reads the published question set the onboarding wizard renders from. */
+export function getQuestionnaire(): Promise<Questionnaire> {
+  return engineFetch<Questionnaire>("/questionnaire");
+}
+
+/** Reads the tenant's Brand DNA — the structured answers and their markdown projection. */
+export function getBrandDna(): Promise<BrandDna> {
+  return engineFetch<BrandDna>("/brand-dna");
+}
+
+/** Reports which Required Brand DNA fields the business still owes. */
+export function getBrandDnaCompleteness(): Promise<DnaCompleteness> {
+  return engineFetch<DnaCompleteness>("/brand-dna/completeness");
+}
+
+/**
+ * Saves questionnaire answers, upserting so onboarding can be resumed.
+ *
+ * Args:
+ *   answers: The answers to save; at least one.
+ *
+ * Returns:
+ *   The updated completeness report.
+ */
+export function saveBrandDnaAnswers(
+  answers: DnaAnswer[],
+): Promise<DnaCompleteness> {
+  return engineFetch<DnaCompleteness>("/brand-dna/answers", {
+    method: "POST",
+    body: JSON.stringify({ answers }),
+  });
 }

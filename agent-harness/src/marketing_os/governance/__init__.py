@@ -8,6 +8,7 @@ from marketing_os.governance.gate import (
     enforce_gate,
     required_fields,
     validate_document,
+    validate_fields,
 )
 from marketing_os.governance.pipeline import (
     DIRECTOR,
@@ -28,6 +29,7 @@ __all__ = [
     "enforce_gate",
     "required_fields",
     "validate_document",
+    "validate_fields",
     "PIPELINE",
     "PIPELINE_BY_KEY",
     "Stage",

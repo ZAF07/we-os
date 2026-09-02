@@ -94,3 +94,53 @@ def test_validate_document_reports_missing_field(settings):
     bad_text = "# DNA\n\n## Business\n- **What they sell:** widgets\n"
     issues = validate_document(settings.templates_dir / "brand-dna.md", bad_text)
     assert any("Business name" in i for i in issues)
+
+
+def test_gate_derives_required_dna_fields_from_the_question_set(settings):
+    # Adding a Required question tightens the gate with no code change: the DNA
+    # in the repo answers the template's fields but not this new one.
+    from marketing_os.questionnaire import SEED_QUESTIONNAIRE
+    from marketing_os.schemas import Question, Questionnaire
+
+    added = Question(
+        id="q_seasonality",
+        field="Seasonality",
+        section="Reach & constraints",
+        text="When is your busiest season?",
+        why_we_ask="Timing changes the message.",
+        help_text="Name the months.",
+        required=True,
+    )
+    tightened = Questionnaire(
+        version=SEED_QUESTIONNAIRE.version + 1,
+        published_at="2026-09-02T09:00:00Z",
+        questions=[*SEED_QUESTIONNAIRE.questions, added],
+    )
+    report = check_gate(settings, TENANT, SLUG, store=_store(settings), questionnaire=tightened)
+    assert not report.ok
+    assert any("Seasonality" in issue for issue in report.dna_issues)
+
+
+def test_gate_ignores_the_template_when_a_question_set_is_supplied(settings):
+    # The published question set is authoritative for the DNA half of the gate,
+    # so a DNA answering every published Required question passes even though
+    # the template names fields the question set does not (ADR-0018).
+    from marketing_os.questionnaire import SEED_QUESTIONNAIRE, render_brand_dna
+    from marketing_os.schemas import BrandDnaRecord, DnaAnswer
+
+    record = BrandDnaRecord(
+        questionnaire_version=SEED_QUESTIONNAIRE.version,
+        answers=[
+            DnaAnswer(question_id=question.id, answer=f"Answer to {question.field}")
+            for question in SEED_QUESTIONNAIRE.required_questions
+        ],
+    )
+    store = InMemoryDocumentStore()
+    store.write(TENANT, "dna.md", render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="A"))
+    store.write(
+        TENANT,
+        f"campaigns/{SLUG}/goal.md",
+        (settings.tenant_dir(TENANT) / "campaigns" / SLUG / "goal.md").read_text(),
+    )
+    report = check_gate(settings, TENANT, SLUG, store=store, questionnaire=SEED_QUESTIONNAIRE)
+    assert report.ok, report.all_issues

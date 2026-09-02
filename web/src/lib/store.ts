@@ -3,7 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import type { CreatedCampaign } from "@/lib/campaigns";
 import { STRATEGY_STAGE_INDEX, type AiAction } from "@/lib/mock-data";
-import type { OnboardingData } from "@/lib/onboarding";
+import type { Questionnaire } from "@/lib/engine";
 
 export type CalendarMode = "calendar" | "list" | "campaign";
 export type RightTab = "evidence" | "comments";
@@ -17,7 +17,8 @@ export interface DemoState {
   brandIdx: number;
   aiKey: AiActionKey | null;
   rightTab: RightTab;
-  onboarding: OnboardingData | null;
+  questionnaire: Questionnaire | null;
+  onboarding: Record<string, string> | null;
   createdCampaigns: CreatedCampaign[];
   setStage: (stage: number) => void;
   approve: () => void;
@@ -27,7 +28,10 @@ export interface DemoState {
   setBrandIdx: (index: number) => void;
   toggleAiKey: (key: AiActionKey) => void;
   setRightTab: (tab: RightTab) => void;
-  completeOnboarding: (data: OnboardingData) => void;
+  completeOnboarding: (
+    questionnaire: Questionnaire,
+    answers: Record<string, string>,
+  ) => void;
   addCampaign: (campaign: CreatedCampaign) => void;
 }
 
@@ -41,6 +45,7 @@ export const useDemoStore = create<DemoState>()(
       brandIdx: 0,
       aiKey: null,
       rightTab: "evidence",
+      questionnaire: null,
       onboarding: null,
       createdCampaigns: [],
       setStage: (stage) => set({ stage }),
@@ -52,7 +57,8 @@ export const useDemoStore = create<DemoState>()(
       toggleAiKey: (key) =>
         set((state) => ({ aiKey: state.aiKey === key ? null : key })),
       setRightTab: (rightTab) => set({ rightTab }),
-      completeOnboarding: (onboarding) => set({ onboarding }),
+      completeOnboarding: (questionnaire, onboarding) =>
+        set({ questionnaire, onboarding }),
       addCampaign: (campaign) =>
         set((state) => ({
           createdCampaigns: [...state.createdCampaigns, campaign],
