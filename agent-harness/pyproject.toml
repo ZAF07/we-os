@@ -47,6 +47,9 @@ include = ["marketing_os*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "uses_real_dotenv: exercises load_env itself, so the .env isolation fixture steps aside",
+]
 
 [tool.ruff]
 line-length = 100

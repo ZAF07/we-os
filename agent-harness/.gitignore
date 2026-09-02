@@ -6,3 +6,8 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 logs/
+
+# Local environment — never commit (holds API keys and the IdP issuer)
+.env
+.env.*
+!example.env

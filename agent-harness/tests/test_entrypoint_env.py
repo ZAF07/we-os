@@ -16,6 +16,7 @@ import pytest
 from marketing_os.entrypoints.env import load_env
 
 
+@pytest.mark.uses_real_dotenv
 def test_load_env_reads_local_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / ".env").write_text("MARKETING_OS_TAVILY_API_KEY=tvly-from-dotenv\n")
     monkeypatch.chdir(tmp_path)

@@ -96,10 +96,13 @@ test("completing onboarding populates the Brand screen with entered data", async
   await index.getByRole("button", { name: "Competitors" }).click();
   await expect(page.getByText("Blue Bottle")).toBeVisible();
 
-  await expect(page.getByText("Acme Coffee workspace")).toBeVisible();
+  // The shell names the signed-in organization — the real tenant — rather than
+  // whatever was typed into the onboarding mockup, which creates no tenant.
+  // Onboarding's own persistence is asserted by the Brand-screen checks below.
+  await expect(page.getByText(/ workspace$/)).toBeVisible();
 
   await page.reload();
-  await expect(page.getByText("Acme Coffee workspace")).toBeVisible();
+  await expect(page.getByText(/ workspace$/)).toBeVisible();
   await expect(page.getByText("Blue Bottle")).toBeVisible();
   await index.getByRole("button", { name: "Positioning" }).click();
   await expect(

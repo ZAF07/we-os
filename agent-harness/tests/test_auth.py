@@ -127,6 +127,38 @@ def test_rejects_a_token_for_another_audience(
         verifier.verify(make_token(private_key, audience="someone-else"))
 
 
+def test_derives_the_tenant_from_a_v2_session_token(
+    verifier: JwksTokenVerifier, keypair: tuple[Any, Any]
+) -> None:
+    """Clerk's current token nests the organization under a compact ``o`` claim."""
+    private_key, _ = keypair
+    token = make_token(
+        private_key,
+        org_id=None,
+        o={"id": "org_coast", "slg": "coast-coffee", "rol": "admin"},
+    )
+    identity = verifier.verify(token)
+    assert identity.tenant_id == "org_coast"
+    assert identity.business_name == "coast-coffee"
+
+
+def test_the_nested_organization_claim_wins_over_the_legacy_one(
+    verifier: JwksTokenVerifier, keypair: tuple[Any, Any]
+) -> None:
+    private_key, _ = keypair
+    token = make_token(private_key, org_id="org_stale", o={"id": "org_current"})
+    assert verifier.verify(token).tenant_id == "org_current"
+
+
+def test_rejects_a_v2_token_whose_organization_claim_is_empty(
+    verifier: JwksTokenVerifier, keypair: tuple[Any, Any]
+) -> None:
+    """No active organization means no tenant to act for, so the token is refused."""
+    private_key, _ = keypair
+    with pytest.raises(UnauthenticatedError):
+        verifier.verify(make_token(private_key, org_id=None, o={}))
+
+
 def test_rejects_a_token_carrying_no_organization(
     verifier: JwksTokenVerifier, keypair: tuple[Any, Any]
 ) -> None:

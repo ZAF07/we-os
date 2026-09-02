@@ -3,7 +3,12 @@ import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 import dotenv from "dotenv";
 
-dotenv.config({ path: path.join(__dirname, ".env.local") });
+// Mirror Next.js's own resolution so the tests and the app read the same
+// config: `.env.local` wins, `.env` fills the rest. dotenv does not overwrite
+// an already-set variable, so loading `.env.local` first gives it precedence.
+for (const file of [".env.local", ".env"]) {
+  dotenv.config({ path: path.join(__dirname, file) });
+}
 
 const PORT = 3100;
 const STORAGE_STATE = path.join(__dirname, ".auth/user.json");

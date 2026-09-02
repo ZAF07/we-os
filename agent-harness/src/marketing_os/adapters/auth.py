@@ -22,8 +22,16 @@ from marketing_os.errors import UnauthenticatedError
 from marketing_os.schemas import VerifiedIdentity
 
 _ALGORITHMS = ["RS256"]
+
+# Clerk's session token v2 nests organization claims under a compact ``o``
+# object (``{id, slg, rol, per, fpm}``); v1 spelled them out as ``org_id`` /
+# ``org_slug``. Both are read so the verifier works against either, and
+# ``tenant_id`` covers a non-Clerk IdP configured with an explicit claim.
+_ORGANIZATION_CLAIM = "o"
 _TENANT_CLAIMS = ("org_id", "tenant_id")
+_TENANT_SUBCLAIMS = ("id",)
 _BUSINESS_NAME_CLAIMS = ("org_name", "org_slug", "business_name")
+_BUSINESS_NAME_SUBCLAIMS = ("nam", "slg")
 
 
 class SigningKeyClient(Protocol):
@@ -56,6 +64,31 @@ def _first_claim(claims: dict[str, Any], names: tuple[str, ...]) -> str | None:
         if isinstance(value, str) and value.strip():
             return value
     return None
+
+
+def _organization_claim(
+    claims: dict[str, Any], subclaims: tuple[str, ...], flat_names: tuple[str, ...]
+) -> str | None:
+    """Read a value from the nested organization claim, then the flat fallbacks.
+
+    Session token v2 nests organization data under ``o``; v1 used flat
+    ``org_*`` names. Reading the nested form first means a current Clerk
+    instance works untouched, while an older token or another IdP still resolves.
+
+    Args:
+        claims: The verified token payload.
+        subclaims: Keys to try inside the ``o`` object, in priority order.
+        flat_names: Top-level claim names to fall back to, in priority order.
+
+    Returns:
+        The first non-empty value found, or ``None``.
+    """
+    organization = claims.get(_ORGANIZATION_CLAIM)
+    if isinstance(organization, dict):
+        nested = _first_claim(organization, subclaims)
+        if nested is not None:
+            return nested
+    return _first_claim(claims, flat_names)
 
 
 class JwksTokenVerifier:
@@ -125,7 +158,7 @@ class JwksTokenVerifier:
         except Exception as exc:
             raise UnauthenticatedError("Sign in to continue.") from exc
 
-        tenant_id = _first_claim(claims, _TENANT_CLAIMS)
+        tenant_id = _organization_claim(claims, _TENANT_SUBCLAIMS, _TENANT_CLAIMS)
         subject = claims.get("sub")
         if not tenant_id or not isinstance(subject, str):
             raise UnauthenticatedError("Sign in to continue.")
@@ -134,5 +167,7 @@ class JwksTokenVerifier:
             user_id=subject,
             tenant_id=tenant_id,
             email=_first_claim(claims, ("email",)),
-            business_name=_first_claim(claims, _BUSINESS_NAME_CLAIMS),
+            business_name=_organization_claim(
+                claims, _BUSINESS_NAME_SUBCLAIMS, _BUSINESS_NAME_CLAIMS
+            ),
         )

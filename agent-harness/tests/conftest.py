@@ -372,6 +372,29 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_from_developer_env(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stop a developer's real ``.env`` from leaking into the suite.
+
+    The entrypoints call :func:`load_env` at startup, which walks up from the
+    working directory and loads whatever ``.env`` it finds. Left alone, a test
+    asserting that an unset variable is an error passes or fails depending on
+    whose machine it runs on — which is how a real ``.env`` first broke the
+    CLI's missing-tenant test.
+
+    Tests of ``load_env`` itself opt out with ``@pytest.mark.uses_real_dotenv``.
+
+    Args:
+        request: The pytest request, used to honour the opt-out marker.
+        monkeypatch: The pytest monkeypatch fixture.
+    """
+    if request.node.get_closest_marker("uses_real_dotenv"):
+        return
+    monkeypatch.setattr("marketing_os.entrypoints.env.load_dotenv", lambda *args, **kwargs: False)
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """Create a minimal Marketing OS repo with a valid DNA and goal for one tenant.
