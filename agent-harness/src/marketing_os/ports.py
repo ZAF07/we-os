@@ -4,15 +4,19 @@ The model and tool ports are LangChain's own ``BaseChatModel`` and ``BaseTool``,
 so they are not re-declared here. This module defines the remaining ports that
 benefit from an explicit contract: the QA :class:`Reviewer`, which the graph
 depends on, the :class:`DocumentStore`, which resolves where tenant documents
-live (ADR-0014), and the :class:`TokenVerifier`, which establishes who a caller
-is (ADR-0013). Tests substitute all three with hermetic fakes.
+live (ADR-0014), the :class:`TenantDirectory`, which maps an identity provider's
+organization onto the platform tenant that owns those documents, the
+:class:`RunStore`, which holds run state durably so the one-active-run-per-campaign
+guard survives a restart and spans workers, and the :class:`TokenVerifier`, which
+establishes who a caller is (ADR-0013). Tests substitute all of them with
+hermetic fakes.
 """
 
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from marketing_os.schemas import ReviewVerdict, VerifiedIdentity
+from marketing_os.schemas import ReviewVerdict, RunRecord, Tenant, VerifiedClaims
 
 
 @runtime_checkable
@@ -25,19 +29,23 @@ class TokenVerifier(Protocol):
     no vendor SDK appears above this port.
     """
 
-    def verify(self, token: str) -> VerifiedIdentity:
-        """Verify a bearer token and resolve the identity it carries.
+    def verify(self, token: str) -> VerifiedClaims:
+        """Verify a bearer token and return the claims it carries.
+
+        The result names the IdP's organization, not a platform tenant: mapping
+        one to the other is the :class:`TenantDirectory`'s job, so no vendor
+        identifier reaches a partition key.
 
         Args:
             token: The raw bearer token, without its ``Bearer `` prefix.
 
         Returns:
-            The verified identity, including the tenant it acts for.
+            The verified claims, including the organization the caller acts for.
 
         Raises:
             UnauthenticatedError: If the token is absent, malformed, expired,
                 wrongly signed, issued for another issuer or audience, or
-                carries no tenant claim.
+                carries no organization claim.
         """
         ...
 
@@ -132,5 +140,145 @@ class Reviewer(Protocol):
         Returns:
             A structured :class:`ReviewVerdict` with the pass/fail decision and
             any discrepancies to resolve.
+        """
+        ...
+
+
+@runtime_checkable
+class TenantDirectory(Protocol):
+    """Maps an identity provider's organization onto the platform tenant that owns data.
+
+    The IdP's identifier for a business (for Clerk, the Organization
+    ``org_...``) is a vendor detail: it changes when the IdP is swapped or an
+    organization is re-created, and it belongs in one column rather than in
+    every document path, run row and checkpoint thread. The directory is the one
+    place that translation happens, so ``tenant_id`` everywhere else is
+    platform-owned (ADR-0014).
+    """
+
+    def resolve(self, *, external_auth_id: str, name: str | None = None) -> Tenant:
+        """Return the tenant for an IdP organization, registering it on first sight.
+
+        Args:
+            external_auth_id: The IdP's identifier for the business.
+            name: The business's display name from the verified claim, used when
+                the tenant is registered and to keep the recorded name current.
+
+        Returns:
+            The tenant that owns the business's data.
+        """
+        ...
+
+    def get(self, tenant_id: str) -> Tenant | None:
+        """Return a tenant by its platform id.
+
+        Args:
+            tenant_id: The platform tenant id.
+
+        Returns:
+            The tenant, or ``None`` when no tenant has that id.
+        """
+        ...
+
+
+@runtime_checkable
+class RunStore(Protocol):
+    """Durable, shared record of run state and the one-active-run-per-campaign claim.
+
+    Claiming is the load-bearing operation: it must be atomic across processes,
+    because the guard's whole purpose is stopping two runs from writing the same
+    campaign's deliverables. Every read is tenant-scoped for the same reason the
+    :class:`DocumentStore`'s is — a run id belonging to another business must be
+    unfindable, not merely refused (ADR-0013).
+    """
+
+    def claim(self, record: RunRecord) -> RunRecord:
+        """Claim a campaign for a run, refusing a second concurrent claim.
+
+        Args:
+            record: The run to record as running.
+
+        Returns:
+            The stored record.
+
+        Raises:
+            RunConflictError: If the campaign already has a running run.
+        """
+        ...
+
+    def finish(self, run_id: str, status: str) -> None:
+        """Record a run's terminal status, releasing its campaign claim.
+
+        A run already resolved (cancelled from another worker, or reclaimed
+        after a restart) keeps the status it was given, so a late callback
+        cannot resurrect it.
+
+        Args:
+            run_id: The run to resolve.
+            status: The terminal status to record.
+        """
+        ...
+
+    def get(self, run_id: str, tenant: str) -> RunRecord | None:
+        """Return a tenant's run by id.
+
+        Args:
+            run_id: The run id to look up.
+            tenant: The tenant the caller acts for.
+
+        Returns:
+            The record, or ``None`` when no run has that id **or** it belongs to
+            another tenant.
+        """
+        ...
+
+    def active(self, tenant: str) -> list[RunRecord]:
+        """Return one tenant's currently running runs.
+
+        Args:
+            tenant: The tenant whose runs to list.
+
+        Returns:
+            The tenant's running records, one per busy campaign.
+        """
+        ...
+
+    def active_for_campaign(self, tenant: str, slug: str) -> RunRecord | None:
+        """Return the running run holding a campaign's claim.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+
+        Returns:
+            The claiming record, or ``None`` when the campaign is idle.
+        """
+        ...
+
+    def heartbeat(self, run_ids: list[str], now: float) -> None:
+        """Report that runs are still executing on their owning worker.
+
+        Args:
+            run_ids: The runs this worker is still executing.
+            now: The current UTC epoch timestamp.
+        """
+        ...
+
+    def reclaim_stale(self, *, now: float, stale_after: float, status: str) -> list[RunRecord]:
+        """Resolve runs whose owning worker stopped reporting them alive.
+
+        This is what a restarted process calls so runs its predecessor was
+        executing get a terminal status instead of staying ``running`` forever.
+        A run whose worker is still heartbeating it is not stale, so it is left
+        alone and a restart cannot kill another worker's work.
+
+        Args:
+            now: The current UTC epoch timestamp.
+            stale_after: How many seconds without a heartbeat mark a run
+                abandoned.
+            status: The terminal status to record for abandoned runs.
+
+        Returns:
+            The records that were resolved.
         """
         ...

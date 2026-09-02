@@ -1,12 +1,20 @@
-"""Shared test fixtures: scripted fakes and a hermetic temp repo."""
+"""Shared test fixtures: scripted fakes, a hermetic temp repo, and Postgres.
+
+Everything here is offline by default. The Postgres fixtures are the exception
+and they opt in rather than out: they skip unless ``MARKETING_OS_TEST_POSTGRES=1``
+is set, so the fast suite runs with no Docker and no database, and the same
+conformance assertions run against a real containerised server when asked.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -42,6 +50,7 @@ def identity_for(tenant: str = TENANT) -> VerifiedIdentity:
     return VerifiedIdentity(
         user_id=f"usr_{tenant}",
         tenant_id=tenant,
+        organization_id=f"org_idp_{tenant}",
         email=f"owner@{tenant}.example",
         business_name="Acme Climbing Gym",
     )
@@ -533,3 +542,99 @@ def install_scripted_graph(
 
     monkeypatch.setattr(runner_mod, "build_campaign_graph", campaign)
     monkeypatch.setattr(runner_mod, "build_single_stage_graph", single)
+
+
+POSTGRES_IMAGE = "postgres:16-alpine"
+
+APP_ROLE = "marketing_os_app"
+APP_PASSWORD = "marketing_os_app"
+
+_CREATE_APP_ROLE = f"""
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN
+        CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_PASSWORD}';
+    END IF;
+END $$;
+"""
+
+
+def _with_credentials(dsn: str, user: str, password: str) -> str:
+    """Return a connection string pointing at the same database as another user.
+
+    Args:
+        dsn: The connection string to rewrite.
+        user: The role to connect as.
+        password: That role's password.
+
+    Returns:
+        The rewritten connection string.
+    """
+    parts = urlsplit(dsn)
+    netloc = f"{user}:{password}@{parts.hostname}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
+@pytest.fixture(scope="session")
+def postgres_superuser_dsn() -> Iterator[str]:
+    """Start a Postgres container for the session and yield its admin connection string.
+
+    Ryuk — testcontainers' cleanup sidecar — is disabled by default because it
+    bind-mounts the Docker socket, which Docker Desktop on macOS refuses. The
+    container is stopped by the context manager either way.
+
+    Yields:
+        The container's superuser connection string.
+    """
+    if os.environ.get("MARKETING_OS_TEST_POSTGRES") != "1":
+        pytest.skip("Postgres suite is opt-in: set MARKETING_OS_TEST_POSTGRES=1 (needs Docker).")
+    os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
+    from testcontainers.community.postgres import PostgresContainer
+
+    with PostgresContainer(POSTGRES_IMAGE) as container:
+        yield container.get_connection_url(driver=None)
+
+
+@pytest.fixture(scope="session")
+def postgres_dsn(postgres_superuser_dsn: str) -> str:
+    """Create the schema and the application role, and yield the app's connection string.
+
+    The suite connects as an ordinary role on purpose: row-level security does
+    not constrain a superuser, so connecting as one would assert tenant
+    isolation that production does not have. The password is a throwaway
+    credential for a container that lives for one test session.
+
+    Args:
+        postgres_superuser_dsn: The container's admin connection string.
+
+    Returns:
+        The connection string the adapters use, as the non-superuser app role.
+    """
+    import psycopg
+
+    from marketing_os.adapters.postgres.schema import ensure_schema, grant_application_role_sql
+
+    with psycopg.connect(postgres_superuser_dsn, autocommit=True) as connection:
+        ensure_schema(connection)
+        connection.execute(_CREATE_APP_ROLE)
+        connection.execute(grant_application_role_sql(APP_ROLE))
+    return _with_credentials(postgres_superuser_dsn, APP_ROLE, APP_PASSWORD)
+
+
+@pytest.fixture
+def postgres_pool(postgres_dsn: str, postgres_superuser_dsn: str) -> Iterator[Any]:
+    """Yield a fresh connection pool over empty tables.
+
+    Args:
+        postgres_dsn: The application role's connection string.
+        postgres_superuser_dsn: The admin connection string, used to truncate.
+
+    Yields:
+        An open ``psycopg_pool.ConnectionPool`` for the application role.
+    """
+    import psycopg
+    from psycopg_pool import ConnectionPool
+
+    with psycopg.connect(postgres_superuser_dsn, autocommit=True) as connection:
+        connection.execute("TRUNCATE documents, runs, tenants")
+    with ConnectionPool(postgres_dsn, open=True) as pool:
+        yield pool

@@ -1,59 +1,68 @@
-"""In-memory registry of active background runs, with a per-slug concurrency guard.
+"""Registry of background runs, over a shared run store.
 
-A **Run** is one execution attempt of a campaign's pipeline, identified by a unique
-``run_id`` and executed as an :class:`asyncio.Task`. **At most one run per slug may
-be active at a time** — the guard is keyed by slug (not thread id) because both a
-full-pipeline run (``thread_id = slug``) and a single-stage run
-(``thread_id = slug:stage``) write into ``campaigns/<slug>/`` and would race on the
-same deliverable files.
+A **Run** is one execution attempt of a campaign's pipeline, identified by a
+unique ``run_id`` and executed as an :class:`asyncio.Task`. **At most one run per
+campaign may be active at a time** — the guard is keyed by ``(tenant, slug)``
+rather than by thread id, because a full-pipeline run and a single-stage run of
+the same campaign both write into ``campaigns/<slug>/`` and would race on the
+same deliverable documents.
 
-The registry is in-memory and process-local by design: a restart means "no active
-runs". A run that was live before a restart leaves its JSONL trace on disk with no
-terminal ``run.summary`` — :func:`read_run_status` infers ``interrupted`` for it.
-Durable run state is future work (see ``.scratch/backfill`` issue 07).
+The registry splits into two halves, and the split is the point. The
+:class:`~marketing_os.ports.RunStore` holds the claim and the lifecycle status
+**durably and shared**, so the guard holds across workers and a status survives
+the process that produced it; the :class:`asyncio.Task` is unavoidably local,
+since only the worker executing a run can abort its in-flight LLM call.
+
+Two consequences follow, and both are behaviour a reviewer should look for:
+
+- **Abandoning is explicit.** A cancelled run's campaign has its checkpoint
+  threads cleared (:func:`~marketing_os.graph.checkpoints.clear_campaign_threads`).
+  Under an ephemeral checkpointer that was free; under a durable one, omitting it
+  turns "a cancelled run starts clean" into "resume from the last checkpoint".
+- **A crashed worker's runs are reclaimed, not lost.** Each worker heartbeats the
+  runs it is executing, so a restarted process can tell a run genuinely live on a
+  peer from one its predecessor abandoned, and resolve the latter as
+  ``interrupted`` rather than leaving it ``running`` forever.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
+
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from marketing_os.adapters.observability import find_trace, get_logger, terminal_summary
+from marketing_os.adapters.runs import (
+    CANCELLED,
+    COMPLETED,
+    FAILED,
+    INTERRUPTED,
+    RUNNING,
+    InMemoryRunStore,
+)
 from marketing_os.config import Settings
-from marketing_os.errors import RunConflictError
-from marketing_os.schemas import CampaignResult
+from marketing_os.graph.checkpoints import clear_campaign_threads
+from marketing_os.ports import RunStore
+from marketing_os.schemas import CampaignResult, RunRecord
 
 _LOGGER = get_logger("marketing_os.registry")
-
-RUNNING = "running"
-COMPLETED = "completed"
-FAILED = "failed"
-CANCELLED = "cancelled"
-INTERRUPTED = "interrupted"
 
 _OUTCOME_TO_STATUS = {"ok": COMPLETED, "error": FAILED, "cancelled": CANCELLED}
 
 
-@dataclass(frozen=True)
-class ActiveRun:
-    """A live background run held in the registry.
+def new_worker_id() -> str:
+    """Mint an id identifying this process among the workers sharing a run store.
 
-    Attributes:
-        run_id: The unique id of this execution attempt (also the trace filename).
-        slug: The campaign slug the run belongs to.
-        stage: The single stage being run, or ``None`` for the full pipeline.
-        tenant: The tenant the run is for.
-        task: The :class:`asyncio.Task` executing the run.
+    Returns:
+        A ``wrk_``-prefixed identifier, unique per process.
     """
-
-    run_id: str
-    slug: str
-    stage: str | None
-    tenant: str
-    task: asyncio.Task[CampaignResult]
+    return f"wrk_{uuid4().hex[:12]}"
 
 
 @dataclass(frozen=True)
@@ -75,25 +84,65 @@ class RunStatus:
 
 
 class RunRegistry:
-    """Tracks active background runs keyed by slug (one active run per slug)."""
+    """Claims campaigns in a shared store and executes the claimed runs locally."""
 
-    def __init__(self) -> None:
-        """Initialise an empty registry."""
-        self._by_slug: dict[str, ActiveRun] = {}
-
-    def active_for_slug(self, slug: str) -> ActiveRun | None:
-        """Return the active run for a slug, or ``None`` if the slug is idle.
+    def __init__(
+        self,
+        store: RunStore | None = None,
+        *,
+        worker_id: str | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
+        stale_after: float = 90.0,
+    ) -> None:
+        """Initialise the registry.
 
         Args:
+            store: The run store holding claims and statuses; defaults to a
+                process-local :class:`~marketing_os.adapters.runs.InMemoryRunStore`.
+            worker_id: This process's id among the workers sharing the store;
+                a fresh one is minted when omitted.
+            checkpointer: The checkpointer whose threads are cleared when a run
+                is abandoned, or ``None`` when the deployment runs without one.
+            stale_after: How many seconds without a heartbeat mark a run
+                abandoned by its worker.
+        """
+        self._store: RunStore = store or InMemoryRunStore()
+        self._worker_id = worker_id or new_worker_id()
+        self._checkpointer = checkpointer
+        self._stale_after = stale_after
+        self._tasks: dict[str, asyncio.Task[CampaignResult]] = {}
+
+    @property
+    def worker_id(self) -> str:
+        """Return this process's worker id."""
+        return self._worker_id
+
+    def task_for(self, run_id: str) -> asyncio.Task[CampaignResult] | None:
+        """Return the local task executing a run, if this worker owns it.
+
+        Args:
+            run_id: The run id to look up.
+
+        Returns:
+            The executing task, or ``None`` when the run is finished or is being
+            executed by another worker.
+        """
+        return self._tasks.get(run_id)
+
+    def active_for_campaign(self, tenant: str, slug: str) -> RunRecord | None:
+        """Return the run holding a campaign's claim, or ``None`` if it is idle.
+
+        Args:
+            tenant: The tenant that owns the campaign.
             slug: The campaign slug.
 
         Returns:
-            The slug's active run, or ``None``.
+            The claiming record, or ``None``.
         """
-        return self._by_slug.get(slug)
+        return self._store.active_for_campaign(tenant, slug)
 
-    def get(self, run_id: str, tenant: str) -> ActiveRun | None:
-        """Return a tenant's active run with the given id, or ``None``.
+    def get(self, run_id: str, tenant: str) -> RunRecord | None:
+        """Return a tenant's run with the given id, whatever its status.
 
         The tenant is part of the lookup rather than a filter applied to the
         result, so there is no unscoped call shape for new code to reach for. A
@@ -105,39 +154,38 @@ class RunRegistry:
             tenant: The tenant the caller acts for.
 
         Returns:
-            The matching active run, or ``None`` when no live run has that id
-            **or** it belongs to another tenant.
+            The matching record, or ``None`` when no run has that id **or** it
+            belongs to another tenant.
         """
-        for run in self._by_slug.values():
-            if run.run_id == run_id and run.tenant == tenant:
-                return run
-        return None
+        return self._store.get(run_id, tenant)
 
-    def active(self, tenant: str) -> list[ActiveRun]:
-        """Return one tenant's currently active runs.
+    def active(self, tenant: str) -> list[RunRecord]:
+        """Return one tenant's currently running runs.
 
         Args:
             tenant: The tenant whose runs to list.
 
         Returns:
-            The tenant's live runs, one per busy slug. Other tenants' runs are
-            never returned, so a caller cannot forget to exclude them.
+            The tenant's live runs, one per busy campaign. Other tenants' runs
+            are never returned, so a caller cannot forget to exclude them.
         """
-        return [run for run in self._by_slug.values() if run.tenant == tenant]
+        return self._store.active(tenant)
 
-    def is_live(self, run_id: str) -> bool:
-        """Return whether any tenant has a live run with this id.
+    def is_live(self, run_id: str, tenant: str) -> bool:
+        """Return whether a tenant's run is still executing, on this worker or a peer.
 
         Used only to decide when a trace stream may stop polling; the caller has
         already proved it owns the run by resolving its trace path.
 
         Args:
             run_id: The run id to test.
+            tenant: The tenant the caller acts for.
 
         Returns:
-            ``True`` while a run with that id is executing.
+            ``True`` while that run is executing.
         """
-        return any(run.run_id == run_id for run in self._by_slug.values())
+        record = self._store.get(run_id, tenant)
+        return record is not None and record.status == RUNNING
 
     def start(
         self,
@@ -147,13 +195,14 @@ class RunRegistry:
         stage: str | None,
         tenant: str,
         launch: Callable[[], Coroutine[Any, Any, CampaignResult]],
-    ) -> ActiveRun:
-        """Register a slug's run and launch it as a background task.
+    ) -> RunRecord:
+        """Claim a campaign in the shared store and launch its run as a background task.
 
-        The slug is claimed synchronously before the task is scheduled, so a second
-        call for the same slug is rejected even if the first run has not yet started
-        executing. The run is removed from the registry when its task finishes
-        (success, error, or cancellation).
+        The claim is taken synchronously, and durably, before the task is
+        scheduled: a second call for the same campaign is rejected even if the
+        first run has not started executing, and even if it arrives at another
+        worker. The claim is released when the task finishes (success, error, or
+        cancellation).
 
         Args:
             run_id: The unique id for this run.
@@ -163,47 +212,73 @@ class RunRegistry:
             launch: A zero-argument coroutine factory that executes the run.
 
         Returns:
-            The registered :class:`ActiveRun`.
+            The claimed :class:`~marketing_os.schemas.RunRecord`.
 
         Raises:
-            RunConflictError: If the slug already has an active run.
+            RunConflictError: If the campaign already has an active run.
         """
-        existing = self._by_slug.get(slug)
-        if existing is not None:
-            raise RunConflictError(slug, existing.run_id)
+        now = time.time()
+        record = self._store.claim(
+            RunRecord(
+                run_id=run_id,
+                tenant_id=tenant,
+                slug=slug,
+                stage=stage,
+                status=RUNNING,
+                worker_id=self._worker_id,
+                started_at=now,
+                heartbeat_at=now,
+            )
+        )
         task = asyncio.create_task(launch())
-        run = ActiveRun(run_id=run_id, slug=slug, stage=stage, tenant=tenant, task=task)
-        self._by_slug[slug] = run
-        task.add_done_callback(lambda _task: self._forget(run))
+        self._tasks[run_id] = task
+        task.add_done_callback(lambda finished: self._forget(record, finished))
         _LOGGER.info("run.registered run_id=%s slug=%s stage=%s", run_id, slug, stage)
-        return run
+        return record
 
-    def _forget(self, run: ActiveRun) -> None:
-        """Drop a finished run from the registry, freeing its slug.
+    def _forget(self, record: RunRecord, task: asyncio.Task[CampaignResult]) -> None:
+        """Resolve a finished run in the store and drop its local task.
 
-        Only removes the entry when it still points at ``run`` so a slug reclaimed
-        by a newer run is never evicted by an older run's completion callback. A
+        The store keeps whatever terminal status it already holds, so a run
+        cancelled or reclaimed elsewhere is not overwritten by this callback. A
         failed run's exception is retrieved here so asyncio does not warn that it
-        was never consumed — the failure is already recorded in the run's trace as
-        ``run.summary outcome=error``.
+        was never consumed — the failure is already recorded in the run's trace
+        as ``run.summary outcome=error``.
 
         Args:
-            run: The run whose task has finished.
+            record: The run whose task has finished.
+            task: The finished task.
         """
-        if self._by_slug.get(run.slug) is run:
-            del self._by_slug[run.slug]
-            _LOGGER.info("run.deregistered run_id=%s slug=%s", run.run_id, run.slug)
-        if not run.task.cancelled():
-            run.task.exception()
+        self._tasks.pop(record.run_id, None)
+        if task.cancelled():
+            status = CANCELLED
+        elif task.exception() is not None:
+            status = FAILED
+        else:
+            status = COMPLETED
+        self._store.finish(record.run_id, status)
+        _LOGGER.info(
+            "run.deregistered run_id=%s slug=%s status=%s", record.run_id, record.slug, status
+        )
 
-    async def cancel(self, run_id: str, tenant: str) -> ActiveRun | None:
-        """Cancel a live run and wait for it to finish unwinding.
+    async def cancel(self, run_id: str, tenant: str) -> RunRecord | None:
+        """Cancel a live run, abandon its checkpoints, and wait for it to unwind.
 
         Cancelling the task raises :class:`asyncio.CancelledError` inside the run's
         in-flight LLM call (ADR-0009), which the runner turns into a terminal
         ``run.summary outcome=cancelled`` event before the task exits. Awaiting the
         task here guarantees that terminal event and the deregistration have both
         happened before the caller returns.
+
+        The order matters twice over. The claim is released **last** — after the
+        task has unwound *and* after the campaign's checkpoint threads are
+        cleared — so no new run of the campaign can start while the cancelled one
+        is still writing to it, and none can start on a thread this cancel is
+        about to delete. Clearing the threads is what makes that next run begin
+        at stage 1 rather than resuming the work the owner just cancelled. A run
+        claimed by another worker has no local task to await: it is resolved as
+        cancelled in the store and its checkpoints cleared, and that worker's own
+        completion callback cannot resurrect it.
 
         Args:
             run_id: The id of the run to cancel.
@@ -212,45 +287,81 @@ class RunRegistry:
                 another's work.
 
         Returns:
-            The cancelled :class:`ActiveRun`, or ``None`` if the caller's tenant
-            has no live run with that id.
+            The cancelled record, or ``None`` if the caller's tenant has no live
+            run with that id.
         """
-        run = self.get(run_id, tenant)
-        if run is None:
+        record = self._store.get(run_id, tenant)
+        if record is None or record.status != RUNNING:
             return None
-        run.task.cancel()
-        try:
-            await run.task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            pass
-        return run
+        task = self._tasks.get(run_id)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+        await clear_campaign_threads(self._checkpointer, record.tenant_id, record.slug)
+        self._store.finish(run_id, CANCELLED)
+        return record
+
+    def heartbeat(self) -> None:
+        """Report every run this worker is executing as still alive.
+
+        A peer restarting mid-run reads these timestamps to tell a live run from
+        one abandoned by a process that died.
+        """
+        if self._tasks:
+            self._store.heartbeat(list(self._tasks), time.time())
+
+    async def reclaim_abandoned(self) -> list[RunRecord]:
+        """Resolve runs whose worker stopped heartbeating them, and clear their state.
+
+        Called on startup so a restart resolves the runs its predecessor was
+        executing instead of leaving them ``running`` with no terminal summary.
+        Each reclaimed campaign has its checkpoint threads cleared for the same
+        reason a cancelled one does: the run is abandoned, so its next start must
+        be clean rather than a silent resume of half-finished work.
+
+        Returns:
+            The records that were reclaimed.
+        """
+        reclaimed = self._store.reclaim_stale(
+            now=time.time(), stale_after=self._stale_after, status=INTERRUPTED
+        )
+        for record in reclaimed:
+            await clear_campaign_threads(self._checkpointer, record.tenant_id, record.slug)
+            _LOGGER.info("run.reclaimed run_id=%s slug=%s", record.run_id, record.slug)
+        return reclaimed
 
 
 def read_run_status(
     settings: Settings, registry: RunRegistry, run_id: str, tenant: str
 ) -> RunStatus | None:
-    """Resolve a run's lifecycle status from the live registry, then its trace.
+    """Resolve a run's lifecycle status from the shared run store, then its trace.
 
-    A run in the registry is ``running``. Otherwise its JSONL trace is consulted:
-    the terminal ``run.summary`` outcome maps to ``completed`` / ``failed`` /
-    ``cancelled``; a trace with no terminal summary means the run was
-    ``interrupted`` (a process-restart casualty). A run id with neither a registry
-    entry nor a trace **within the caller's tenant** is unknown.
+    The store is authoritative: it records ``running`` while a worker holds the
+    campaign, and the terminal status when the run resolves — including the
+    ``interrupted`` a restart assigns to runs abandoned by a dead worker. Runs
+    predating the store (or written by a worker that never claimed one) fall back
+    to the JSONL trace, where the terminal ``run.summary`` outcome maps to
+    ``completed`` / ``failed`` / ``cancelled`` and a trace with no terminal
+    summary means ``interrupted``. A run id with neither a record nor a trace
+    **within the caller's tenant** is unknown.
 
     Args:
         settings: The harness settings locating the ``logs/`` tree.
-        registry: The live run registry.
+        registry: The run registry fronting the shared store.
         run_id: The run id to resolve.
         tenant: The tenant the caller acts for; runs outside it are unknown.
 
     Returns:
         The resolved :class:`RunStatus`, or ``None`` when the run id is unknown.
     """
-    live = registry.get(run_id, tenant)
-    if live is not None:
-        return RunStatus(run_id=run_id, slug=live.slug, status=RUNNING, stage=live.stage)
+    record = registry.get(run_id, tenant)
+    if record is not None:
+        return RunStatus(run_id=run_id, slug=record.slug, status=record.status, stage=record.stage)
     trace = find_trace(settings.tenant_logs_dir(tenant), run_id)
     if trace is None:
         return None
@@ -272,18 +383,18 @@ def resolve_trace_path(
     its first event — so a client attaching immediately after ``POST /run`` is not
     turned away with a spurious 404; the tailer waits for the file to appear. A run
     that is no longer live is located by its on-disk trace. A run id that is neither
-    live nor traced within the caller's tenant is unknown.
+    recorded nor traced within the caller's tenant is unknown.
 
     Args:
         settings: The harness settings locating the ``logs/`` tree.
-        registry: The live run registry.
+        registry: The run registry fronting the shared store.
         run_id: The run id to resolve a trace path for.
         tenant: The tenant the caller acts for; runs outside it are unknown.
 
     Returns:
         The trace path to tail, or ``None`` when the run id is unknown.
     """
-    live = registry.get(run_id, tenant)
-    if live is not None:
-        return settings.tenant_logs_dir(tenant) / live.slug / f"{run_id}.jsonl"
+    record = registry.get(run_id, tenant)
+    if record is not None:
+        return settings.tenant_logs_dir(tenant) / record.slug / f"{run_id}.jsonl"
     return find_trace(settings.tenant_logs_dir(tenant), run_id)

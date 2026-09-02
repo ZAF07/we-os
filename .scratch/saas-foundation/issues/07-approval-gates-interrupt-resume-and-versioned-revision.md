@@ -43,4 +43,4 @@ End-to-end behaviour: start a run, watch it work through research automatically,
 
 ## Blocked by
 
-- [05 — Postgres: adapter, durable checkpointer, shared run registry](05-postgres-adapter-durable-checkpointer-shared-registry.md)
+- [05 — Postgres: adapter, durable checkpointer, shared run registry](archive/05-postgres-adapter-durable-checkpointer-shared-registry.md)

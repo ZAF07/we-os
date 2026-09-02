@@ -18,8 +18,14 @@ The people a business sells to are **audience segments**, described *inside* its
 
 ## Where the tenant id comes from
 
-- **Running the SaaS engine**: the tenant is derived from the verified token claim — the Clerk Organization id (`org_...`). No endpoint accepts it as a parameter; the directory name must match the claim.
-- **Running the CLI locally**: the tenant comes from `MARKETING_OS_TENANT_ID`, which must match the directory name here.
+A tenant id is **owned by the platform**, and the identity provider's own identifier for the business is data stored beside it — not the identifier itself ([ADR-0014](../docs/adr/0014-postgres-system-of-record-and-split-governance.md)). Clerk's Organization id (`org_...`) is a vendor detail: it changes if the IdP is swapped or an organization is re-created, and it has no business appearing in every document path, run row and checkpoint thread.
+
+Which id you get depends on where documents live:
+
+- **On Postgres** (production): the platform mints a `ten_...` id on the business's first authenticated request and records the pairing in the `tenants` table — `tenant_id`, `name`, `external_auth_id` (the Clerk org id). Everything the business owns is partitioned by `tenant_id`.
+- **On the filesystem** (this directory — local development and the CLI): there is no table to mint an id in, and the directory name *is* the tenant id. The tenant directory therefore passes the organization id straight through, so a directory here is still named `org_...`. That is the pre-Postgres behaviour, kept deliberately so existing directories keep working.
+
+In both cases the tenant comes from the verified token claim and never from a parameter. Running the CLI locally, it comes from `MARKETING_OS_TENANT_ID`, which must match the directory name here.
 
 ## This directory is not readable by agents
 

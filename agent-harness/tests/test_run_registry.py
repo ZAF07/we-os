@@ -57,8 +57,10 @@ async def _drain(gate: asyncio.Event, registry: RunRegistry) -> None:
         registry: The registry whose tasks should be drained.
     """
     gate.set()
-    for run in registry.active(TENANT):
-        await run.task
+    for record in registry.active(TENANT):
+        task = registry.task_for(record.run_id)
+        if task is not None:
+            await task
 
 
 async def test_start_rejects_second_run_for_same_slug() -> None:
@@ -83,7 +85,7 @@ async def test_start_rejects_second_run_for_same_slug() -> None:
         )
 
     assert excinfo.value.active_run_id == first_id
-    active = registry.active_for_slug("acme")
+    active = registry.active_for_campaign(TENANT, "acme")
     assert active is not None
     assert active.run_id == first_id
     await _drain(gate, registry)
@@ -134,7 +136,7 @@ async def test_different_slugs_run_concurrently() -> None:
     await _drain(gate, registry)
 
 
-async def test_completed_run_frees_its_slug() -> None:
+async def test_completed_run_frees_its_campaign_and_records_the_outcome() -> None:
     gate = asyncio.Event()
     gate.set()
     registry = RunRegistry()
@@ -145,11 +147,14 @@ async def test_completed_run_frees_its_slug() -> None:
         tenant=TENANT,
         launch=_blocking_launch(gate, "acme"),
     )
+    task = registry.task_for(run.run_id)
+    assert task is not None
 
-    await run.task
+    await task
 
-    assert registry.active_for_slug("acme") is None
-    assert registry.get(run.run_id, TENANT) is None
+    assert registry.active_for_campaign(TENANT, "acme") is None
+    finished = registry.get(run.run_id, TENANT)
+    assert finished is not None and finished.status == "completed"
     registry.start(
         run_id=new_run_id(),
         slug="acme",
@@ -183,8 +188,9 @@ async def test_cancel_aborts_in_flight_call_writes_cancelled_summary_and_deregis
 
     assert cancelled is not None
     assert model.was_cancelled is True, "the in-flight LLM call was not aborted"
-    assert registry.get(run_id, TENANT) is None
-    assert registry.active_for_slug("acme") is None
+    assert registry.active_for_campaign(TENANT, "acme") is None
+    resolved = registry.get(run_id, TENANT)
+    assert resolved is not None and resolved.status == "cancelled"
 
     trace = settings.tenant_logs_dir(TENANT) / SLUG / f"{run_id}.jsonl"
     events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines() if line]
@@ -222,8 +228,10 @@ async def test_build_time_failure_writes_error_summary_and_resolves_failed(
         return await arun_campaign(settings, TENANT, SLUG, stage="research", run_id=run_id)
 
     run = registry.start(run_id=run_id, slug="acme", stage="research", tenant=TENANT, launch=launch)
+    task = registry.task_for(run.run_id)
+    assert task is not None
     with pytest.raises(RuntimeError):
-        await run.task
+        await task
 
     trace = settings.tenant_logs_dir(TENANT) / SLUG / f"{run_id}.jsonl"
     events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines() if line]

@@ -5,6 +5,7 @@ Commands::
     marketing-os new-campaign <slug> [--stage K] [--provider P]
     marketing-os check <slug>
     marketing-os agents
+    marketing-os init-db --dsn <admin dsn> [--app-role NAME]
 
 Mirrors ``/new-campaign``: the Stage 0 gate runs first, then the pipeline.
 Progress is streamed from the graph's custom events.
@@ -159,6 +160,45 @@ def _cmd_new_campaign(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_init_db(args: argparse.Namespace) -> int:
+    """Provision a Postgres database for the harness.
+
+    This is the one command that needs administrative rights, and it is separate
+    from serving on purpose: the service connects as an ordinary role with no
+    power to create or alter tables, because row-level security is not much of a
+    boundary if the application can drop the policy enforcing it.
+
+    Args:
+        args: Parsed CLI arguments carrying the administrative DSN and the
+            optional application role to grant.
+
+    Returns:
+        The process exit code.
+    """
+    import psycopg
+    from langgraph.checkpoint.postgres import PostgresSaver
+
+    from marketing_os.adapters.postgres.schema import ensure_schema, grant_application_role_sql
+
+    with psycopg.connect(args.dsn, autocommit=True) as connection:
+        ensure_schema(connection)
+        print("Created the tenants, documents and runs tables, indexes and RLS policy.")
+
+    with PostgresSaver.from_conn_string(args.dsn) as saver:
+        saver.setup()
+    print("Created the LangGraph checkpointer tables.")
+
+    if args.app_role:
+        with psycopg.connect(args.dsn, autocommit=True) as connection:
+            connection.execute(grant_application_role_sql(args.app_role))
+        print(f"Granted table access to '{args.app_role}'.")
+        print(
+            f"Point MARKETING_OS_POSTGRES_DSN at this database as '{args.app_role}' — "
+            "never as a superuser, which bypasses row-level security."
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser.
 
@@ -180,6 +220,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     agents = sub.add_parser("agents", help="List the specialist agents and their tools.")
     agents.set_defaults(func=_cmd_agents)
+
+    init_db = sub.add_parser("init-db", help="Create the Postgres schema and grant the app role.")
+    init_db.add_argument("--dsn", required=True, help="Administrative Postgres connection string.")
+    init_db.add_argument("--app-role", help="Role the service connects as, to grant table access.")
+    init_db.set_defaults(func=_cmd_init_db)
     return parser
 
 

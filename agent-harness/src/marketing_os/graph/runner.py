@@ -1,9 +1,11 @@
 """Runner — the application layer that drives the graph and shapes its results.
 
 Both entrypoints (CLI and API) use these helpers so graph selection, error
-mapping, and result assembly live in one place. A run is keyed by ``thread_id`` so
-it is resumable; single-stage runs use a stage-scoped thread so they do not
-collide with the full-campaign thread.
+mapping, and result assembly live in one place. A run is keyed by ``thread_id``
+(see :mod:`marketing_os.graph.checkpoints`) so it is resumable; single-stage runs
+use a stage-scoped thread so they do not collide with the full-campaign thread,
+and every thread is tenant-scoped so two businesses running the same slug cannot
+share checkpointed state.
 """
 
 from __future__ import annotations
@@ -23,25 +25,13 @@ from marketing_os.adapters.observability import (
 from marketing_os.adapters.tools import WebSearchTool
 from marketing_os.config import Settings
 from marketing_os.errors import exception_from_state_error
+from marketing_os.graph.checkpoints import thread_id
 from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
 from marketing_os.graph.state import CampaignState
 from marketing_os.ports import DocumentStore
 from marketing_os.schemas import CampaignResult, StageResult, Usage
 
 _LOGGER = get_logger("marketing_os.runner")
-
-
-def thread_id(slug: str, stage: str | None) -> str:
-    """Return the checkpoint thread id for a run.
-
-    Args:
-        slug: The campaign slug.
-        stage: The single stage being run, or ``None`` for the full pipeline.
-
-    Returns:
-        ``slug`` for a full run, or ``slug:stage`` for a single-stage run.
-    """
-    return f"{slug}:{stage}" if stage else slug
 
 
 def _select_graph(
@@ -202,7 +192,7 @@ def _config(tenant: str, slug: str, stage: str | None) -> dict[str, Any]:
     """
     scope = stage or "full-pipeline"
     return run_config(
-        thread_id(slug, stage),
+        thread_id(tenant, slug, stage),
         run_name=f"campaign:{slug}:{scope}",
         metadata={"tenant": tenant, "slug": slug, "stage": stage},
         tags=["marketing-os", scope],

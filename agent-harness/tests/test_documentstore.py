@@ -1,9 +1,15 @@
 """DocumentStore contract conformance + adapter-specific guarantees.
 
-The conformance tests run identical assertions against every adapter (the
-Postgres adapter joins the same suite later). Adapter-specific tests pin what
-only one adapter promises: the filesystem adapter reproduces the repository
-layout exactly; the in-memory adapter isolates tenants.
+The conformance tests run identical assertions against every adapter — in-memory,
+filesystem and Postgres — because a fake that drifts from the real store is worse
+than no fake at all. The Postgres parameter is marked ``slow`` and skips unless
+``MARKETING_OS_TEST_POSTGRES=1`` is set, so the fast suite still runs with no
+database while the same assertions are available against a real one.
+
+Adapter-specific tests pin what only one adapter promises: the filesystem
+adapter reproduces the repository layout exactly; the in-memory adapter isolates
+tenants. Postgres's own guarantees — row-level security above all — are pinned in
+``test_postgres.py``.
 """
 
 from __future__ import annotations
@@ -17,7 +23,13 @@ from marketing_os.errors import DocumentNotFoundError, ToolError
 from marketing_os.ports import DocumentStore
 
 
-@pytest.fixture(params=["filesystem", "in-memory"])
+@pytest.fixture(
+    params=[
+        "filesystem",
+        "in-memory",
+        pytest.param("postgres", marks=pytest.mark.slow),
+    ]
+)
 def store(request: pytest.FixtureRequest, tmp_path: Path) -> DocumentStore:
     """Build each DocumentStore adapter for the shared conformance assertions.
 
@@ -30,6 +42,10 @@ def store(request: pytest.FixtureRequest, tmp_path: Path) -> DocumentStore:
     """
     if request.param == "filesystem":
         return FilesystemDocumentStore(tmp_path)
+    if request.param == "postgres":
+        from marketing_os.adapters.postgres import PostgresDocumentStore
+
+        return PostgresDocumentStore(request.getfixturevalue("postgres_pool"))
     return InMemoryDocumentStore()
 
 

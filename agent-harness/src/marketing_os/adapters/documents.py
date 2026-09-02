@@ -3,7 +3,9 @@
 Implements the :class:`~marketing_os.ports.DocumentStore` port (ADR-0014).
 Agents and governance speak markdown and tenant-relative logical paths
 (``dna.md``, ``campaigns/<slug>/<name>.md``); the adapter decides where a
-document lives.
+document lives. The path and tenant-id validators live here too, so every
+adapter — the Postgres one included — refuses the same escaping paths and the
+same malformed tenant ids.
 
 Every adapter is **tenant-scoped by construction**: the tenant is part of the
 physical location, not a filter applied afterwards, so there is no unscoped
@@ -22,7 +24,7 @@ from marketing_os.errors import DocumentNotFoundError, ToolError
 TENANTS_DIR = "tenants"
 
 
-def _tenant_relative_segments(path: str) -> list[str]:
+def tenant_relative_segments(path: str) -> list[str]:
     """Normalise a logical document path, refusing anything that escapes its tenant.
 
     Args:
@@ -52,7 +54,7 @@ def _tenant_relative_segments(path: str) -> list[str]:
     return segments
 
 
-def _tenant_key(tenant: str) -> str:
+def validate_tenant_id(tenant: str) -> str:
     """Validate a tenant id for use as a path segment.
 
     Args:
@@ -69,6 +71,21 @@ def _tenant_key(tenant: str) -> str:
     if not cleaned or "/" in cleaned or "\\" in cleaned or cleaned in {".", ".."}:
         raise ToolError(f"Invalid tenant id: '{tenant}'.")
     return cleaned
+
+
+def normalise_document_path(path: str) -> str:
+    """Return the canonical form of a logical document path.
+
+    Args:
+        path: The tenant-relative logical document path.
+
+    Returns:
+        The path with ``.`` and ``..`` resolved and separators normalised.
+
+    Raises:
+        ToolError: If the path is absolute, empty, or climbs above the tenant root.
+    """
+    return "/".join(tenant_relative_segments(path))
 
 
 class FilesystemDocumentStore:
@@ -97,7 +114,7 @@ class FilesystemDocumentStore:
         Returns:
             The resolved ``tenants/<tenant>/`` directory.
         """
-        return (self.root / TENANTS_DIR / _tenant_key(tenant)).resolve()
+        return (self.root / TENANTS_DIR / validate_tenant_id(tenant)).resolve()
 
     def _resolve(self, tenant: str, path: str) -> Path:
         """Map a tenant-relative document path to its filesystem location.
@@ -113,7 +130,7 @@ class FilesystemDocumentStore:
             ToolError: If the path escapes the tenant's own directory.
         """
         tenant_root = self._tenant_root(tenant)
-        resolved = tenant_root.joinpath(*_tenant_relative_segments(path)).resolve()
+        resolved = tenant_root.joinpath(*tenant_relative_segments(path)).resolve()
         if not resolved.is_relative_to(tenant_root):
             raise ToolError(f"Path '{path}' escapes the tenant root.")
         return resolved

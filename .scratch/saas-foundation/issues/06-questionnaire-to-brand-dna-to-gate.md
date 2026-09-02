@@ -41,4 +41,4 @@ End-to-end behaviour: a new business signs in, is walked through the questionnai
 
 ## Blocked by
 
-- [05 — Postgres: adapter, durable checkpointer, shared run registry](05-postgres-adapter-durable-checkpointer-shared-registry.md)
+- [05 — Postgres: adapter, durable checkpointer, shared run registry](archive/05-postgres-adapter-durable-checkpointer-shared-registry.md)

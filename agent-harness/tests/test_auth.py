@@ -89,12 +89,12 @@ def make_token(
     return jwt.encode(payload, private_key, algorithm="RS256")
 
 
-def test_verifies_a_valid_token_and_derives_tenant_from_org_id(
+def test_verifies_a_valid_token_and_derives_the_organization_from_org_id(
     verifier: JwksTokenVerifier, keypair: tuple[Any, Any]
 ) -> None:
     private_key, _ = keypair
     identity = verifier.verify(make_token(private_key))
-    assert identity.tenant_id == "org_coast"
+    assert identity.organization_id == "org_coast"
     assert identity.user_id == "usr_9f2c"
     assert identity.email == "sam@coastcoffee.example"
 
@@ -127,7 +127,7 @@ def test_rejects_a_token_for_another_audience(
         verifier.verify(make_token(private_key, audience="someone-else"))
 
 
-def test_derives_the_tenant_from_a_v2_session_token(
+def test_derives_the_organization_from_a_v2_session_token(
     verifier: JwksTokenVerifier, keypair: tuple[Any, Any]
 ) -> None:
     """Clerk's current token nests the organization under a compact ``o`` claim."""
@@ -138,7 +138,7 @@ def test_derives_the_tenant_from_a_v2_session_token(
         o={"id": "org_coast", "slg": "coast-coffee", "rol": "admin"},
     )
     identity = verifier.verify(token)
-    assert identity.tenant_id == "org_coast"
+    assert identity.organization_id == "org_coast"
     assert identity.business_name == "coast-coffee"
 
 
@@ -147,7 +147,7 @@ def test_the_nested_organization_claim_wins_over_the_legacy_one(
 ) -> None:
     private_key, _ = keypair
     token = make_token(private_key, org_id="org_stale", o={"id": "org_current"})
-    assert verifier.verify(token).tenant_id == "org_current"
+    assert verifier.verify(token).organization_id == "org_current"
 
 
 def test_rejects_a_v2_token_whose_organization_claim_is_empty(

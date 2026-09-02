@@ -22,15 +22,18 @@ Run with:  uvicorn marketing_os.entrypoints.api.app:app --reload
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from functools import lru_cache
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
 
 from marketing_os.adapters.auth import JwksTokenVerifier
@@ -38,11 +41,14 @@ from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.observability import (
     configure_logging,
     configure_tracing,
+    get_logger,
     list_run_ids,
     new_run_id,
     read_events,
     tail_trace,
 )
+from marketing_os.adapters.runs import CANCELLED, RUNNING, InMemoryRunStore
+from marketing_os.adapters.tenants import PassthroughTenantDirectory
 from marketing_os.config import Settings, load_settings
 from marketing_os.entrypoints.env import load_env
 from marketing_os.errors import (
@@ -54,23 +60,39 @@ from marketing_os.errors import (
     UnauthenticatedError,
 )
 from marketing_os.governance import check_gate
-from marketing_os.graph.registry import (
-    CANCELLED,
-    RUNNING,
-    RunRegistry,
-    read_run_status,
-    resolve_trace_path,
-)
+from marketing_os.graph.registry import RunRegistry, read_run_status, resolve_trace_path
 from marketing_os.graph.runner import arun_campaign
-from marketing_os.ports import TokenVerifier
+from marketing_os.ports import DocumentStore, RunStore, TenantDirectory, TokenVerifier
 from marketing_os.schemas import CampaignResult, VerifiedIdentity
+
+if TYPE_CHECKING:
+    from marketing_os.adapters.postgres import PostgresBackend
+
+_LOGGER = get_logger("marketing_os.api")
 
 load_env()
 
 
+async def _heartbeat_runs(registry: RunRegistry, interval: float) -> None:
+    """Report this worker's live runs to the shared store, forever.
+
+    Args:
+        registry: The registry whose local runs are reported.
+        interval: Seconds between reports.
+    """
+    while True:
+        await asyncio.sleep(interval)
+        registry.heartbeat()
+
+
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Configure logging and LangSmith tracing for the service lifetime.
+    """Open the service's stores, resolve runs a dead worker left, then serve.
+
+    Reclaiming on startup is what turns a crash or a deploy from "runs vanish
+    and stay ``running`` forever" into "runs are resolved as ``interrupted`` and
+    their campaigns start clean". Runs still being heartbeated by a live peer
+    are untouched, so this is safe with several workers.
 
     Args:
         _: The FastAPI application (unused).
@@ -81,7 +103,22 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings)
     configure_tracing(settings)
-    yield
+
+    backend = get_backend()
+    if backend is not None:
+        await backend.open()
+
+    registry = get_registry()
+    _LOGGER.info("worker.started worker_id=%s postgres=%s", registry.worker_id, backend is not None)
+    await registry.reclaim_abandoned()
+    heartbeat = asyncio.create_task(_heartbeat_runs(registry, settings.run_heartbeat_seconds))
+    try:
+        yield
+    finally:
+        heartbeat.cancel()
+        if backend is not None:
+            await backend.close()
+        reset_providers()
 
 
 app = FastAPI(title="Marketing OS", version="0.2.0", lifespan=_lifespan)
@@ -145,14 +182,86 @@ def get_settings() -> Settings:
 
 
 @lru_cache(maxsize=1)
-def get_document_store() -> FilesystemDocumentStore:
+def get_backend() -> PostgresBackend | None:
+    """Return the Postgres backend, or ``None`` when no DSN is configured.
+
+    The single place the storage choice is made. Every other provider asks this
+    one what it got, so "are we on Postgres?" is answered once rather than read
+    from a mutable module global. The lifespan opens and closes it.
+
+    Returns:
+        The backend, or ``None`` to run on the filesystem and in memory.
+    """
+    dsn = get_settings().postgres_dsn
+    if not dsn:
+        return None
+    from marketing_os.adapters.postgres import PostgresBackend
+
+    return PostgresBackend(dsn)
+
+
+@lru_cache(maxsize=1)
+def get_document_store() -> DocumentStore:
     """Return the process-wide document store tenant documents resolve through.
 
     Returns:
-        The filesystem adapter rooted at the configured repo root (tests reset
-        it with ``get_document_store.cache_clear()``, mirroring settings).
+        The Postgres adapter when a DSN is configured, otherwise the filesystem
+        adapter rooted at the repo root (tests reset it with
+        ``get_document_store.cache_clear()``, mirroring settings).
     """
+    backend = get_backend()
+    if backend is not None:
+        return backend.documents
     return FilesystemDocumentStore(get_settings().root)
+
+
+@lru_cache(maxsize=1)
+def get_tenant_directory() -> TenantDirectory:
+    """Return the process-wide directory mapping IdP organizations to tenants.
+
+    Returns:
+        The Postgres directory when a DSN is configured — which mints a platform
+        ``tenant_id`` and keeps the IdP's organization id in its own column —
+        otherwise the passthrough directory, which reports the organization id
+        as the tenant id because a filesystem tenant *is* a directory name
+        (ADR-0014).
+    """
+    backend = get_backend()
+    if backend is not None:
+        return backend.tenants
+    return PassthroughTenantDirectory()
+
+
+@lru_cache(maxsize=1)
+def get_checkpointer() -> BaseCheckpointSaver:
+    """Return the process-wide checkpointer runs are resumable through.
+
+    A single instance for the process — not one per run — is what makes a
+    checkpoint outlive the run that wrote it, and therefore what makes
+    abandoning a cancelled run's threads a real operation rather than a no-op.
+
+    Returns:
+        The Postgres saver when a DSN is configured, otherwise a process-wide
+        :class:`MemorySaver`, which survives runs but not a restart.
+    """
+    backend = get_backend()
+    if backend is not None:
+        return backend.checkpointer
+    return MemorySaver()
+
+
+@lru_cache(maxsize=1)
+def get_run_store() -> RunStore:
+    """Return the process-wide store holding run claims and statuses.
+
+    Returns:
+        The Postgres store when a DSN is configured — shared by every worker —
+        otherwise an in-process store, which limits the service to one worker.
+    """
+    backend = get_backend()
+    if backend is not None:
+        return backend.runs
+    return InMemoryRunStore()
 
 
 @lru_cache(maxsize=1)
@@ -179,9 +288,20 @@ def get_token_verifier() -> TokenVerifier:
 def get_identity(request: Request) -> VerifiedIdentity:
     """Resolve the caller's verified identity from the ``Authorization`` header.
 
+    Two steps, deliberately separate. The token verifier says who the caller is
+    and which **IdP organization** they act for; the tenant directory says which
+    **platform tenant** owns that organization's data, registering it on a
+    business's first request. Keeping them apart is what stops a vendor's
+    identifier — Clerk's ``org_...`` — from becoming the partition key for every
+    document, run and checkpoint (ADR-0014).
+
     This is the only place a tenant enters the service. Tests override it via
     ``app.dependency_overrides[get_identity]`` to inject a claim, so no test
     contacts a live IdP.
+
+    The header is checked before either provider is built, so a request with no
+    token answers 401 even when the service is misconfigured — an unauthenticated
+    caller learns "sign in", not "the server is broken".
 
     Args:
         request: The inbound request carrying the bearer token.
@@ -198,9 +318,19 @@ def get_identity(request: Request) -> VerifiedIdentity:
     if scheme.lower() != "bearer" or not token.strip():
         raise _http_error(UnauthenticatedError("Sign in to continue."))
     try:
-        return get_token_verifier().verify(token.strip())
+        claims = get_token_verifier().verify(token.strip())
+        tenant = get_tenant_directory().resolve(
+            external_auth_id=claims.organization_id, name=claims.business_name
+        )
     except MarketingOSError as exc:
         raise _http_error(exc) from exc
+    return VerifiedIdentity(
+        user_id=claims.user_id,
+        tenant_id=tenant.tenant_id,
+        organization_id=tenant.external_auth_id,
+        email=claims.email,
+        business_name=tenant.name,
+    )
 
 
 Identity = Annotated[VerifiedIdentity, Depends(get_identity)]
@@ -208,15 +338,42 @@ Identity = Annotated[VerifiedIdentity, Depends(get_identity)]
 
 @lru_cache(maxsize=1)
 def get_registry() -> RunRegistry:
-    """Return the process-wide registry of active background runs.
+    """Return this worker's registry of background runs.
 
-    The registry is a single in-memory instance for the process lifetime (tests
-    reset it with ``get_registry.cache_clear()``, mirroring :func:`get_settings`).
+    One instance per process (tests reset it with ``get_registry.cache_clear()``,
+    mirroring :func:`get_settings`). The claims and statuses it reads and writes
+    live in the run store, which is shared when Postgres is configured, so the
+    one-active-run-per-campaign guard spans workers.
 
     Returns:
-        The shared :class:`RunRegistry`.
+        The worker's :class:`RunRegistry`.
     """
-    return RunRegistry()
+    settings = get_settings()
+    return RunRegistry(
+        get_run_store(),
+        checkpointer=get_checkpointer(),
+        stale_after=settings.run_stale_after_seconds,
+    )
+
+
+_BACKED_PROVIDERS = (
+    get_backend,
+    get_document_store,
+    get_tenant_directory,
+    get_checkpointer,
+    get_run_store,
+    get_registry,
+)
+
+
+def reset_providers() -> None:
+    """Drop every cached provider so the next call rebuilds it.
+
+    Called when the service shuts down, and by tests between cases, since every
+    provider's answer depends on the settings and the storage backend.
+    """
+    for provider in _BACKED_PROVIDERS:
+        provider.cache_clear()
 
 
 class CreateCampaign(BaseModel):
@@ -403,8 +560,9 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
         HTTPException: 409 if the gate failed or the slug already has an active run.
     """
     settings = get_settings()
+    store = get_document_store()
     tenant = identity.tenant_id
-    report = check_gate(settings, tenant, slug, store=get_document_store())
+    report = check_gate(settings, tenant, slug, store=store)
     if not report.ok:
         raise _http_error(GateError("Stage 0 gate failed", missing=report.all_issues))
     run_id = new_run_id()
@@ -415,7 +573,15 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
         Returns:
             The structured campaign result.
         """
-        return await arun_campaign(settings, tenant, slug, stage=body.stage, run_id=run_id)
+        return await arun_campaign(
+            settings,
+            tenant,
+            slug,
+            stage=body.stage,
+            run_id=run_id,
+            checkpointer=get_checkpointer(),
+            document_store=store,
+        )
 
     try:
         get_registry().start(
@@ -442,8 +608,8 @@ def list_active_runs(identity: Identity) -> dict[str, object]:
         Runs belonging to other tenants are not listed.
     """
     runs = [
-        {"run_id": run.run_id, "slug": run.slug, "stage": run.stage}
-        for run in get_registry().active(identity.tenant_id)
+        {"run_id": record.run_id, "slug": record.slug, "stage": record.stage}
+        for record in get_registry().active(identity.tenant_id)
     ]
     return {"runs": runs}
 
@@ -477,7 +643,11 @@ async def cancel_run(run_id: str, identity: Identity) -> dict[str, object]:
 
     Cancelling the run's task lands a :class:`asyncio.CancelledError` inside the
     specialist's awaited LLM call (ADR-0009); the trace ends with a terminal
-    ``run.summary outcome=cancelled`` event and the run leaves the live registry.
+    ``run.summary outcome=cancelled`` event and the run releases its campaign.
+
+    The campaign's checkpoint threads are cleared too, so the next run of that
+    campaign starts at stage 1. Without that, a durable checkpointer would
+    resume the work the owner just cancelled (ADR-0014).
 
     Args:
         run_id: The id of the run to cancel.
@@ -567,7 +737,9 @@ def stream_run(run_id: str, identity: Identity) -> StreamingResponse:
         Yields:
             SSE-formatted event lines.
         """
-        async for event in tail_trace(trace_path, is_live=lambda: registry.is_live(run_id)):
+        async for event in tail_trace(
+            trace_path, is_live=lambda: registry.is_live(run_id, identity.tenant_id)
+        ):
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(event_source(), media_type="text/event-stream")

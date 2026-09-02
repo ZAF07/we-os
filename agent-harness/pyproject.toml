@@ -25,7 +25,11 @@ dependencies = [
 [project.optional-dependencies]
 anthropic = ["langchain-anthropic>=1.0"]
 openai = ["langchain-openai>=1.0"]
-postgres = ["langgraph-checkpoint-postgres>=2.0", "psycopg[binary]>=3.2"]
+postgres = [
+    "langgraph-checkpoint-postgres>=2.0",
+    "psycopg[binary]>=3.2",
+    "psycopg-pool>=3.2",
+]
 playwright = ["playwright>=1.44"]
 
 [dependency-groups]
@@ -35,6 +39,10 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-pyyaml>=6.0",
+    "testcontainers[postgres]>=4.8",
+    "psycopg[binary]>=3.2",
+    "psycopg-pool>=3.2",
+    "langgraph-checkpoint-postgres>=2.0",
 ]
 
 [project.scripts]
@@ -49,6 +57,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "uses_real_dotenv: exercises load_env itself, so the .env isolation fixture steps aside",
+    "slow: needs a containerised Postgres; skipped unless MARKETING_OS_TEST_POSTGRES=1",
 ]
 
 [tool.ruff]
@@ -75,7 +84,7 @@ no_implicit_optional = true
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["langgraph.*", "langchain_deepseek.*", "playwright.*"]
+module = ["langgraph.*", "langchain_deepseek.*", "playwright.*", "testcontainers.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

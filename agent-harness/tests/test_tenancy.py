@@ -38,16 +38,10 @@ def _client(repo: Path, tenant: str) -> TestClient:
     Returns:
         A configured (not yet entered) test client.
     """
-    from marketing_os.entrypoints.api.app import (
-        app,
-        get_document_store,
-        get_registry,
-        get_settings,
-    )
+    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
 
     get_settings.cache_clear()
-    get_registry.cache_clear()
-    get_document_store.cache_clear()
+    reset_providers()
     authenticate(app, tenant)
     return TestClient(app)
 
@@ -60,10 +54,10 @@ def test_every_route_except_health_refuses_a_request_with_no_token(
 ) -> None:
     """Without a token the API answers 401 — and never falls open to a default tenant."""
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
-    from marketing_os.entrypoints.api.app import app, get_registry, get_settings
+    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
 
     get_settings.cache_clear()
-    get_registry.cache_clear()
+    reset_providers()
     app.dependency_overrides.clear()
 
     with TestClient(app) as client:
@@ -79,7 +73,7 @@ def test_every_route_except_health_refuses_a_request_with_no_token(
             assert response.json()["type"] == "unauthenticated"
 
     get_settings.cache_clear()
-    get_registry.cache_clear()
+    reset_providers()
 
 
 def test_a_malformed_authorization_header_is_refused(

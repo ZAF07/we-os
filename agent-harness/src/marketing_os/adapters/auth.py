@@ -19,7 +19,7 @@ import jwt
 from jwt import PyJWKClient
 
 from marketing_os.errors import UnauthenticatedError
-from marketing_os.schemas import VerifiedIdentity
+from marketing_os.schemas import VerifiedClaims
 
 _ALGORITHMS = ["RS256"]
 
@@ -28,8 +28,8 @@ _ALGORITHMS = ["RS256"]
 # ``org_slug``. Both are read so the verifier works against either, and
 # ``tenant_id`` covers a non-Clerk IdP configured with an explicit claim.
 _ORGANIZATION_CLAIM = "o"
-_TENANT_CLAIMS = ("org_id", "tenant_id")
-_TENANT_SUBCLAIMS = ("id",)
+_ORGANIZATION_ID_CLAIMS = ("org_id", "tenant_id")
+_ORGANIZATION_ID_SUBCLAIMS = ("id",)
 _BUSINESS_NAME_CLAIMS = ("org_name", "org_slug", "business_name")
 _BUSINESS_NAME_SUBCLAIMS = ("nam", "slg")
 
@@ -94,11 +94,11 @@ def _organization_claim(
 class JwksTokenVerifier:
     """Verifies RS256 bearer tokens against an OIDC issuer's published JWKS.
 
-    The tenant is read from the token's organization claim, never from the
+    The business is read from the token's organization claim, never from the
     subject: one tenant is one business, and a business may have more than one
-    signed-in person. A token carrying no organization has no tenant to act for
-    and is refused rather than silently falling back to the user id, which would
-    weld a business to a single login and make tenancy unmigratable later.
+    signed-in person. A token carrying no organization has no business to act
+    for and is refused rather than silently falling back to the user id, which
+    would weld a business to a single login and make tenancy unmigratable later.
     """
 
     def __init__(
@@ -127,20 +127,22 @@ class JwksTokenVerifier:
             self.jwks_url, cache_keys=True
         )
 
-    def verify(self, token: str) -> VerifiedIdentity:
-        """Verify a bearer token and resolve the identity it carries.
+    def verify(self, token: str) -> VerifiedClaims:
+        """Verify a bearer token and return the claims it carries.
 
         Args:
             token: The raw bearer token, without its ``Bearer `` prefix.
 
         Returns:
-            The verified identity, with the tenant derived from the
-            organization claim.
+            The verified claims, naming the person and the IdP organization
+            they act for. Turning that organization into a platform tenant is
+            the :class:`~marketing_os.ports.TenantDirectory`'s job, not this
+            adapter's.
 
         Raises:
             UnauthenticatedError: If the token fails any verification step or
-                carries no tenant claim. The reason is not disclosed to the
-                caller, so a probe learns nothing from the refusal.
+                carries no organization claim. The reason is not disclosed to
+                the caller, so a probe learns nothing from the refusal.
         """
         try:
             signing_key = self._jwks_client.get_signing_key_from_jwt(token)
@@ -158,14 +160,16 @@ class JwksTokenVerifier:
         except Exception as exc:
             raise UnauthenticatedError("Sign in to continue.") from exc
 
-        tenant_id = _organization_claim(claims, _TENANT_SUBCLAIMS, _TENANT_CLAIMS)
+        organization_id = _organization_claim(
+            claims, _ORGANIZATION_ID_SUBCLAIMS, _ORGANIZATION_ID_CLAIMS
+        )
         subject = claims.get("sub")
-        if not tenant_id or not isinstance(subject, str):
+        if not organization_id or not isinstance(subject, str):
             raise UnauthenticatedError("Sign in to continue.")
 
-        return VerifiedIdentity(
+        return VerifiedClaims(
             user_id=subject,
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             email=_first_claim(claims, ("email",)),
             business_name=_organization_claim(
                 claims, _BUSINESS_NAME_SUBCLAIMS, _BUSINESS_NAME_CLAIMS

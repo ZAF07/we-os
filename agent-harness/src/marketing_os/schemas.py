@@ -11,23 +11,71 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class VerifiedIdentity(BaseModel):
-    """Who the caller is, as established by verifying their token.
+class VerifiedClaims(BaseModel):
+    """What a signature-checked token asserts, before any tenant resolution.
 
-    Only ever constructed by a :class:`~marketing_os.ports.TokenVerifier` from a
-    signature-checked token — never from a caller-supplied value (ADR-0013). The
-    tenant is the unit of ownership: one tenant is exactly one business, so
+    This is the raw IdP view of the caller: it names the person and the IdP's
+    own organization, and knows nothing about we-OS's tenants. Turning
+    ``organization_id`` into the platform tenant is the
+    :class:`~marketing_os.ports.TenantDirectory`'s job, which keeps the vendor's
+    identifier out of every downstream partition key (ADR-0014).
+
+    Attributes:
+        user_id: The IdP's stable subject identifier for the signed-in person.
+        organization_id: The IdP's identifier for the business the caller acts
+            for — for Clerk, the Organization id (``org_...``).
+        email: The signed-in person's email address, when the token carries one.
+        business_name: The organization's display name, when the token carries one.
+    """
+
+    user_id: str
+    organization_id: str
+    email: str | None = None
+    business_name: str | None = None
+
+
+class Tenant(BaseModel):
+    """One business we-OS markets, as the platform records it.
+
+    The platform mints ``tenant_id`` itself and stores the IdP's
+    ``external_auth_id`` beside it, so the identity provider can be swapped, an
+    organization re-linked, or a business renamed without rewriting the id that
+    every document, run and checkpoint is partitioned by.
+
+    Attributes:
+        tenant_id: The platform-owned identifier, and the partition key for
+            every document, run and checkpoint the business owns.
+        name: The business's display name.
+        external_auth_id: The IdP's identifier for the business — for Clerk, the
+            Organization id (``org_...``).
+    """
+
+    tenant_id: str
+    name: str
+    external_auth_id: str
+
+
+class VerifiedIdentity(BaseModel):
+    """Who the caller is, and which business they act for.
+
+    Only ever constructed from a signature-checked token resolved through the
+    tenant directory — never from a caller-supplied value (ADR-0013). The tenant
+    is the unit of ownership: one tenant is exactly one business, so
     ``tenant_id`` scopes every document the request may touch.
 
     Attributes:
         user_id: The IdP's stable subject identifier for the signed-in person.
-        tenant_id: The business the caller acts for, derived from the verified claim.
+        tenant_id: The platform tenant the caller acts for, resolved from the
+            verified organization claim.
+        organization_id: The IdP organization id the tenant was resolved from,
+            kept for support and audit.
         email: The signed-in person's email address, when the token carries one.
-        business_name: The tenant's display name, when the token carries one.
+        business_name: The tenant's display name.
     """
 
     user_id: str
     tenant_id: str
+    organization_id: str
     email: str | None = None
     business_name: str | None = None
 
@@ -136,3 +184,35 @@ class CampaignResult(BaseModel):
     stages: list[StageResult] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)
     run_log: str | None = None
+
+
+class RunRecord(BaseModel):
+    """One execution attempt of a campaign's pipeline, as the run store records it.
+
+    The record is what makes the one-active-run-per-campaign guard hold across
+    workers: the store claims ``(tenant_id, slug)`` durably, so a second worker
+    is refused rather than racing on the same deliverables. ``heartbeat_at`` is
+    touched while the run executes, which is how a restarted process tells a run
+    that is genuinely live on a peer from one its own crash abandoned.
+
+    Attributes:
+        run_id: The unique id of this execution attempt, and its trace filename.
+        tenant_id: The tenant the run belongs to.
+        slug: The campaign slug the run claims.
+        stage: The single stage being run, or ``None`` for the full pipeline.
+        status: One of ``running``, ``completed``, ``failed``, ``cancelled``, or
+            ``interrupted``.
+        worker_id: The process that claimed the run.
+        started_at: When the run was claimed, as a UTC epoch timestamp.
+        heartbeat_at: When the owning worker last reported the run alive, as a
+            UTC epoch timestamp.
+    """
+
+    run_id: str
+    tenant_id: str
+    slug: str
+    stage: str | None = None
+    status: str = "running"
+    worker_id: str = ""
+    started_at: float = 0.0
+    heartbeat_at: float = 0.0

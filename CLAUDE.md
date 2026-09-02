@@ -10,22 +10,22 @@ The repository has two layers: the **interactive agentic system** configured und
 
 ## Directory map
 
-| Path                           | Purpose                                                                                                                                    |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `.claude/agents/`              | The 5 specialist **subagents** (research, brand, creative, performance, asset-prompt). Each runs in its own context with restricted tools. |
-| `.claude/skills/new-campaign/` | The **Marketing Director orchestrator** — entrypoint (`/new-campaign`) that runs the pipeline and delegates to specialists.                |
-| `.claude/rules/`               | **Canonical governance**, loaded every session: the mandatory pipeline and operating principles.                                           |
-| `.claude/settings.json`        | Permissions (read-only research tools pre-allowed).                                                                                        |
-| `knowledge/`                   | Central domain-knowledge library, by discipline. Agents read frameworks from here.                                                         |
-| `tenants/<tenant>/dna.md`      | Reusable **Brand DNA** — the profile the agent grounds all work in. Human-authored; read-only to agents.                                |
+| Path                                 | Purpose                                                                                                                                                    |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.claude/agents/`                    | The 5 specialist **subagents** (research, brand, creative, performance, asset-prompt). Each runs in its own context with restricted tools.                 |
+| `.claude/skills/new-campaign/`       | The **Marketing Director orchestrator** — entrypoint (`/new-campaign`) that runs the pipeline and delegates to specialists.                                |
+| `.claude/rules/`                     | **Canonical governance**, loaded every session: the mandatory pipeline and operating principles.                                                           |
+| `.claude/settings.json`              | Permissions (read-only research tools pre-allowed).                                                                                                        |
+| `knowledge/`                         | Central domain-knowledge library, by discipline. Agents read frameworks from here.                                                                         |
+| `tenants/<tenant>/dna.md`            | Reusable **Brand DNA** — the profile the agent grounds all work in. Human-authored; read-only to agents.                                                   |
 | `tenants/<tenant>/campaigns/<slug>/` | Per-campaign `goal.md` (input) + deliverables written by each pipeline stage. Tenant-owned: served only by the `DocumentStore`, never by the read sandbox. |
-| `logs/<tenant>/<slug>/`        | Per-run JSONL traces, partitioned by tenant so a run id is findable only by the business that owns it.                                     |
-| `templates/`                   | Fill-in templates for Brand DNA and campaign goals.                                                                                     |
-| `USAGE.md`                     | Operator guide: how to collect DNA, set the goal, and run the agent.                                                                       |
-| `agent-harness/`               | Compiled LangGraph runtime — Python package (`src/marketing_os/`), tests, Makefile. Runs the same pipeline headlessly.                     |
-| `CONTEXT.md`                   | Domain glossary and pipeline vocabulary — read before working in any area.                                                                 |
-| `docs/adr/`                    | Architecture Decision Records — decisions not to re-litigate.                                                                              |
-| `.scratch/<feature>/`          | Local issue tracker — PRDs and issues as markdown; the cross-session record of work (see `docs/agents/issue-tracker.md`).                  |
+| `logs/<tenant>/<slug>/`              | Per-run JSONL traces, partitioned by tenant so a run id is findable only by the business that owns it.                                                     |
+| `templates/`                         | Fill-in templates for Brand DNA and campaign goals.                                                                                                        |
+| `USAGE.md`                           | Operator guide: how to collect DNA, set the goal, and run the agent.                                                                                       |
+| `agent-harness/`                     | Compiled LangGraph runtime — Python package (`src/marketing_os/`), tests, Makefile. Runs the same pipeline headlessly.                                     |
+| `CONTEXT.md`                         | Domain glossary and pipeline vocabulary — read before working in any area.                                                                                 |
+| `docs/adr/`                          | Architecture Decision Records — decisions not to re-litigate.                                                                                              |
+| `.scratch/<feature>/`                | Local issue tracker — PRDs and issues as markdown; the cross-session record of work (see `docs/agents/issue-tracker.md`).                                  |
 
 ## Agent hierarchy → Claude Code mapping
 
@@ -50,6 +50,7 @@ In this version `knowledge/` is **read-only** to agents. A planned future capabi
 
 ## Coding standards
 
+- **Always** prefer simple code over complex over optimised code. Code should be written in a manner where the next person who reads it can understand clearly what we are trying to accomplish.
 - Type-annotate all public functions; `mypy` must pass on `src/`.
 - Use absolute path imports instead of relative
 - Use UV for package and virtual env management
@@ -93,7 +94,7 @@ Every piece of work — feature, refactor, or bug — gets an issue file in `.sc
 
 **Debugging:** `/file-bug` to record it as an issue → `/diagnosing-bugs` (build a tight pass/fail feedback loop before touching code) → fix test-first with `/tdd` → `/verify` the fix in the running system → `/code-review` → `/post-implement`, recording the confirmed hypothesis in the archived issue.
 
-**What counts as a bug (important):** a bug is a defect in **already-implemented, shipped code** — the running system crashes, throws, or logs an error when exercised. Those get filed with `/file-bug`. A defect in code being written *right now* (a broken function in the current diff, a failing test you just introduced) is **not** filed — fix it in place as part of finishing that work. When the user mentions a bug, this is the distinction to apply before reaching for `/file-bug`.
+**What counts as a bug (important):** a bug is a defect in **already-implemented, shipped code** — the running system crashes, throws, or logs an error when exercised. Those get filed with `/file-bug`. A defect in code being written _right now_ (a broken function in the current diff, a failing test you just introduced) is **not** filed — fix it in place as part of finishing that work. When the user mentions a bug, this is the distinction to apply before reaching for `/file-bug`.
 
 **Session ritual:**
 

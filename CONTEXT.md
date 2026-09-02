@@ -8,6 +8,10 @@ A SaaS agentic platform that gives a business a cheaper alternative to hiring a 
 One business using we-OS to market itself — the isolation boundary for all data in the system. A tenant owns exactly one Brand DNA, and many campaigns. we-OS is not an agency platform: a tenant never manages other businesses (see [ADR-0013](docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md)).
 _Avoid_: account, org, workspace, client, agency.
 
+**Tenant Id / External Auth Id**:
+A **tenant id** is minted by we-OS (`ten_...`) and is the partition key for everything a business owns — documents, runs, checkpoint threads. An **external auth id** is the identity provider's own name for that business — for Clerk, the Organization id (`org_...`) — and is stored in one column beside the tenant, never used as a key. Keeping them separate is what lets the IdP be swapped, an organization be re-created, or a business be renamed without rewriting every identifier (see [ADR-0014](docs/adr/0014-postgres-system-of-record-and-split-governance.md)). The **Tenant Directory** is the one component that translates between them, on the way in from a verified token. On the filesystem layer, which has no table to mint ids in, the two are deliberately the same string.
+_Avoid_: org id (as a synonym for tenant id), account id, customer id.
+
 **Tenant-Owned Document**:
 Anything that belongs to one business and no other — its Brand DNA, campaign goals, deliverables, and run traces. Reachable only by naming the tenant that owns it, because the tenant is part of where the document lives rather than a filter applied afterwards. A tenant-owned document is never served to an agent by the read sandbox; it resolves through the tenant-scoped `DocumentStore` (see [ADR-0023](docs/adr/0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md)).
 _Avoid_: user data, private file, scoped document.
@@ -37,12 +41,34 @@ The per-campaign business objective and success metrics (`campaigns/<slug>/goal.
 _Avoid_: objective doc, spec.
 
 **Campaign Slug**:
-The identifier for a single **campaign** — the durable thing. It names the campaign's directory (`campaigns/<slug>/`, resolved within the owning tenant), so every input and deliverable for that campaign lives under it, and it keys the checkpoint thread that makes the campaign resumable. A slug is unique within a tenant, not globally: two businesses may both run a campaign called `spring` without ever meeting. A specialist must use the campaign's slug verbatim; a write under any other slug is rejected as off-slug (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
+The identifier for a single **campaign** — the durable thing. It names the campaign's directory (`campaigns/<slug>/`, resolved within the owning tenant), so every input and deliverable for that campaign lives under it. A slug is unique within a tenant, not globally: two businesses may both run a campaign called `spring` without ever meeting — which is why a slug alone never keys anything shared; the Checkpoint Thread and the run claim are both keyed by tenant *and* slug. A specialist must use the campaign's slug verbatim; a write under any other slug is rejected as off-slug (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
 _Avoid_: id, name, key, thread.
 
 **Run**:
-A single **execution attempt** of a campaign's pipeline, identified by a unique `run_id`. A campaign (slug) may accumulate many runs over its life — one per attempt — but **at most one run per slug may be active at a time** (a second concurrent run of the same slug is rejected). Each run has its own JSONL trace (`logs/<tenant>/<slug>/<run_id>.jsonl` — a run is a Tenant-Owned Document, so a run id is unfindable outside the tenant that owns it) and, in the background-job model, its own status and cancellation handle. The slug names the campaign; the run_id names one attempt to advance it. A run's **status** is one of: **running** (executing now), **completed** (finished ok), **failed** (halted on an error), **cancelled** (stopped on operator request), or **interrupted** (its process died — e.g. a restart — leaving a trace with no terminal summary). Cancelling a run **abandons** it: it is not resumed, and the next run of the slug starts clean. See [ADR-0010](docs/adr/0010-background-job-run-model.md) for the background-job model and [ADR-0009](docs/adr/0009-async-cancellable-pipeline-execution.md) for the cancellable async foundation it rests on.
+A single **execution attempt** of a campaign's pipeline, identified by a unique `run_id`. A campaign may accumulate many runs over its life — one per attempt — but **at most one run per campaign may be active at a time**. That guard is a **claim** on `(tenant, slug)` held in the Run Store, so it holds across every worker rather than within one process; a second concurrent run of the same campaign is rejected. Each run has its own Run Trace. The slug names the campaign; the run_id names one attempt to advance it. A run's **status** is one of: **running** (executing now), **completed** (finished ok), **failed** (halted on an error), **cancelled** (stopped on operator request), or **interrupted** (the worker executing it died — a crash or a deploy — and a later worker reclaimed it). See [ADR-0010](docs/adr/0010-background-job-run-model.md) for the background-job model and [ADR-0009](docs/adr/0009-async-cancellable-pipeline-execution.md) for the cancellable async foundation it rests on.
 _Avoid_: job (use for the background execution mechanism only), execution, session, thread.
+
+**Abandoning a Run**:
+Ending a run such that its work is **not resumed** — what cancelling does, and what reclaiming a crashed worker's run does. Abandoning is an explicit act with two parts: the run's claim is released, and the campaign's Checkpoint Threads are **cleared**. Once checkpoints are durable, skipping the second part silently converts "a cancelled run starts clean" into "resume from the last checkpoint" (see [ADR-0014](docs/adr/0014-postgres-system-of-record-and-split-governance.md)).
+_Avoid_: stopping, aborting, killing — none of them imply the state is discarded.
+
+**Checkpoint Thread**:
+The key LangGraph stores a run's resumable state under. It names one tenant's campaign: `<tenant>/<slug>` for a full-pipeline run, `<tenant>/<slug>:<stage>` for a single-stage run. Both forms exist for a campaign at once, so abandoning it must clear both. The tenant is part of the key for the same reason it is part of a document path — slugs are chosen by businesses, and a shared checkpointer keyed on a bare slug would hand one business's mid-run state to another.
+_Avoid_: thread id (as a bare term), session, conversation.
+
+**Run Store**:
+Where each run's claim and lifecycle status live. Shared and durable in production (Postgres), in-process for the fast tests and single-worker local runs. A worker **heartbeats** the runs it is executing; a starting worker **reclaims** any run whose heartbeat has gone stale, resolving it as `interrupted` rather than leaving it `running` forever. The heartbeat is what distinguishes a run genuinely live on a peer from one a dead process abandoned, which is what makes reclaiming safe with several workers.
+_Avoid_: queue, scheduler, job table.
+
+**Worker**:
+One running copy of the engine. More than one may run at once, and a request from a business may reach any of them. So for every kind of state the system holds, one question decides what the product can do: **is it reachable from every worker, or only from the one that produced it?** Shared state can be asked about from anywhere; worker-local state can only be asked about where it was made.
+_Avoid_: instance, node, server, replica — none of them make the shared-or-local question obvious.
+
+**Run Trace**:
+The ordered record of what a Run did — every event its stages emitted, ending in a terminal summary. It answers two different questions for a business: *what is happening now* (the live progress feed during a run) and *what happened* (the history afterwards). A Run Trace is a Tenant-Owned Document, so a run id is unfindable outside the tenant that owns it.
+
+A run's **status** is shared across Workers; its Run Trace is currently **worker-local**. The consequence is domain-visible, not merely technical: with several Workers a business can always find out *whether* its run is still going, but can only watch it happen if the request lands on the Worker that ran it (see [ADR-0024](docs/adr/0024-platform-owned-tenant-ids-and-explicit-run-abandonment.md)).
+_Avoid_: log, audit trail, event log, history.
 
 **Marketing Director**:
 The orchestrator (the `/new-campaign` skill / main session). Runs the DNA gate, sets the business goal and campaign strategy, and delegates to specialists in mandatory order. Never produces research, strategy, creative, or assets itself.
@@ -168,4 +194,15 @@ The Performance Plan precedes creative so the brief and the asset prompts inheri
 - `web/` — the Next.js operator UI + BFF (see [ADR-0012](docs/adr/0012-nextjs-frontend-and-bff-in-monolith.md)).
 - `contracts/` — the frozen OpenAPI contract between the frontend and the engine, its linter, and the mock server the frontend codes against (see [ADR-0017](docs/adr/0017-stages-and-lifecycle-are-separate-axes.md)).
 
-Tenant-Owned Documents resolve through a `DocumentStore` port — filesystem and in-memory adapters exist today; Postgres joins as the production adapter, alongside checkpoints, guardrails, the knowledge library and the questionnaire (see [ADR-0014](docs/adr/0014-postgres-system-of-record-and-split-governance.md)). The eight rules, the pipeline definition and the specialist prompts stay as code-shipped markdown. The paths above describe the current filesystem layout, which the filesystem adapter serves for local development; the split between the two groups is the boundary the sandbox enforces (see [ADR-0023](docs/adr/0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md)).
+Tenant-Owned Documents resolve through a `DocumentStore` port. Three adapters share one conformance suite: in-memory (the fast tests), filesystem (local development and the CLI), and Postgres (production). The eight rules, the pipeline definition and the specialist prompts stay as code-shipped markdown. The paths above describe the filesystem layout; the split between the two groups is the boundary the sandbox enforces (see [ADR-0023](docs/adr/0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md)).
+
+Setting `MARKETING_OS_POSTGRES_DSN` moves four things at once, because they are one durability decision (see [ADR-0014](docs/adr/0014-postgres-system-of-record-and-split-governance.md), [ADR-0024](docs/adr/0024-platform-owned-tenant-ids-and-explicit-run-abandonment.md)):
+
+- `tenants(tenant_id, name, external_auth_id)` — the Tenant Directory.
+- `documents(tenant_id, path, content)` — Tenant-Owned Documents, with **row-level security** scoping every query to the tenant set on its transaction, so a forgotten filter returns nothing rather than everything.
+- `runs(run_id, tenant_id, slug, status, worker_id, heartbeat_at)` — the Run Store, whose partial unique index on `(tenant_id, slug) WHERE status = 'running'` is what makes the one-active-run-per-campaign guard hold across workers.
+- The LangGraph checkpointer's own tables, which make a run resumable across a process boundary — the hard prerequisite for Approval Gates.
+
+Run **traces** stay node-local JSONL files, so with several workers a run's status is answerable anywhere but its event stream is not (see [ADR-0024](docs/adr/0024-platform-owned-tenant-ids-and-explicit-run-abandonment.md)).
+
+The service connects as an ordinary (non-superuser) role, so RLS constrains it and it cannot alter its own schema; `marketing-os init-db` provisions the database as a separate operator step. Guardrails, the Knowledge Library and the Questionnaire join Postgres in later slices.
