@@ -21,7 +21,7 @@ The governance the platform ships and every tenant shares — the eight rules, t
 _Avoid_: static files, config, assets.
 
 **Brand DNA**:
-The stable, reusable, human-authored profile of the tenant's business — what it sells, at what price, where, under what constraints, in what voice, and to which audience segments. The single source of truth every recommendation is grounded in. One per tenant, reused across every campaign; read-only to agents. Authored by answering the Questionnaire — never drafted or guessed by a model (see [ADR-0018](docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md)).
+The stable, reusable, human-authored profile of the tenant's business — what it sells, at what price, to which audience segments, why they choose it, where, in what languages, and under what constraints. It holds **facts the business owner uniquely knows**, never the crafted artifacts the pipeline produces: positioning, messaging and brand voice are outputs approved at the stage gates, not inputs asked for at signup. The single source of truth every recommendation is grounded in. One per tenant, reused across every campaign; read-only to agents. Authored by answering the Questionnaire — never drafted or guessed by a model (see [ADR-0018](docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md)).
 _Avoid_: "Customer DNA" (the old name — it implied an agency serving many businesses), profile, brief, persona.
 
 **Customer**:
@@ -199,8 +199,10 @@ Setting `MARKETING_OS_POSTGRES_DSN` moves four things at once, because they are 
 - `tenants(tenant_id, name, external_auth_id)` — the Tenant Directory.
 - `documents(tenant_id, path, content)` — Tenant-Owned Documents, with **row-level security** scoping every query to the tenant set on its transaction, so a forgotten filter returns nothing rather than everything.
 - `runs(run_id, tenant_id, user_id, slug, status)` — the Run Store, whose partial unique index on `(tenant_id, slug) WHERE status = 'running'` is what makes the one-campaign-one-person guard a constraint rather than a check.
+- `questionnaires(version, published_at, questions)` — the published versions of the Questionnaire. Not tenant-partitioned: every business answers the same curated questions, and publishing a version is what changes the wizard and the DNA Gate together, with no deploy.
+- `dna_answers(tenant_id, question_id, answer, questionnaire_version)` — a business's answers, the **source of truth** for its Brand DNA, of which the markdown in `documents` is a derived projection. Under the same row-level security as `documents`. The recorded version is what lets a business whose answers predate a newer question set be *prompted* rather than silently failed by a gate that moved.
 - The LangGraph checkpointer's own tables, which make a run resumable across a process boundary — the hard prerequisite for Approval Gates.
 
 Run **traces** stay local files under `logs/`. The service is a single process, so the copy serving a stream is always the one that wrote the file (see [ADR-0025](docs/adr/0025-one-campaign-one-person-and-a-single-worker.md)).
 
-The service connects as an ordinary (non-superuser) role, so RLS constrains it and it cannot alter its own schema; `marketing-os init-db` provisions the database as a separate operator step. Guardrails, the Knowledge Library and the Questionnaire join Postgres in later slices.
+The service connects as an ordinary (non-superuser) role, so RLS constrains it and it cannot alter its own schema; `marketing-os init-db` provisions the database as a separate operator step. Guardrails and the Knowledge Library join Postgres in later slices.

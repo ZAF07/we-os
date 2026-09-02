@@ -100,6 +100,14 @@ def test_a_business_that_has_answered_nothing_is_incomplete(client):
     assert report["required_total"] == len(SEED_QUESTIONNAIRE.required_questions)
 
 
+def test_a_business_that_has_answered_nothing_reports_no_answered_version(client):
+    # Reporting the published version here would claim the business had already
+    # been shown every question, which is exactly what "your DNA predates a
+    # newer version" keys off — so an unstarted onboarding reports version 0.
+    assert client.get("/brand-dna").json()["questionnaire_version"] == 0
+    assert client.get("/brand-dna").json()["updated_at"] is None
+
+
 def test_saving_partway_reports_exactly_what_remains(client):
     price = next(q for q in SEED_QUESTIONNAIRE.questions if q.field == "Price point")
     report = answer_everything(client, skip={price.id})

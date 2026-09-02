@@ -6,6 +6,7 @@ Commands::
     marketing-os check <slug>
     marketing-os agents
     marketing-os init-db --dsn <admin dsn> [--app-role NAME]
+    marketing-os publish-questionnaire --dsn <dsn> --file <question set json>
 
 Mirrors ``/new-campaign``: the Stage 0 gate runs first, then the pipeline.
 Progress is streamed from the graph's custom events.
@@ -20,7 +21,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from typing import Any
+
+from pydantic import ValidationError
 
 from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.observability import configure_logging, configure_tracing
@@ -29,6 +33,7 @@ from marketing_os.entrypoints.env import load_env
 from marketing_os.errors import ConfigError, GateError, GuardrailError, MarketingOSError
 from marketing_os.governance import check_gate
 from marketing_os.governance.gate import GateReport
+from marketing_os.schemas import Questionnaire
 
 
 def _resolve_tenant(settings: Settings) -> str:
@@ -199,6 +204,58 @@ def _cmd_init_db(args: argparse.Namespace) -> int:
     return 0
 
 
+def load_questionnaire_file(path: Path) -> Questionnaire:
+    """Read and validate an admin-authored question set from a JSON file.
+
+    Validating here rather than at the database means a malformed set — a
+    question missing its ``why_we_ask``, an unknown field — is refused before it
+    can reach a single business's onboarding.
+
+    Args:
+        path: The JSON file holding the question set.
+
+    Returns:
+        The parsed question set.
+
+    Raises:
+        ConfigError: If the file is absent or is not a valid question set.
+    """
+    if not path.is_file():
+        raise ConfigError(f"No question set at {path}.")
+    try:
+        return Questionnaire.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValidationError as exc:
+        raise ConfigError(f"{path} is not a valid question set: {exc}") from exc
+
+
+def _cmd_publish_questionnaire(args: argparse.Namespace) -> int:
+    """Publish a new version of the admin-curated question set.
+
+    This is the path that makes "editable without a deploy" true: the admin
+    edits the question set as JSON and publishes it, which changes the
+    onboarding wizard and what the DNA Gate enforces as Required together, since
+    both read the published version (ADR-0018).
+
+    Args:
+        args: Parsed CLI arguments carrying the DSN and the question-set file.
+
+    Returns:
+        The process exit code.
+    """
+    from psycopg_pool import ConnectionPool
+
+    from marketing_os.adapters.postgres import PostgresQuestionnaireStore
+
+    questionnaire = load_questionnaire_file(Path(args.file))
+    with ConnectionPool(args.dsn, open=True) as pool:
+        published = PostgresQuestionnaireStore(pool).publish(questionnaire)
+    required = [question.field for question in published.required_questions]
+    print(f"Published question set v{published.version}: {len(published.questions)} questions.")
+    print(f"The DNA Gate now requires {len(required)} fields: {', '.join(required)}")
+    print("Businesses whose answers predate this version are prompted to answer what is new.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser.
 
@@ -225,6 +282,13 @@ def build_parser() -> argparse.ArgumentParser:
     init_db.add_argument("--dsn", required=True, help="Administrative Postgres connection string.")
     init_db.add_argument("--app-role", help="Role the service connects as, to grant table access.")
     init_db.set_defaults(func=_cmd_init_db)
+
+    publish = sub.add_parser(
+        "publish-questionnaire", help="Publish a new version of the onboarding question set."
+    )
+    publish.add_argument("--dsn", required=True, help="Postgres connection string.")
+    publish.add_argument("--file", required=True, help="JSON file holding the question set.")
+    publish.set_defaults(func=_cmd_publish_questionnaire)
     return parser
 
 

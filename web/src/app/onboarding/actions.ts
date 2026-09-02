@@ -2,6 +2,7 @@
 
 import {
   getBrandDna,
+  getBrandDnaCompleteness,
   getQuestionnaire,
   saveBrandDnaAnswers,
   type BrandDna,
@@ -13,21 +14,26 @@ import {
 export interface OnboardingState {
   questionnaire: Questionnaire;
   dna: BrandDna;
+  completeness: DnaCompleteness;
 }
 
 /**
- * Loads what the wizard renders: the published question set and the
- * answers already saved, so onboarding resumes where it was left.
+ * Loads what the wizard renders: the published question set, the answers
+ * already saved so onboarding resumes where it was left, and the
+ * completeness report, which names any question a newer published
+ * version added that this business has not been shown.
  *
  * Returns:
- *   The published questionnaire and the tenant's Brand DNA.
+ *   The published questionnaire, the tenant's Brand DNA, and its
+ *   completeness report.
  */
 export async function loadOnboarding(): Promise<OnboardingState> {
-  const [questionnaire, dna] = await Promise.all([
+  const [questionnaire, dna, completeness] = await Promise.all([
     getQuestionnaire(),
     getBrandDna(),
+    getBrandDnaCompleteness(),
   ]);
-  return { questionnaire, dna };
+  return { questionnaire, dna, completeness };
 }
 
 /**

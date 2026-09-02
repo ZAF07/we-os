@@ -352,3 +352,36 @@ def test_editing_one_answer_leaves_the_rest_and_advances_the_version(
     assert record.answer_for("q_price_point") == "$120"
     assert record.questionnaire_version == 2
     assert record.updated_at is not None
+
+
+def test_publishing_a_question_set_changes_what_the_gate_requires(
+    postgres_pool: Any, tmp_path: Any
+) -> None:
+    from marketing_os.entrypoints.cli import load_questionnaire_file
+    from marketing_os.schemas import Question, Questionnaire
+
+    tightened = Questionnaire(
+        version=SEED_QUESTIONNAIRE.version + 1,
+        published_at="2026-09-02T09:00:00Z",
+        questions=[
+            *SEED_QUESTIONNAIRE.questions,
+            Question(
+                id="q_seasonality",
+                field="Seasonality",
+                section="Reach & constraints",
+                text="When is your busiest season?",
+                why_we_ask="Timing a campaign against demand changes what it says.",
+                help_text="Name the months.",
+                required=True,
+            ),
+        ],
+    )
+    path = tmp_path / "questions.json"
+    path.write_text(tightened.model_dump_json(), encoding="utf-8")
+
+    store = PostgresQuestionnaireStore(postgres_pool)
+    store.publish(load_questionnaire_file(path))
+
+    published = PostgresQuestionnaireStore(postgres_pool).published()
+    assert published.version == tightened.version
+    assert "Seasonality" in [question.field for question in published.required_questions]

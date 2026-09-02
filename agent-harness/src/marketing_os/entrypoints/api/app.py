@@ -491,7 +491,9 @@ def read_brand_dna(tenant: str) -> tuple[Questionnaire, BrandDnaRecord]:
     return get_questionnaire_store().published(), get_answer_store().read(tenant)
 
 
-def project_brand_dna(identity: VerifiedIdentity, record: BrandDnaRecord) -> str:
+def project_brand_dna(
+    identity: VerifiedIdentity, questionnaire: Questionnaire, record: BrandDnaRecord
+) -> str:
     """Render a business's answers to markdown and store it as their Brand DNA.
 
     The structured answers are the source of truth; ``dna.md`` is their canonical
@@ -500,12 +502,12 @@ def project_brand_dna(identity: VerifiedIdentity, record: BrandDnaRecord) -> str
 
     Args:
         identity: The verified identity whose tenant owns the DNA.
+        questionnaire: The published question set defining the fields and their order.
         record: The business's answers.
 
     Returns:
         The rendered markdown, as written to the document store.
     """
-    questionnaire = get_questionnaire_store().published()
     markdown = render_brand_dna(
         questionnaire,
         record,
@@ -560,12 +562,12 @@ def brand_dna(identity: Identity) -> dict[str, object]:
         The question-set version answered, when it was last saved, the canonical
         markdown projection, and the structured answers behind it.
     """
-    questionnaire_version, record = read_brand_dna(identity.tenant_id)
+    published, record = read_brand_dna(identity.tenant_id)
     return {
-        "questionnaire_version": record.questionnaire_version or questionnaire_version.version,
+        "questionnaire_version": record.questionnaire_version,
         "updated_at": record.updated_at,
         "markdown": render_brand_dna(
-            questionnaire_version,
+            published,
             record,
             business_name=identity.business_name or identity.tenant_id,
         ),
@@ -621,9 +623,12 @@ def answer_brand_dna(body: DnaAnswersUpsert, identity: Identity) -> DnaCompleten
                 f"The published questionnaire does not ask: {', '.join(sorted(unknown))}."
             )
         )
-    get_answer_store().upsert(identity.tenant_id, version=published.version, answers=body.answers)
-    project_brand_dna(identity, get_answer_store().read(identity.tenant_id))
-    return dna_completeness(identity.tenant_id)
+    record = get_answer_store().upsert(
+        identity.tenant_id, version=published.version, answers=body.answers
+    )
+    project_brand_dna(identity, published, record)
+    answered_against = get_questionnaire_store().version(record.questionnaire_version)
+    return completeness(published, record, answered_against=answered_against)
 
 
 @app.post("/campaigns")

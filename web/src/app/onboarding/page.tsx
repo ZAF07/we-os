@@ -64,7 +64,7 @@ function QuestionField({
       htmlFor={question.id}
       required={question.required}
       error={error}
-      hint={`Why we ask: ${question.why_we_ask}`}
+      hint={`Why we ask: ${question.why_we_ask} · A good answer: ${question.help_text}`}
     >
       {MULTILINE_TYPES.has(question.input_type) ? (
         <Textarea {...control} />
@@ -85,13 +85,15 @@ export default function OnboardingPage() {
     null,
   );
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [newQuestions, setNewQuestions] = useState<string[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
     loadOnboarding()
-      .then(({ questionnaire: published, dna }) => {
+      .then(({ questionnaire: published, dna, completeness }) => {
         setQuestionnaire(published);
         setAnswers(answersById(dna.answers));
+        setNewQuestions(completeness.unanswered_new_questions);
       })
       .catch(() =>
         setFailure("We could not load your questions. Refresh to try again."),
@@ -109,7 +111,8 @@ export default function OnboardingPage() {
     const payload = toAnswerPayload(answers);
     if (!payload.length) return;
     try {
-      await saveAnswers(payload);
+      const report = await saveAnswers(payload);
+      setNewQuestions(report.unanswered_new_questions);
       setFailure(null);
     } catch {
       setFailure("We could not save your answers. Check your connection.");
@@ -144,15 +147,29 @@ export default function OnboardingPage() {
     value.trim(),
   ).length;
 
+  const progressNote =
+    answered > 0
+      ? `${answered} answered so far — saved as you go, so you can leave and come back.`
+      : "Answers save as you go, so you can leave and come back.";
+
+  /* A business whose answers predate a newer question set is prompted here,
+     rather than being silently blocked by a gate that moved under them. */
+  const newQuestionsNote = newQuestions.length
+    ? `We have added ${newQuestions.length} new question${
+        newQuestions.length === 1 ? "" : "s"
+      } since you last answered — ${questionnaire.questions
+        .filter((question) => newQuestions.includes(question.id))
+        .map((question) => question.field)
+        .join(", ")}. Answer ${
+        newQuestions.length === 1 ? "it" : "them"
+      } to keep your Brand DNA complete.`
+    : null;
+
   return (
     <WizardShell
       title="Tell us about your business"
       subtitle="We only ask for facts you already know. Your positioning, messaging and channels are ours to produce — you approve them as the work goes."
-      note={
-        answered > 0
-          ? `${answered} answered so far — saved as you go, so you can leave and come back.`
-          : "Answers save as you go, so you can leave and come back."
-      }
+      note={newQuestionsNote ?? progressNote}
       steps={steps.map((item) => item.name)}
       current={step}
       error={

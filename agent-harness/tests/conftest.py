@@ -670,6 +670,6 @@ def postgres_pool(postgres_dsn: str, postgres_superuser_dsn: str) -> Iterator[An
     from psycopg_pool import ConnectionPool
 
     with psycopg.connect(postgres_superuser_dsn, autocommit=True) as connection:
-        connection.execute("TRUNCATE documents, runs, tenants")
+        connection.execute("TRUNCATE documents, runs, tenants, questionnaires, dna_answers")
     with ConnectionPool(postgres_dsn, open=True) as pool:
         yield pool
