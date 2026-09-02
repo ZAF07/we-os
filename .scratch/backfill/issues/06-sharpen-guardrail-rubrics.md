@@ -11,7 +11,7 @@ The QA rubrics in `guardrails/*.md` are functional but flagged as needing sharpe
 
 ## Evidence
 
-- `agent-harness/TODO.md` (extension point: "Guardrail rubrics: sharpen `guardrails/*.md` to professional bar").
+- `guardrails/*.md` — the starter rubrics themselves; sharpening them to a professional bar is the work. (Previously cited `agent-harness/TODO.md`, which listed this as an extension point; that file was deleted on 2026-09-02 as outdated.)
 - `agent-harness/src/marketing_os/governance/rubric.py` (`load_rubric` reads these files at review time).
 
 ## Comments

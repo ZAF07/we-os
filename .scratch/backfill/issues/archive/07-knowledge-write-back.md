@@ -1,0 +1,113 @@
+# Knowledge write-back: let agents contribute frameworks back to the library
+
+Status: wontfix
+
+Today `knowledge/` is **read-only** to agents — they cite frameworks, never add
+them. The planned capability is to let an agent that discovers a genuinely
+reusable, project-agnostic framework during a real campaign save it back, so the
+library compounds over time instead of staying whatever a human last typed into it.
+
+This was one of three candidates originally grouped in this issue. The other two
+have since been decided and built elsewhere (see Comments); write-back is the only
+one still open, and it is open on **product judgement**, not on specification.
+
+## Why this is not simply "grant the write permission"
+
+[knowledge/README.md](../../../../knowledge/README.md) documents a two-step activation
+recipe: add `Write(knowledge/**)` to `.claude/settings.json`, then instruct the
+subagents. **That recipe is now stale.**
+[ADR-0014](../../../../docs/adr/0014-postgres-system-of-record-and-split-governance.md)
+moves the knowledge library into Postgres as admin-editable, versioned content.
+Write-back therefore means an agent writing to a **versioned store**, not to files
+on disk — which raises questions a filesystem permission never had to answer.
+
+## Open questions (blocking)
+
+1. **Do we want this at all?** An agent writing into the library that grounds every
+   future campaign is a quality risk pointed straight at the system's foundation. The
+   counter-argument is the whole reason it was planned: real campaigns surface
+   frameworks no one thought to pre-load. Neither side is obviously right.
+2. **What gates a write?** If we do want it: admin review before a framework goes
+   live, or straight in? ADR-0014 makes the library versioned and admin-editable,
+   which makes "propose, human publishes" cheap to build — but that is a design
+   decision, not a foregone conclusion.
+
+Until question 1 is answered this stays `needs-info`. It has no dependency on any
+in-flight slice and blocks nothing.
+
+## Scope
+
+- Write-back targets the Postgres-backed knowledge library per ADR-0014, not
+  `knowledge/**` files.
+- `knowledge/README.md`'s "Future capability" section needs correcting either way —
+  it currently instructs a reader to grant a filesystem permission that no longer
+  reflects where the library lives.
+
+## Evidence
+
+- [knowledge/README.md](../../../../knowledge/README.md) — "Future capability — agent-authored frameworks (NOT active in this version)", with the now-stale activation recipe.
+- [.claude/settings.json](../../../../.claude/settings.json) — `permissions.allow` grants `Write(campaigns/**)` only; no `knowledge/**` write. Confirms the capability is still inactive.
+- [ADR-0014](../../../../docs/adr/0014-postgres-system-of-record-and-split-governance.md) — the knowledge library moves to Postgres, changing what "write-back" means.
+
+## Comments
+
+**2026-08-20 — triaged; two of three candidates decided, scope expanded.** A design session settled the product shape (multi-tenant SaaS, FE↔BE wiring, creative assets, Meta/TikTok). Outcome:
+
+- **Human approval node — decided and expanded.** Not a single node: a per-stage approval policy with `interrupt()`/resume and `approve`/`revise` endpoints, plus immutable deliverable versions and downstream staleness. See [ADR-0015](../../../../docs/adr/0015-human-approval-gates-and-versioned-deliverables.md).
+- **Postgres persistence — decided and expanded well beyond the checkpointer.** Postgres becomes the system of record for all tenant data behind a `DocumentStore` port, plus the questionnaire, guardrails and knowledge library. See [ADR-0014](../../../../docs/adr/0014-postgres-system-of-record-and-split-governance.md). The abandon-must-clear-the-thread carry-over recorded above still stands and is restated in that ADR.
+- **Knowledge write-back — still not decided.** Untouched by this session; remains a candidate.
+
+Note the ordering constraint this creates: Postgres is a **hard prerequisite** for the approval work (LangGraph cannot resume an interrupted run across a process boundary on `MemorySaver`), and both precede any real FE↔BE wiring.
+
+Related new decisions: [ADR-0013](../../../../docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md) (tenancy/auth), [ADR-0016](../../../../docs/adr/0016-channel-planning-precedes-creative.md) (stage reorder), [ADR-0017](../../../../docs/adr/0017-stages-and-lifecycle-are-separate-axes.md) (FE↔engine mapping), [ADR-0018](../../../../docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md) (DNA authoring), [ADR-0019](../../../../docs/adr/0019-creative-unit-is-the-approvable-asset.md) (assets), [ADR-0020](../../../../docs/adr/0020-usage-ledger-and-enforced-quota.md) (quota), [ADR-0021](../../../../docs/adr/0021-organic-publishing-before-paid-ads.md) (publishing).
+
+**2026-09-02 — re-triaged; scoped down to knowledge write-back alone.**
+
+> *This was generated by AI during triage.*
+
+Two of the three candidates are closed out, verified against the code rather than assumed:
+
+- **Postgres persistence — built, closed.** Verified in `agent-harness/src/marketing_os/`: Postgres adapters for documents, runs, tenants, questionnaire and schema under `adapters/postgres/`; `AsyncPostgresSaver` wired as the durable checkpointer in `adapters/postgres/__init__.py`; a shared run registry with `reclaim_abandoned()` in `graph/registry.py`, called on startup in `entrypoints/api/app.py`. **The carry-over trap was caught**: `graph/checkpoints.py` exists for exactly it, and `clear_campaign_threads` is called both on cancel and on reclaim in `graph/registry.py`. Shipped in [saas-foundation/05](../../../saas-foundation/issues/archive/05-postgres-adapter-durable-checkpointer-shared-registry.md).
+- **Human approval node — superseded, tracked elsewhere.** Confirmed not built (no `interrupt(` or approval handling in `src/`), but it is no longer this issue's work: ADR-0015 expanded it into [saas-foundation/07](../../../saas-foundation/issues/07-approval-gates-interrupt-resume-and-versioned-revision.md) and [saas-foundation/08](../../../saas-foundation/issues/08-reopen-approved-stage-and-downstream-staleness.md), both `ready-for-agent`.
+
+Two housekeeping items also resolved:
+
+- **The `origin/adk-framework-base` question is closed.** The maintainer confirmed the branch is no longer active; the retired Google ADK version is superseded by ADR-0002 and needs no historical reference. The remote ref was still present at `467c321` when this was triaged and was deliberately left alone — deleting it is a separate call, not part of this issue.
+- **`agent-harness/TODO.md` deleted.** It was cited as Evidence here but had gone materially wrong: it still advertised `Persistence | MemorySaver (in-process) | wire PostgresSaver for production` and listed "Approval policy" and "Persistence" as open extension points, all three contradicted by shipped code. The maintainer confirmed it was outdated and unneeded. Live references to it were updated; archived issues still cite it as a historical record and were left as-is.
+
+What remains is knowledge write-back, restated above with the ADR-0014 wrinkle that the old activation recipe misses. Moved `needs-triage` → `needs-info`: the blocker is a product decision (do we want agents writing into the library at all), not missing specification.
+
+## Decision — wontfix (2026-09-02)
+
+> *This was generated by AI during triage.*
+
+**Agents do not write to the knowledge library at all.** Not directly, and not as
+proposals for an admin to publish. Decided by the maintainer; both open questions
+above are answered by the first one being a "no".
+
+The reasoning is recorded as a durable rejection in
+[`.out-of-scope/agent-knowledge-write-back.md`](../../../../.out-of-scope/agent-knowledge-write-back.md),
+so the request is recognised if it returns. In short: this library grounds every
+campaign the system will ever run, so machine-authored entries compound errors in
+the direction the whole system points — the same principle that makes the Brand DNA
+human-authored (`.claude/rules/brand-dna.md`). The "propose, admin publishes"
+variant was rejected with it: it manufactures review volume without manufacturing
+judgement.
+
+Docs that promised the capability were corrected, since each one told a reader it
+was coming:
+
+- `knowledge/README.md` — the "Future capability — agent-authored frameworks"
+  section and its activation recipe are replaced by "Agents never write here (decided)".
+- `CLAUDE.md` — no longer describes write-back as a planned future capability.
+- `docs/adr/0005-code-enforced-filesystem-sandbox.md` — `knowledge/` read-only is now
+  a standing constraint, not a deliberately-inactive feature.
+
+No code changed: the capability was never built. Read-only stays enforced by
+omission — `.claude/settings.json` grants `Write(campaigns/**)` only, and the harness
+sandbox scopes writes to `campaigns/<slug>/`.
+
+Growing the library remains human work, tracked at
+[backfill/03](../03-populate-knowledge-library.md) (`ready-for-human`).
+
+This closes the last live candidate from the original three-part issue. Archived.

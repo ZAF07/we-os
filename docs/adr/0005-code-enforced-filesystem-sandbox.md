@@ -8,7 +8,7 @@ The sandbox resolves paths and rejects escapes with `is_relative_to`, caps reads
 
 ## Consequences
 
-- Deliverables can only land in `campaigns/**`; `knowledge/` stays read-only (the write-back capability is deliberately inactive — see `knowledge/README.md`).
+- Deliverables can only land in `campaigns/**`; `knowledge/` stays read-only permanently — agent write-back was rejected on 2026-09-02 (see `.out-of-scope/agent-knowledge-write-back.md`), so this is a standing constraint rather than a disabled feature.
 - A stage that tries to write outside scope fails as a tool error the agent can recover from, not a crash.
 
 ## Evidence

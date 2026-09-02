@@ -46,7 +46,7 @@ The mandatory decision pipeline and the non-negotiable rules are the canonical s
 
 Expert marketing knowledge lives in `knowledge/<discipline>/` as individual `.md` files, cited by the matching agent. The skeleton ships with stubs and `TODO` markers; fill these in rather than embedding expertise inside agent prompts. See `knowledge/README.md`.
 
-In this version `knowledge/` is **read-only** to agents. A planned future capability — agents writing back the reusable frameworks they discover — is documented (and intentionally left inactive) under "Future capability" in `knowledge/README.md`.
+Agents only ever **read** `knowledge/`. Letting agents write frameworks back was considered and rejected — see [`.out-of-scope/agent-knowledge-write-back.md`](.out-of-scope/agent-knowledge-write-back.md). Growing the library is human work.
 
 ## Coding standards
 

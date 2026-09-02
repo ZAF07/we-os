@@ -20,17 +20,18 @@ Knowledge is split by discipline, each consumed by the matching agent:
 
 <!-- TODO: fill each discipline directory with your expert domain knowledge. -->
 
-## Future capability — agent-authored frameworks (NOT active in this version)
+## Agents never write here (decided)
 
-Planned for a later version, **intentionally disabled today**: letting agents write back into this library to capture reusable frameworks they discover during real campaigns, so the knowledge base compounds over time.
+Agents **read** from this library and cite what they applied. They never write to
+it — not directly, and not as proposals for an admin to publish. The library is
+human-authored.
 
-In this version agents only **read** from `knowledge/` — they never write here. To activate the capability in a future version:
+An earlier version of this file described agent write-back as a planned future
+capability and gave a recipe for enabling it. That capability was considered and
+**rejected** on 2026-09-02. This library grounds every campaign the system runs, so
+machine-authored entries would compound errors in the direction the whole system
+points — the same reason the Brand DNA is human-authored (`.claude/rules/brand-dna.md`).
+The full reasoning lives in [`.out-of-scope/agent-knowledge-write-back.md`](../.out-of-scope/agent-knowledge-write-back.md).
 
-1. **Grant the permission** — add this line to the `permissions.allow` array in `.claude/settings.json`:
-   ```
-   "Write(knowledge/**)"
-   ```
-2. **Instruct the agents** — add guidance to the relevant subagents (e.g. `market-research`, `brand-strategy`) telling them, when they encounter a genuinely reusable, project-agnostic framework, to save it as a new `.md` file in the matching discipline folder and cite it thereafter.
-
-Until both steps are done, this remains a read-only library and writes to `knowledge/` will prompt for approval.
-
+Growing this library is deliberate human work — see
+`.scratch/backfill/issues/03-populate-knowledge-library.md`.
