@@ -124,6 +124,48 @@ def _parse_human_gate_stages(raw: str | None) -> list[str] | None:
     return keys
 
 
+_DEFAULT_TOKEN_RATE = 0.000002
+
+
+def _parse_token_rates(raw: str) -> dict[str, float]:
+    """Parse the per-model token price list the ledger costs calls with.
+
+    Prices belong in configuration rather than in code because a provider
+    changes them without asking, and a stale hard-coded rate makes the whole
+    Usage Ledger quietly wrong (ADR-0020).
+
+    Args:
+        raw: The ``MARKETING_OS_TOKEN_RATES`` value, as comma-separated
+            ``model=price-per-token`` pairs.
+
+    Returns:
+        The rate per model, empty when nothing usable is given — in which case
+        the ledger falls back to :data:`_DEFAULT_TOKEN_RATE`.
+
+    Raises:
+        ConfigError: If a pair is malformed or its price is not a number.
+    """
+    rates: dict[str, float] = {}
+    for item in raw.split(","):
+        pair = item.strip()
+        if not pair:
+            continue
+        model, separator, price = pair.partition("=")
+        if not separator or not model.strip():
+            raise ConfigError(
+                f"Malformed entry '{pair}' in MARKETING_OS_TOKEN_RATES. "
+                "Use model=price-per-token, comma-separated."
+            )
+        try:
+            rates[model.strip()] = float(price.strip())
+        except ValueError as exc:
+            raise ConfigError(
+                f"Price '{price.strip()}' for model '{model.strip()}' in "
+                "MARKETING_OS_TOKEN_RATES is not a number."
+            ) from exc
+    return rates
+
+
 class Role(StrEnum):
     """A model role whose per-role overrides the settings may resolve.
 
@@ -212,6 +254,18 @@ class Settings:
             rather than a rewrite (ADR-0015).
         max_revisions: How many times one deliverable may be sent back with
             written feedback, so a single item cannot burn a whole allowance.
+        max_runs_per_campaign: How many runs one campaign may accumulate. The
+            companion cap to ``max_revisions``: that bounds re-working one
+            deliverable, this bounds re-running the whole campaign (ADR-0020).
+        usage_allowance: What a tenant may spend before billable work is
+            refused, in the platform's accounting currency. The platform-wide
+            default; a tenant may carry its own override, so raising one
+            business's cap is a row rather than a deploy. How the allowance is
+            *presented* — credits, fair use, metered billing — is deliberately
+            not decided here (ADR-0020).
+        token_rates: The price per token per model the Usage Ledger costs calls
+            with, from ``MARKETING_OS_TOKEN_RATES`` as ``model=price`` pairs. A
+            model with no configured rate is costed at the default rate.
         stream: Whether the CLI streams progress events.
         enable_web: Whether web-search tools are wired for agents that declare them.
         web_backends: The ordered web-search backends to try when web is enabled
@@ -259,6 +313,15 @@ class Settings:
     )
     max_revisions: int = field(
         default_factory=lambda: int(os.environ.get("MARKETING_OS_MAX_REVISIONS", "5"))
+    )
+    max_runs_per_campaign: int = field(
+        default_factory=lambda: int(os.environ.get("MARKETING_OS_MAX_RUNS", "20"))
+    )
+    usage_allowance: float = field(
+        default_factory=lambda: float(os.environ.get("MARKETING_OS_ALLOWANCE", "25"))
+    )
+    token_rates: dict[str, float] = field(
+        default_factory=lambda: _parse_token_rates(os.environ.get("MARKETING_OS_TOKEN_RATES", ""))
     )
     stream: bool = field(default_factory=lambda: os.environ.get("MARKETING_OS_STREAM", "1") != "0")
     enable_web: bool = field(default_factory=lambda: os.environ.get("MARKETING_OS_WEB", "0") == "1")
@@ -409,6 +472,19 @@ class Settings:
             api_key=os.environ.get(spec["key_env"]),
             base_url=base_url,
         )
+
+    def token_rate(self, model: str) -> float:
+        """Return the price per token to cost a model's call at.
+
+        Args:
+            model: The model identifier the provider billed for.
+
+        Returns:
+            That model's configured rate, or the default rate when it has none —
+            an unpriced model is costed rather than treated as free, so a
+            forgotten rate under-reports spend instead of hiding it entirely.
+        """
+        return self.token_rates.get(model, _DEFAULT_TOKEN_RATE)
 
     def validate_root(self) -> None:
         """Ensure the resolved repository root contains a ``.claude/`` directory.

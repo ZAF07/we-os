@@ -3,6 +3,7 @@
 Endpoints:
   GET  /health                          -> liveness; the only unauthenticated route
   GET  /me                              -> the verified identity and its tenant
+  GET  /usage                           -> spend against allowance, per tenant and campaign
   GET  /questionnaire                   -> the published question set
   GET  /brand-dna                       -> the tenant's answers and rendered markdown
   GET  /brand-dna/completeness          -> what still stands between them and a run
@@ -64,6 +65,7 @@ from marketing_os.adapters.observability import (
 from marketing_os.adapters.questionnaire import InMemoryAnswerStore, InMemoryQuestionnaireStore
 from marketing_os.adapters.runs import AWAITING_APPROVAL, CANCELLED, RUNNING, InMemoryRunStore
 from marketing_os.adapters.tenants import PassthroughTenantDirectory
+from marketing_os.adapters.usage import InMemoryUsageLedger
 from marketing_os.config import Settings, load_settings
 from marketing_os.entrypoints.env import load_env
 from marketing_os.errors import (
@@ -71,8 +73,10 @@ from marketing_os.errors import (
     DocumentNotFoundError,
     GateError,
     MarketingOSError,
+    QuotaExhaustedError,
     RevisionLimitError,
     RunConflictError,
+    RunLimitError,
     StageNotAwaitingApprovalError,
     UnauthenticatedError,
     ValidationError,
@@ -95,12 +99,14 @@ from marketing_os.ports import (
     RunStore,
     TenantDirectory,
     TokenVerifier,
+    UsageLedger,
 )
 from marketing_os.questionnaire import completeness, render_brand_dna
 from marketing_os.schemas import (
     ApprovalDecision,
     BrandDnaRecord,
     CampaignResult,
+    Consumption,
     DeliverableVersion,
     DnaAnswer,
     DnaCompleteness,
@@ -340,6 +346,22 @@ def get_answer_store() -> AnswerStore:
 
 
 @lru_cache(maxsize=1)
+def get_usage_ledger() -> UsageLedger:
+    """Return the process-wide Usage Ledger every billable call is charged to.
+
+    Returns:
+        The Postgres ledger when a DSN is configured — where what a tenant spent
+        survives a restart, which is the whole point of enforcing a quota —
+        otherwise an in-process ledger, which loses the record on restart and is
+        for local work only.
+    """
+    backend = get_backend()
+    if backend is not None:
+        return backend.usage
+    return InMemoryUsageLedger(get_settings())
+
+
+@lru_cache(maxsize=1)
 def get_token_verifier() -> TokenVerifier:
     """Return the process-wide verifier for inbound bearer tokens.
 
@@ -434,6 +456,7 @@ _BACKED_PROVIDERS = (
     get_run_store,
     get_questionnaire_store,
     get_answer_store,
+    get_usage_ledger,
     get_registry,
 )
 
@@ -512,6 +535,41 @@ def me(identity: Identity) -> dict[str, object]:
         "user_id": identity.user_id,
         "email": identity.email,
         "business_name": identity.business_name or identity.tenant_id,
+    }
+
+
+@app.get("/usage")
+def usage(identity: Identity, slug: str | None = None) -> dict[str, object]:
+    """Report the tenant's spend against their allowance, and where it went.
+
+    The read behind "how much of my allowance have I used?" — so a business
+    owner is not surprised by work stopping — and behind the platform's
+    unit-economics question, since the per-campaign breakdown is the same rows
+    totalled more finely (ADR-0020).
+
+    Cost accounting is deliberately distinct from the **campaign budget**, which
+    is the business's own media spend allocated by the Performance Plan. This
+    endpoint reports what the platform spent on models, never what the business
+    spends on ads.
+
+    Args:
+        identity: The verified identity whose tenant's spend is reported.
+        slug: One campaign to restrict the total to, or omitted for everything
+            the tenant has spent.
+
+    Returns:
+        The spend, the allowance, what remains, and the per-campaign breakdown.
+        Another tenant's spend is never included.
+    """
+    report: Consumption = get_usage_ledger().consumption(identity.tenant_id, slug)
+    return {
+        "used": report.used,
+        "allowance": report.allowance,
+        "remaining": report.remaining,
+        "exhausted": report.exhausted,
+        "campaigns": [
+            {"slug": campaign.slug, "used": campaign.used} for campaign in report.campaigns
+        ],
     }
 
 
@@ -1055,7 +1113,9 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
         The new run's id, slug, stage, and initial ``running`` status.
 
     Raises:
-        HTTPException: 409 if the gate failed or the slug already has an active run.
+        HTTPException: 402 if the tenant's allowance is spent; 409 if the gate
+            failed, the slug already has an active run, or the campaign has been
+            run its allowed number of times.
     """
     settings = get_settings()
     store = get_document_store()
@@ -1065,6 +1125,8 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
     )
     if not report.ok:
         raise _http_error(GateError("Stage 0 gate failed", missing=report.all_issues))
+    _refuse_when_quota_spent(tenant)
+    _refuse_when_runs_spent(tenant, slug)
     run_id = new_run_id()
 
     async def launch() -> CampaignResult:
@@ -1082,6 +1144,7 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
             checkpointer=get_checkpointer(),
             document_store=store,
             deliverable_store=get_deliverable_store(),
+            usage_ledger=get_usage_ledger(),
         )
 
     try:
@@ -1167,8 +1230,9 @@ async def reopen_stage(
 
     Raises:
         HTTPException: 404 if the caller's tenant has no such stage deliverable;
-            409 if the gate fails or the campaign already has an active run; 422
-            if the feedback is empty.
+            402 if the tenant's allowance is spent; 409 if the gate fails, the
+            campaign already has an active run, or a cap is spent; 422 if the
+            feedback is empty.
     """
     feedback = body.feedback.strip()
     if not feedback:
@@ -1188,6 +1252,8 @@ async def reopen_stage(
     if not report.ok:
         raise _http_error(GateError("Stage 0 gate failed", missing=report.all_issues))
     _refuse_when_revisions_spent(tenant, slug, stage_key)
+    _refuse_when_quota_spent(tenant)
+    _refuse_when_runs_spent(tenant, slug)
     await _release_gate_held_by(identity, slug)
     run_id = new_run_id()
 
@@ -1206,6 +1272,7 @@ async def reopen_stage(
             checkpointer=get_checkpointer(),
             document_store=store,
             deliverable_store=get_deliverable_store(),
+            usage_ledger=get_usage_ledger(),
             feedback=feedback,
         )
 
@@ -1392,6 +1459,7 @@ async def _resume_run(
             checkpointer=get_checkpointer(),
             document_store=get_document_store(),
             deliverable_store=get_deliverable_store(),
+            usage_ledger=get_usage_ledger(),
             resume=Command(resume=decision.model_dump()),
         )
 
@@ -1440,10 +1508,11 @@ async def revise_stage(run_id: str, body: ReviseStage, identity: Identity) -> di
         The resumed run's id, slug, re-running stage, and ``running`` status.
 
     Raises:
-        HTTPException: 404 if the caller has no such run; 409 if the named stage
-            is not awaiting approval, or its revision cap is spent; 422 if the
-            feedback is empty — a refusal with nothing to act on would re-run
-            the stage identically and charge for it.
+        HTTPException: 404 if the caller has no such run; 402 if the tenant's
+            allowance is spent; 409 if the named stage is not awaiting approval,
+            or its revision cap is spent; 422 if the feedback is empty — a
+            refusal with nothing to act on would re-run the stage identically
+            and charge for it.
     """
     feedback = body.feedback.strip()
     if not feedback:
@@ -1452,8 +1521,50 @@ async def revise_stage(run_id: str, body: ReviseStage, identity: Identity) -> di
     if record is None:
         raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
     _refuse_when_revisions_spent(identity.tenant_id, record.slug, body.stage_key)
+    _refuse_when_quota_spent(identity.tenant_id)
     decision = ApprovalDecision(stage_key=body.stage_key, approved=False, feedback=feedback)
     return await _resume_run(run_id, identity, decision)
+
+
+def _refuse_when_quota_spent(tenant: str) -> None:
+    """Refuse work whose first act would be a billable call the tenant cannot afford.
+
+    Checked at the edge as well as inside the graph, and for a different reason
+    than the graph's check. The graph's stops a run mid-flight; this one stops a
+    run being *started* at all, so an exhausted tenant is told 402 on the request
+    rather than handed a run id that immediately halts (ADR-0020).
+
+    Args:
+        tenant: The tenant the caller acts for.
+
+    Raises:
+        HTTPException: 402 once the allowance is spent.
+    """
+    try:
+        get_usage_ledger().check(tenant)
+    except QuotaExhaustedError as exc:
+        raise _http_error(exc) from exc
+
+
+def _refuse_when_runs_spent(tenant: str, slug: str) -> None:
+    """Refuse a run once a campaign has been run its allowed number of times.
+
+    Counted from the run store rather than from process memory, so the cap holds
+    across restarts and across workers — the same reasoning the per-deliverable
+    revision cap follows. It bounds the *campaign*: re-opening a stage starts a
+    run and is bounded here too, which is what stops a change of mind being an
+    unbounded way to spend (ADR-0020).
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+
+    Raises:
+        HTTPException: 409 once the cap is reached.
+    """
+    limit = get_settings().max_runs_per_campaign
+    if len(get_registry().for_campaign(tenant, slug)) >= limit:
+        raise _http_error(RunLimitError(slug, limit))
 
 
 def _refuse_when_revisions_spent(tenant: str, slug: str, stage_key: str) -> None:

@@ -42,7 +42,7 @@ from marketing_os.graph.nodes import (
     route_after_review,
 )
 from marketing_os.graph.state import CampaignState
-from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer
+from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer, UsageLedger
 
 
 def _build_stage_agent(
@@ -82,6 +82,7 @@ def _add_stage(
     reviewer: Reviewer,
     store: DocumentStore,
     deliverables: DeliverableStore,
+    ledger: UsageLedger | None,
     advance_target: str,
 ) -> str:
     """Add a stage's nodes and wire the QA loop and, when gated, its Approval Gate.
@@ -102,6 +103,8 @@ def _add_stage(
         reviewer: The QA reviewer for the stage.
         store: The document store the stage's deliverables resolve through.
         deliverables: The store each passing deliverable is versioned into.
+        ledger: The Usage Ledger the stage's model calls are checked against and
+            charged to, or ``None`` to run uncharged.
         advance_target: The node (or ``END``) to route to when the stage passes.
 
     Returns:
@@ -111,8 +114,10 @@ def _add_stage(
     specialist = f"{stage.key}__specialist"
     review = f"{stage.key}__review"
     builder.add_node(enter, make_enter_node(stage, store))
-    builder.add_node(specialist, make_specialist_node(settings, stage, agent))
-    builder.add_node(review, make_review_node(settings, stage, reviewer, store, deliverables))
+    builder.add_node(specialist, make_specialist_node(settings, stage, agent, ledger))
+    builder.add_node(
+        review, make_review_node(settings, stage, reviewer, store, deliverables, ledger)
+    )
     builder.add_conditional_edges(enter, route_after_enter, {"specialist": specialist, "end": END})
     builder.add_edge(specialist, review)
 
@@ -175,6 +180,7 @@ def build_campaign_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     document_store: DocumentStore | None = None,
     deliverable_store: DeliverableStore | None = None,
+    usage_ledger: UsageLedger | None = None,
 ) -> CompiledStateGraph:
     """Build and compile the full campaign graph from the mandatory pipeline.
 
@@ -192,6 +198,9 @@ def build_campaign_graph(
             the filesystem adapter rooted at the repo root.
         deliverable_store: The store deliverable versions are appended to;
             defaults to the filesystem adapter rooted at the repo root.
+        usage_ledger: The Usage Ledger every model call is checked against and
+            charged to, or ``None`` to run uncharged — which is what the CLI and
+            the graph tests do (ADR-0020).
 
     Returns:
         The compiled campaign graph, keyed at runtime by ``thread_id``.
@@ -216,7 +225,17 @@ def build_campaign_graph(
             settings, stage, model, governance, web_backend, spec_source, store
         )
         entries.append(
-            _add_stage(builder, settings, stage, agent, reviewer, store, versions, advance_target)
+            _add_stage(
+                builder,
+                settings,
+                stage,
+                agent,
+                reviewer,
+                store,
+                versions,
+                usage_ledger,
+                advance_target,
+            )
         )
 
     builder.add_conditional_edges("gate", _route_after_gate, {"continue": entries[0], "end": END})
@@ -233,6 +252,7 @@ def build_single_stage_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     document_store: DocumentStore | None = None,
     deliverable_store: DeliverableStore | None = None,
+    usage_ledger: UsageLedger | None = None,
 ) -> CompiledStateGraph:
     """Build and compile a gate-then-one-stage graph for a single-stage run.
 
@@ -247,6 +267,8 @@ def build_single_stage_graph(
             the filesystem adapter rooted at the repo root.
         deliverable_store: The store deliverable versions are appended to;
             defaults to the filesystem adapter rooted at the repo root.
+        usage_ledger: The Usage Ledger every model call is checked against and
+            charged to, or ``None`` to run uncharged.
 
     Returns:
         The compiled single-stage graph.
@@ -267,7 +289,9 @@ def build_single_stage_graph(
     builder.add_node("gate", make_gate_node(settings, store))
     builder.add_edge(START, "gate")
     agent = _build_stage_agent(settings, stage, model, governance, web_backend, spec_source, store)
-    entry = _add_stage(builder, settings, stage, agent, reviewer, store, versions, END)
+    entry = _add_stage(
+        builder, settings, stage, agent, reviewer, store, versions, usage_ledger, END
+    )
     builder.add_conditional_edges("gate", _route_after_gate, {"continue": entry, "end": END})
     return _compile(builder, checkpointer)
 

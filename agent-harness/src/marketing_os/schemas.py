@@ -148,6 +148,87 @@ class Usage(BaseModel):
         return self.input_tokens + self.output_tokens
 
 
+class LedgerEntry(BaseModel):
+    """One billable call, recorded against the tenant that caused it.
+
+    The unit of the Usage Ledger (ADR-0020). Written *after* a call the
+    allowance was already checked for, so the ledger is a record of what was
+    spent rather than a running estimate of what might be. Every entry names the
+    campaign it was spent on, which is what makes "what did this campaign cost?"
+    answerable alongside "what has this business used?".
+
+    Attributes:
+        tenant_id: The tenant the call is charged to.
+        slug: The campaign the call was made for, or ``None`` for work not tied
+            to one.
+        stage_key: The pipeline stage the call belongs to, or ``None`` when the
+            call was not made on a stage's behalf.
+        kind: What was billed — ``tokens`` for a model call, so a later image
+            generation is a new kind rather than a new table (ADR-0020).
+        model: The model identifier the provider billed for.
+        units: How much was consumed in the ``kind``'s own unit — tokens for
+            ``tokens``.
+        cost: What the call cost, in the platform's accounting currency.
+        recorded_at: When the entry was written, as an ISO-8601 timestamp.
+    """
+
+    tenant_id: str
+    slug: str | None = None
+    stage_key: str | None = None
+    kind: str = "tokens"
+    model: str = ""
+    units: int = 0
+    cost: float = 0.0
+    recorded_at: str = ""
+
+
+class CampaignConsumption(BaseModel):
+    """What one campaign has cost, as the ledger totals it.
+
+    Attributes:
+        slug: The campaign slug.
+        used: The campaign's total cost so far.
+    """
+
+    slug: str
+    used: float = 0.0
+
+
+class Consumption(BaseModel):
+    """A tenant's spend against their allowance, and where it went.
+
+    The report behind "how much of my allowance have I used?" and the platform's
+    unit-economics question "what does a campaign actually cost?" — one query,
+    because they are the same numbers read at two granularities (ADR-0020).
+
+    ``allowance`` is the mechanism, not the presentation: whether it is shown as
+    credits, fair use, or metered billing stays a later decision.
+
+    Attributes:
+        tenant_id: The tenant the report is for.
+        used: Everything the tenant has spent.
+        allowance: What the tenant is allowed to spend.
+        remaining: What is left, never below zero — an overspent tenant has
+            nothing left rather than a negative balance to explain.
+        campaigns: Per-campaign totals, highest spend first.
+    """
+
+    tenant_id: str
+    used: float = 0.0
+    allowance: float = 0.0
+    campaigns: list[CampaignConsumption] = Field(default_factory=list)
+
+    @property
+    def remaining(self) -> float:
+        """Return what is left of the allowance, floored at zero."""
+        return max(self.allowance - self.used, 0.0)
+
+    @property
+    def exhausted(self) -> bool:
+        """Return whether the allowance is spent and billable work must be refused."""
+        return self.used >= self.allowance
+
+
 class StageResult(BaseModel):
     """The outcome of running one pipeline stage end-to-end.
 

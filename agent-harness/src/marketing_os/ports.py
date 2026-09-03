@@ -10,9 +10,11 @@ organization onto the platform tenant that owns those documents, the
 and the feedback that prompted it (ADR-0015), the :class:`RunStore`, which holds
 run state durably so the one-active-run-per-campaign guard survives a restart and
 spans workers, and the :class:`TokenVerifier`, which establishes who a caller is
-(ADR-0013), and the :class:`QuestionnaireStore` and :class:`AnswerStore`, which
+(ADR-0013), the :class:`QuestionnaireStore` and :class:`AnswerStore`, which
 hold the admin-curated question set and each business's answers to it
-(ADR-0018). Tests substitute all of them with hermetic fakes.
+(ADR-0018), and the :class:`UsageLedger`, which records what every billable call
+cost its tenant and refuses the next one when their allowance is spent
+(ADR-0020). Tests substitute all of them with hermetic fakes.
 """
 
 from __future__ import annotations
@@ -21,12 +23,15 @@ from typing import Protocol, runtime_checkable
 
 from marketing_os.schemas import (
     BrandDnaRecord,
+    Consumption,
     DeliverableVersion,
     DnaAnswer,
+    LedgerEntry,
     Questionnaire,
     ReviewVerdict,
     RunRecord,
     Tenant,
+    Usage,
     VerifiedClaims,
 )
 
@@ -512,5 +517,89 @@ class AnswerStore(Protocol):
 
         Returns:
             The business's full record after the save.
+        """
+        ...
+
+
+@runtime_checkable
+class UsageLedger(Protocol):
+    """Tenant-scoped record of every billable call, and the allowance it counts against.
+
+    Two halves that must not drift apart (ADR-0020). :meth:`check` runs
+    **before** a billable call and refuses it when the allowance is spent;
+    :meth:`record` runs after and appends what the call actually cost. Ordering
+    them that way is the whole point: recording without checking observes an
+    overspend rather than preventing one, and a runaway agentic loop can spend a
+    great deal between the two.
+
+    The ledger doubles as the unit-economics dataset, which is why
+    :meth:`consumption` reads per campaign as well as per tenant: "what has this
+    business used?" and "what did this campaign cost?" are the same rows totalled
+    at two granularities.
+    """
+
+    def check(self, tenant: str) -> None:
+        """Refuse the next billable call if the tenant's allowance is spent.
+
+        Args:
+            tenant: The tenant about to be charged.
+
+        Raises:
+            QuotaExhaustedError: If the tenant has used their whole allowance.
+        """
+        ...
+
+    def record(
+        self,
+        tenant: str,
+        *,
+        slug: str | None = None,
+        stage_key: str | None = None,
+        model: str = "",
+        usage: Usage | None = None,
+    ) -> LedgerEntry:
+        """Append what one billable call cost, charged to its tenant.
+
+        The cost is derived by the ledger from the usage and the configured rate
+        rather than passed in, so no caller can record a call at a price of its
+        own choosing.
+
+        Args:
+            tenant: The tenant to charge.
+            slug: The campaign the call was made for, if any.
+            stage_key: The pipeline stage the call belongs to, if any.
+            model: The model identifier the provider billed for.
+            usage: The token counts the call consumed; a call that reported none
+                is recorded at zero cost rather than skipped, so the ledger shows
+                that it happened.
+
+        Returns:
+            The stored entry, carrying the cost the ledger assigned it.
+        """
+        ...
+
+    def consumption(self, tenant: str, slug: str | None = None) -> Consumption:
+        """Report a tenant's spend against their allowance.
+
+        Args:
+            tenant: The tenant whose consumption to total.
+            slug: One campaign to restrict the total to, or ``None`` for
+                everything the tenant has spent.
+
+        Returns:
+            The report, including the per-campaign breakdown.
+        """
+        ...
+
+    def entries(self, tenant: str, slug: str | None = None) -> list[LedgerEntry]:
+        """Return a tenant's ledger entries, newest first.
+
+        Args:
+            tenant: The tenant whose entries to read.
+            slug: One campaign to restrict the entries to, or ``None`` for all
+                of the tenant's.
+
+        Returns:
+            The entries, newest first, empty when nothing has been charged.
         """
         ...

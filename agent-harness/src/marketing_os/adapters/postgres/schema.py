@@ -1,6 +1,6 @@
 """The Postgres schema the harness owns, and how tenant isolation is enforced in it.
 
-Six tables (ADR-0014, ADR-0015, ADR-0018):
+Seven tables (ADR-0014, ADR-0015, ADR-0018, ADR-0020):
 
 ``tenants``
     The pairing the identity provider cannot be trusted to hold. ``tenant_id``
@@ -58,6 +58,17 @@ Six tables (ADR-0014, ADR-0015, ADR-0018):
     given against, which is what makes "your DNA predates a newer question"
     answerable as a prompt rather than a silent gate failure.
 
+``usage_ledger``
+    Every billable call, with the model, the units, and what it cost, charged to
+    its tenant (ADR-0020). Append-only, like ``deliverable_versions`` and for a
+    related reason: the ledger is the unit-economics dataset, so "what did this
+    campaign cost?" must be a sum over rows nothing rewrote. ``slug`` is
+    nullable because not every billable call belongs to a campaign, and such a
+    call still counts against the allowance. The tenant's *allowance* is
+    deliberately not here — it is a fact about the business, of which there is
+    one, so it lives as a nullable column on ``tenants`` where ``NULL`` means
+    "use the platform-wide default".
+
 **Creating the schema is an operator step, not a boot step.** The service
 connects as an ordinary role that deliberately has no rights to create tables —
 handing the runtime DDL privileges to save one deployment command is how an
@@ -66,8 +77,8 @@ provisions with an administrative DSN; the service only checks the tables are
 there and says what to run if they are not.
 
 **Row-level security backstops the tenant-partitioned tables.** Every read and
-write of ``documents``, ``dna_answers`` and ``deliverable_versions`` runs inside a
-transaction that has set
+write of ``documents``, ``dna_answers``, ``deliverable_versions`` and
+``usage_ledger`` runs inside a transaction that has set
 ``marketing_os.tenant_id``, and the policy admits only rows matching it — so even
 a query that forgot its ``WHERE tenant_id`` clause returns nothing across
 tenants. ``FORCE ROW LEVEL SECURITY`` extends the policy to the table's owner. It
@@ -75,7 +86,7 @@ does **not** extend to superusers or roles with ``BYPASSRLS``: the application
 must connect as an ordinary role, which is what
 :func:`grant_application_role_sql` provisions.
 
-RLS is applied to the three tenant-partitioned tables and not to ``runs``, because
+RLS is applied to the four tenant-partitioned tables and not to ``runs``, because
 resolving runs left over from a crash is a cross-tenant maintenance sweep with no
 tenant in scope; the runs queries carry an explicit ``tenant_id`` predicate on
 every tenant-facing path instead. ``questionnaires`` is not partitioned at all —
@@ -94,8 +105,11 @@ CREATE TABLE IF NOT EXISTS tenants (
     tenant_id        text PRIMARY KEY,
     name             text NOT NULL,
     external_auth_id text NOT NULL UNIQUE,
-    created_at       timestamptz NOT NULL DEFAULT now()
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    allowance        double precision
 );
+
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS allowance double precision;
 
 CREATE TABLE IF NOT EXISTS documents (
     tenant_id  text NOT NULL,
@@ -169,6 +183,28 @@ DROP POLICY IF EXISTS dna_answers_tenant_isolation ON dna_answers;
 CREATE POLICY dna_answers_tenant_isolation ON dna_answers
     USING (tenant_id = current_setting('{TENANT_SETTING}', true))
     WITH CHECK (tenant_id = current_setting('{TENANT_SETTING}', true));
+
+CREATE TABLE IF NOT EXISTS usage_ledger (
+    tenant_id   text NOT NULL,
+    slug        text,
+    stage_key   text,
+    kind        text NOT NULL,
+    model       text NOT NULL DEFAULT '',
+    units       bigint NOT NULL DEFAULT 0,
+    cost        double precision NOT NULL DEFAULT 0,
+    recorded_at timestamptz NOT NULL DEFAULT now(),
+    sequence    bigserial PRIMARY KEY
+);
+
+CREATE INDEX IF NOT EXISTS usage_ledger_by_tenant ON usage_ledger (tenant_id);
+CREATE INDEX IF NOT EXISTS usage_ledger_by_campaign ON usage_ledger (tenant_id, slug);
+
+ALTER TABLE usage_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usage_ledger FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS usage_ledger_tenant_isolation ON usage_ledger;
+CREATE POLICY usage_ledger_tenant_isolation ON usage_ledger
+    USING (tenant_id = current_setting('{TENANT_SETTING}', true))
+    WITH CHECK (tenant_id = current_setting('{TENANT_SETTING}', true));
 """
 
 
@@ -179,6 +215,7 @@ TABLES = (
     "questionnaires",
     "dna_answers",
     "deliverable_versions",
+    "usage_ledger",
 )
 
 

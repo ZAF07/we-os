@@ -133,8 +133,12 @@ The client's **media/ad spend** for one campaign, allocated per channel by the P
 _Avoid_: budget (unqualified), spend, cost.
 
 **Usage Ledger**:
-The per-tenant record of every billable model call — tokens and image generations — with its cost. Checked before a billable call and written after, so quota is enforced rather than merely observed (see [ADR-0020](docs/adr/0020-usage-ledger-and-enforced-quota.md)).
+The per-tenant record of every billable model call — tokens and image generations — with its cost. Append-only, so it doubles as the unit-economics dataset: what a campaign, a revision, and a business actually cost. Checked before a billable call and written after, so quota is enforced rather than merely observed (see [ADR-0020](docs/adr/0020-usage-ledger-and-enforced-quota.md)).
 _Avoid_: metering, billing, telemetry.
+
+**Allowance**:
+What one business may spend on generation before billable work is refused. Resolves from the platform-wide default (`MARKETING_OS_ALLOWANCE`) unless the business carries its own override, so raising one design partner's ceiling is a row rather than a deploy. How an allowance is *presented* — credits, fair use, metered billing — is deliberately undecided; the enforcement mechanism is not. Exhausting it raises the typed `quota_exhausted` failure, surfaced as **402**.
+_Avoid_: quota (for the number itself — quota is the enforcement, the allowance is the amount), credits, plan, limit.
 
 **Web Backend**:
 The pluggable live-web capability (`WebSearchTool` port) granting the specialists that declare it — market-research and performance-marketing — `web_search`/`web_fetch` tools. Adapters: the default **NoopWebSearch**, which returns an honest "web search is not configured" message so runs stay grounded in the Brand DNA; **TavilyWebSearch**, the primary backend calling Tavily's JSON API (`/search` + `/extract`) over plain HTTP with no browser (see [ADR-0011](docs/adr/0011-tavily-primary-web-backend.md)); **PlaywrightWebSearch**, a browser-driven backend scraping DuckDuckGo (see [ADR-0007](docs/adr/0007-thread-confined-sync-playwright-backend.md)); and **GoogleWebSearch**, which subclasses it to scrape `google.com/search`, reusing the same browser lifecycle and `fetch`. The live capability is off by default and wired only when `MARKETING_OS_WEB=1` (see [ADR-0001](docs/adr/0001-ports-and-adapters-architecture.md)).
@@ -173,7 +177,7 @@ The Performance Plan precedes creative so the brief and the asset prompts inheri
 - **Upstream prerequisite** — a stage may not begin until the prior stage's deliverable exists.
 - **QA budget** — each deliverable must pass its guardrail rubric within `MARKETING_OS_MAX_QA` revision rounds (default 3), or the run halts.
 - **Tenant scope** — every read and write is scoped to the tenant derived from the verified identity claim, enforced in the storage layer rather than at call sites (see [ADR-0013](docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md)). The tenant is part of where a document lives, so the unscoped call does not exist to be reached for; cross-tenant access answers **404, not 403**, so existence never leaks. Agents never see a tenant id and cannot read Tenant-Owned Documents through the sandbox (see [ADR-0023](docs/adr/0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md)). Within a run a specialist's writes are further scoped to its own campaign, and an off-slug write is rejected (see [ADR-0006](docs/adr/0006-recoverable-tool-errors-and-slug-anchored-seeds.md)).
-- **Quota** — a billable call is refused when the tenant's allowance is exhausted (see [ADR-0020](docs/adr/0020-usage-ledger-and-enforced-quota.md)).
+- **Quota** — a billable call is refused when the tenant's allowance is exhausted, checked **before** the call rather than reported after, so a runaway loop cannot overspend. Enforced both at the API edge (so starting work answers 402) and inside the graph (so a run already in flight cannot spend past an allowance it was within when it started). Two hard caps sit alongside it: `MARKETING_OS_MAX_REVISIONS` bounds how often one deliverable may be sent back, and `MARKETING_OS_MAX_RUNS` bounds how often one campaign may be run (see [ADR-0020](docs/adr/0020-usage-ledger-and-enforced-quota.md)).
 
 ## Repo map
 

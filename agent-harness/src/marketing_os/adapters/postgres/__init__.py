@@ -19,6 +19,8 @@ from marketing_os.adapters.postgres.questionnaire import (
 from marketing_os.adapters.postgres.runs import PostgresRunStore
 from marketing_os.adapters.postgres.schema import ensure_schema, missing_tables
 from marketing_os.adapters.postgres.tenants import PostgresTenantDirectory
+from marketing_os.adapters.postgres.usage import PostgresUsageLedger
+from marketing_os.config import Settings
 from marketing_os.errors import ConfigError
 
 __all__ = [
@@ -29,6 +31,7 @@ __all__ = [
     "PostgresQuestionnaireStore",
     "PostgresRunStore",
     "PostgresTenantDirectory",
+    "PostgresUsageLedger",
     "ensure_schema",
     "missing_tables",
 ]
@@ -42,20 +45,24 @@ class PostgresBackend:
     service opens one in its lifespan and hands the parts out through its
     dependency providers.
 
-    The document, deliverable, tenant, run, questionnaire and answer adapters use a
-    **synchronous** pool because the :class:`~marketing_os.ports.DocumentStore`
-    port is synchronous; the LangGraph
+    The document, deliverable, tenant, run, questionnaire, answer and usage
+    adapters use a **synchronous** pool because the
+    :class:`~marketing_os.ports.DocumentStore` port is synchronous; the LangGraph
     checkpointer uses its own asynchronous connection because the graph is driven
     with ``astream`` (ADR-0009).
     """
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, settings: Settings | None = None) -> None:
         """Initialise the backend without connecting.
 
         Args:
             dsn: The Postgres connection string.
+            settings: The harness settings the usage ledger prices calls and
+                resolves the default allowance from; built from the environment
+                when ``None``.
         """
         self.dsn = dsn
+        self._settings = settings or Settings()
         self._pool: Any = None
         self._checkpointer_context: Any = None
         self._checkpointer: Any = None
@@ -125,6 +132,11 @@ class PostgresBackend:
     def answers(self) -> PostgresAnswerStore:
         """Return the Brand DNA answer store over this backend's pool."""
         return PostgresAnswerStore(self._pool)
+
+    @property
+    def usage(self) -> PostgresUsageLedger:
+        """Return the usage ledger over this backend's pool."""
+        return PostgresUsageLedger(self._pool, self._settings)
 
     @property
     def checkpointer(self) -> Any:

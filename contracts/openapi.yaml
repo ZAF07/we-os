@@ -38,7 +38,10 @@ info:
     detail. Notable variants: `gate_failed` (409) names every missing Required
     field; `quota_exhausted` (402) is returned by any operation that would
     trigger billable work once the tenant's allowance is spent; `run_conflict`
-    (409) carries the id of the run already in flight.
+    (409) carries the id of the run already in flight. Two hard caps sit
+    alongside the allowance and both answer 409:
+    `revision_limit_reached` bounds how often one deliverable may be sent back,
+    and `run_limit_reached` bounds how often one campaign may be run.
 servers:
   - url: http://localhost:4010
     description: Local mock server (Prism)
@@ -59,6 +62,8 @@ tags:
     description: Pipeline runs — start, observe, approve, revise, cancel.
   - name: deliverables
     description: Stage deliverables — content, versions, staleness.
+  - name: usage
+    description: Generation cost — what the business has spent against its allowance.
 
 paths:
   /health:
@@ -100,6 +105,46 @@ paths:
                 user_id: usr_9f2c
                 email: sam@coastcoffee.example
                 business_name: Coast Coffee
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /usage:
+    get:
+      operationId: getUsage
+      summary: Spend against allowance
+      description: |
+        What the business has used of its allowance, and which campaigns it went
+        on. Read by the interface so consumption is visible before work stops,
+        and by the platform to answer what a campaign actually cost.
+
+        This is **generation cost** — what the platform spent on models — and is
+        deliberately distinct from the campaign budget, which is the business's
+        own media spend allocated per channel by the Performance Plan.
+      tags: [usage]
+      parameters:
+        - name: slug
+          in: query
+          required: false
+          description: Restrict the total to one campaign; omit for everything.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's spend against its allowance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReport"
+              example:
+                used: 4.2
+                allowance: 25
+                remaining: 20.8
+                exhausted: false
+                campaigns:
+                  - slug: spring
+                    used: 3.1
+                  - slug: autumn
+                    used: 1.1
         "401":
           $ref: "#/components/responses/Unauthenticated"
 
@@ -470,7 +515,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The gate failed, or a run is already active for this campaign.
+          description: The gate failed, a run is already active for this campaign, or the campaign has hit its run cap.
           content:
             application/json:
               schema:
@@ -1499,6 +1544,39 @@ components:
           items:
             $ref: "#/components/schemas/DeliverableVersionSummary"
 
+    CampaignUsage:
+      type: object
+      required: [slug, used]
+      properties:
+        slug:
+          type: string
+          description: The campaign slug, which is what the engine speaks. `CONTEXT.md` makes the slug the canonical identifier for a campaign.
+        used:
+          type: number
+          description: What this campaign has cost in generation, dearest first.
+
+    UsageReport:
+      type: object
+      required: [used, allowance, remaining, exhausted]
+      properties:
+        used:
+          type: number
+          description: Everything the business has spent.
+        allowance:
+          type: number
+          description: What the business may spend. How this is presented — credits, fair use, metered billing — is a later decision.
+        remaining:
+          type: number
+          description: What is left, never below zero.
+        exhausted:
+          type: boolean
+          description: Whether billable work is now refused with `quota_exhausted`.
+        campaigns:
+          type: array
+          description: Per-campaign breakdown, highest spend first.
+          items:
+            $ref: "#/components/schemas/CampaignUsage"
+
     Error:
       type: object
       required: [type, status, message]
@@ -1514,6 +1592,7 @@ components:
             - run_conflict
             - stage_not_awaiting_approval
             - revision_limit_reached
+            - run_limit_reached
             - internal
         status:
           type: integer

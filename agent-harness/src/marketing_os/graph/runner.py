@@ -36,7 +36,7 @@ from marketing_os.errors import exception_from_state_error
 from marketing_os.graph.checkpoints import thread_id
 from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
 from marketing_os.graph.state import CampaignState
-from marketing_os.ports import DeliverableStore, DocumentStore
+from marketing_os.ports import DeliverableStore, DocumentStore, UsageLedger
 from marketing_os.schemas import CampaignResult, StageResult, Usage
 
 _LOGGER = get_logger("marketing_os.runner")
@@ -52,6 +52,7 @@ def _select_graph(
     checkpointer: BaseCheckpointSaver | None,
     document_store: DocumentStore | None,
     deliverable_store: DeliverableStore | None = None,
+    usage_ledger: UsageLedger | None = None,
 ) -> Any:
     """Build the campaign or single-stage graph for a run.
 
@@ -64,6 +65,8 @@ def _select_graph(
             for the filesystem default.
         deliverable_store: The store deliverable versions are appended to, or
             ``None`` for the filesystem default.
+        usage_ledger: The Usage Ledger every model call is checked against and
+            charged to, or ``None`` to run uncharged.
 
     Returns:
         The compiled graph to run.
@@ -76,6 +79,7 @@ def _select_graph(
             checkpointer=checkpointer,
             document_store=document_store,
             deliverable_store=deliverable_store,
+            usage_ledger=usage_ledger,
         )
     return build_campaign_graph(
         settings,
@@ -83,6 +87,7 @@ def _select_graph(
         checkpointer=checkpointer,
         document_store=document_store,
         deliverable_store=deliverable_store,
+        usage_ledger=usage_ledger,
     )
 
 
@@ -502,6 +507,7 @@ async def arun_campaign(
     checkpointer: BaseCheckpointSaver | None = None,
     document_store: DocumentStore | None = None,
     deliverable_store: DeliverableStore | None = None,
+    usage_ledger: UsageLedger | None = None,
     resume: Command | None = None,
     feedback: str | None = None,
 ) -> CampaignResult:
@@ -530,6 +536,10 @@ async def arun_campaign(
             for the filesystem default.
         deliverable_store: The store deliverable versions are appended to, or
             ``None`` for the filesystem default.
+        usage_ledger: The Usage Ledger every model call is checked against and
+            charged to, or ``None`` to run uncharged. Checking inside the graph
+            is what stops a run already in flight from spending past an
+            allowance it was within when it started (ADR-0020).
         resume: A :class:`~langgraph.types.Command` carrying a person's decision
             at an Approval Gate, which continues the checkpointed run from where
             it halted instead of starting a fresh one.
@@ -547,6 +557,7 @@ async def arun_campaign(
         GateError: If the run halted on the Stage 0 gate.
         PipelineError: If a prerequisite was missing or a deliverable never saved.
         GuardrailError: If a deliverable failed QA within the revision budget.
+        QuotaExhaustedError: If the tenant's allowance ran out mid-run.
     """
     trace = _open_trace(settings, tenant, slug, run_id or new_run_id())
     run_log = _rel_log(settings, trace)
@@ -562,6 +573,7 @@ async def arun_campaign(
             checkpointer=checkpointer,
             document_store=document_store,
             deliverable_store=deliverable_store,
+            usage_ledger=usage_ledger,
         )
         config = _config(tenant, slug, stage)
         inbound: Any = resume if resume is not None else _initial_state(tenant, slug, feedback)

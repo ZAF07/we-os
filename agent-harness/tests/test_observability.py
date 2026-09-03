@@ -74,6 +74,7 @@ def _patch_graph(monkeypatch: pytest.MonkeyPatch, reviewer: Reviewer) -> None:
         checkpointer,
         document_store=None,
         deliverable_store=None,
+        usage_ledger=None,
     ):
         return build_single_stage_graph(
             settings,
@@ -82,6 +83,7 @@ def _patch_graph(monkeypatch: pytest.MonkeyPatch, reviewer: Reviewer) -> None:
             reviewer=reviewer,
             document_store=document_store,
             deliverable_store=deliverable_store,
+            usage_ledger=usage_ledger,
         )
 
     monkeypatch.setattr(runner, "_select_graph", fake_select)

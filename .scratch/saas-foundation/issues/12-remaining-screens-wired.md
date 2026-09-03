@@ -11,7 +11,7 @@ Type: task
 
 The last of the mock fixtures come out. Home, Brand, Performance and Calendar render the tenant's real data, and the app becomes coherent end to end.
 
-- **Home** — the decision queue built from campaigns actually awaiting approval, real counts, real blocked items with their reasons, and quota consumption.
+- **Home** — the decision queue built from campaigns actually awaiting approval, real counts, real blocked items with their reasons, and quota consumption. The engine side landed in slice 09: read `GET /usage`, which returns `used` / `allowance` / `remaining` / `exhausted` plus a per-campaign breakdown keyed by `slug`. Any operation that starts billable work — start a run, revise, re-open — can answer **402 `quota_exhausted`**, whose body carries `used` and `allowance`; surface its message rather than a generic error. This is the deferred half of slice 09's fourth acceptance criterion, so it belongs to this slice now.
 - **Brand** — the tenant's Brand DNA as authored through the Questionnaire, editable per answer, with completeness clearly shown. This screen is why the DNA was renamed to align with it.
 - **Performance** — whatever the Performance Plan deliverable actually contains: channel mix, per-channel spend allocation, Placements, and the three KPI tiers. It reports the *plan*, not measured results — no campaign has been published yet, and pretending otherwise would be fiction.
 - **Calendar** — scheduled work as it genuinely exists at this stage. Publishing and scheduling arrive in a later PRD, so this screen shows planned campaign timeframes and stage milestones rather than fabricated post schedules.

@@ -179,6 +179,75 @@ class RevisionLimitError(MarketingOSError):
         }
 
 
+class QuotaExhaustedError(MarketingOSError):
+    """The tenant's allowance is spent, so billable work is refused before it starts.
+
+    Checked **before** a billable call rather than after (ADR-0020), which is
+    what makes this a refusal rather than a report of an overspend that already
+    happened. It is a first-class failure on every operation that can trigger
+    work — starting a run, revising a stage, re-opening one — so the frontend
+    handles "you are out of allowance" properly instead of showing a generic
+    error, and adding it later would have meant changing those contracts.
+
+    Carries what was used and what was allowed, so the message can say how far
+    over the line the caller is rather than only that they are.
+    """
+
+    http_status = 402
+    error_type = "quota_exhausted"
+
+    def __init__(self, used: float, allowance: float) -> None:
+        """Initialise the error.
+
+        Args:
+            used: What the tenant has spent.
+            allowance: What the tenant was allowed to spend.
+        """
+        message = "Your allowance is used up. Work resumes when it renews."
+        super().__init__(message)
+        self.used = used
+        self.allowance = allowance
+        self.detail = {
+            "type": self.error_type,
+            "status": self.http_status,
+            "message": message,
+            "used": used,
+            "allowance": allowance,
+        }
+
+
+class RunLimitError(MarketingOSError):
+    """One campaign has been run as many times as it is allowed to be.
+
+    The companion cap to :class:`RevisionLimitError`: that one bounds how often a
+    single deliverable can be sent back, this one bounds how often a whole
+    campaign can be re-run. Both exist because the allowance alone is too coarse
+    a guard — a runaway loop should be stopped by the thing it is looping on,
+    not only by eventually exhausting the budget (ADR-0020).
+    """
+
+    http_status = 409
+    error_type = "run_limit_reached"
+
+    def __init__(self, slug: str, limit: int) -> None:
+        """Initialise the error.
+
+        Args:
+            slug: The campaign that has hit its cap.
+            limit: How many runs each campaign is allowed.
+        """
+        message = f"Campaign '{slug}' has reached its run limit ({limit})."
+        super().__init__(message)
+        self.slug = slug
+        self.limit = limit
+        self.detail = {
+            "type": self.error_type,
+            "status": self.http_status,
+            "message": message,
+            "limit": limit,
+        }
+
+
 class PipelineError(MarketingOSError):
     """A stage was started out of order or its prerequisite deliverable is absent."""
 
@@ -252,11 +321,12 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
 
     The graph records why a run halted as a plain, JSON-serialisable dict on
     ``state["error"]`` (its ``type`` is one of ``gate`` / ``pipeline`` / ``save`` /
-    ``guardrail`` / ``revision_limit``). Those are the graph's internal discriminators; the ``type``
-    on the returned payload is the exception's ``error_type``, which is the name
-    the frozen API contract uses. This is the one place that maps between them,
-    building the human message and the structured ``detail`` payload once so no
-    entrypoint re-encodes the taxonomy.
+    ``guardrail`` / ``revision_limit`` / ``quota``). Those are the graph's
+    internal discriminators; the ``type`` on the returned payload is the
+    exception's ``error_type``, which is the name the frozen API contract uses.
+    This is the one place that maps between them, building the human message and
+    the structured ``detail`` payload once so no entrypoint re-encodes the
+    taxonomy.
 
     Args:
         error: The ``state["error"]`` dict describing the halt.
@@ -289,6 +359,12 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
         exc = RevisionLimitError(str(stage), int(limit) if limit is not None else 0)
         message = str(exc)
         detail = {"message": message, "limit": limit}
+    elif kind == "quota":
+        used = float(error.get("used", 0.0))
+        allowance = float(error.get("allowance", 0.0))
+        exc = QuotaExhaustedError(used, allowance)
+        message = str(exc)
+        detail = {"message": message, "used": used, "allowance": allowance}
     elif kind == "guardrail":
         message = f"Stage '{stage}' failed QA and could not be reconciled."
         exc = GuardrailError(message, discrepancies=error.get("discrepancies", []))

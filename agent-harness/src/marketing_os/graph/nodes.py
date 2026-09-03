@@ -4,13 +4,20 @@ Each stage contributes four nodes wired by :mod:`marketing_os.graph.graph`:
 
 * ``<stage>__enter`` validates the prerequisite, resets the per-stage working
   state, and seeds the task (with the Brand DNA) as the first message.
-* ``<stage>__specialist`` runs the specialist agent's tool-use loop and folds its
-  token usage into state.
+* ``<stage>__specialist`` checks the tenant's allowance, runs the specialist
+  agent's tool-use loop, and records what it cost.
 * ``<stage>__review`` verifies the deliverable was saved (forcing a save-retry if
   not), scores it against the rubric, records the version it produced, and sets
   the routing decision.
 * ``<stage>__approval`` halts a ``human``-policy stage on a LangGraph
   ``interrupt()`` until a person approves it or sends it back with feedback.
+
+The allowance is checked in these nodes rather than only at the HTTP edge,
+because they are where the billable call actually happens: an endpoint is not
+the only thing that can drive the graph, and a run already in flight can exhaust
+an allowance it was within when it started. Recording happens immediately after
+each call, so a run cancelled mid-pipeline is still charged for the work it did
+(ADR-0020).
 
 The Approval Gate is deliberately not the QA reviewer. The reviewer is a model
 scoring a deliverable against a Guardrail; the gate is a person's decision. Both
@@ -38,12 +45,13 @@ from marketing_os.adapters.deliverables import (
 )
 from marketing_os.adapters.observability import get_logger
 from marketing_os.config import Settings
+from marketing_os.errors import QuotaExhaustedError
 from marketing_os.governance import load_governance
 from marketing_os.governance.gate import check_gate
 from marketing_os.governance.pipeline import HUMAN, Stage, prerequisite_met, stage_document
 from marketing_os.graph.state import CampaignState
-from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer
-from marketing_os.schemas import ApprovalDecision, StageResult
+from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer, UsageLedger
+from marketing_os.schemas import ApprovalDecision, StageResult, Usage
 
 _LOGGER = get_logger("marketing_os.graph")
 
@@ -152,6 +160,78 @@ def _usage_delta(callback: Any) -> dict[str, int]:
         total["cache_read_input_tokens"] += details.get("cache_read", 0)
         total["cache_creation_input_tokens"] += details.get("cache_creation", 0)
     return total
+
+
+def _billed_model(callback: Any) -> str:
+    """Return the model a call was billed against, for the ledger entry.
+
+    Args:
+        callback: A usage-metadata callback whose ``usage_metadata`` maps model
+            names to per-call token counts.
+
+    Returns:
+        The model name the provider reported, or the empty string when it
+        reported none — an unnamed model is still charged, at the default rate.
+    """
+    reported = getattr(callback, "usage_metadata", None) or {}
+    return next(iter(reported), "")
+
+
+def _charge(
+    ledger: UsageLedger | None,
+    state: CampaignState,
+    stage: Stage,
+    callback: Any,
+    delta: dict[str, int],
+) -> None:
+    """Record what one model call cost, against the tenant that caused it.
+
+    Args:
+        ledger: The Usage Ledger to charge, or ``None`` when the deployment runs
+            without one — a run then proceeds uncharged rather than failing,
+            which is what keeps the CLI and the graph tests usable.
+        state: The campaign state naming the tenant and campaign.
+        stage: The stage the call was made on behalf of.
+        callback: The usage-metadata callback the call ran under.
+        delta: The token counts the call consumed.
+    """
+    if ledger is None:
+        return
+    ledger.record(
+        state["tenant"],
+        slug=state["slug"],
+        stage_key=stage.key,
+        model=_billed_model(callback),
+        usage=Usage(**delta),
+    )
+
+
+def _quota_halt(exc: QuotaExhaustedError, stage: Stage, slug: str) -> dict[str, Any]:
+    """Halt the run because the tenant's allowance is spent.
+
+    Recorded as a halting state error rather than raised, so it travels the same
+    path every other halt does and reaches the caller as the typed 402 through
+    :func:`~marketing_os.errors.exception_from_state_error`.
+
+    Args:
+        exc: The refusal the ledger raised.
+        stage: The stage whose call was refused.
+        slug: The campaign slug.
+
+    Returns:
+        A state update halting the run.
+    """
+    _emit("stage.quota_exhausted", slug=slug, stage=stage.key, used=exc.used)
+    return {
+        "error": {
+            "type": "quota",
+            "stage": stage.key,
+            "used": exc.used,
+            "allowance": exc.allowance,
+        },
+        "halt": True,
+        "route": "fail",
+    }
 
 
 def _compose_seed(dna_text: str, body: str) -> str:
@@ -394,44 +474,63 @@ def _previous_draft(
     return store.read(tenant, document)
 
 
-def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> AsyncCampaignNode:
+def make_specialist_node(
+    settings: Settings,
+    stage: Stage,
+    agent: Runnable,
+    ledger: UsageLedger | None = None,
+) -> AsyncCampaignNode:
     """Build a stage's specialist node.
 
     Args:
         settings: The harness settings (for the recursion budget).
         stage: The pipeline stage this node runs.
         agent: The compiled specialist agent for the stage.
+        ledger: The Usage Ledger the tenant's allowance is checked against and
+            the call is charged to, or ``None`` to run uncharged.
 
     Returns:
-        A node that runs the specialist's tool-use loop and folds in token usage.
+        A node that checks the allowance, runs the specialist's tool-use loop,
+        charges what it cost, and folds in token usage.
     """
     recursion_limit = 2 * settings.max_steps + 1
 
     async def specialist_node(state: CampaignState) -> dict[str, Any]:
         """Run the specialist agent over the current stage conversation.
 
-        The agent's tool-use loop is awaited (``ainvoke``) so every LLM call runs
-        on the event loop; cancelling the run's task aborts the in-flight LLM
-        request inside the loop rather than only between stages (see ADR-0009).
-        The run ``slug`` and ``tenant`` are passed into the agent state so the
-        ``write_file`` tool can scope writes to ``campaigns/<slug>/`` under the
-        right tenant at call time.
+        The allowance is checked **before** the agent is invoked, so an exhausted
+        tenant makes no model call at all rather than one the ledger reports
+        afterwards (ADR-0020). The agent's tool-use loop is awaited (``ainvoke``)
+        so every LLM call runs on the event loop; cancelling the run's task
+        aborts the in-flight LLM request inside the loop rather than only between
+        stages (see ADR-0009). The run ``slug`` and ``tenant`` are passed into
+        the agent state so the ``write_file`` tool can scope writes to
+        ``campaigns/<slug>/`` under the right tenant at call time.
 
         Args:
             state: The campaign state carrying the specialist ``messages`` and slug.
 
         Returns:
-            A state update with the specialist's new messages and token usage.
+            A state update with the specialist's new messages and token usage, or
+            a halt when the tenant's allowance is spent.
         """
+        if ledger is not None:
+            try:
+                ledger.check(state["tenant"])
+            except QuotaExhaustedError as exc:
+                return _quota_halt(exc, stage, state["slug"])
         inbound = list(state["messages"])
         with get_usage_metadata_callback() as callback:
-            result = await agent.ainvoke(
-                {"messages": inbound, "slug": state["slug"], "tenant": state["tenant"]},
-                config={
-                    "recursion_limit": recursion_limit,
-                    "run_name": f"specialist:{stage.key}",
-                },
-            )
+            try:
+                result = await agent.ainvoke(
+                    {"messages": inbound, "slug": state["slug"], "tenant": state["tenant"]},
+                    config={
+                        "recursion_limit": recursion_limit,
+                        "run_name": f"specialist:{stage.key}",
+                    },
+                )
+            finally:
+                _charge(ledger, state, stage, callback, _usage_delta(callback))
         produced = result["messages"][len(inbound) :]
         return {"messages": produced, "usage": _usage_delta(callback)}
 
@@ -444,6 +543,7 @@ def make_review_node(
     reviewer: Reviewer,
     store: DocumentStore,
     deliverables: DeliverableStore,
+    ledger: UsageLedger | None = None,
 ) -> AsyncCampaignNode:
     """Build a stage's QA review node.
 
@@ -453,6 +553,10 @@ def make_review_node(
         reviewer: The QA reviewer scoring the deliverable.
         store: The document store the deliverable resolves through.
         deliverables: The store each passing deliverable is versioned into.
+        ledger: The Usage Ledger the tenant's allowance is checked against and
+            the review call is charged to, or ``None`` to run uncharged. The
+            reviewer is a model call like any other, so it is billable too —
+            exempting it would let the QA loop spend beyond the allowance.
 
     Returns:
         A node that verifies the save, scores the deliverable, records its
@@ -464,7 +568,8 @@ def make_review_node(
         """Verify the deliverable was saved, score it, and set the route.
 
         The reviewer's LLM call is awaited (per ADR-0009) so it aborts if the
-        run's task is cancelled mid-review.
+        run's task is cancelled mid-review, and the allowance is checked before
+        it for the same reason the specialist's is: the review is a billable call.
 
         Args:
             state: The campaign state after the specialist ran.
@@ -479,9 +584,18 @@ def make_review_node(
         if not store.exists(tenant, rel):
             return _handle_missing_deliverable(state, stage, rel, budget)
 
+        if ledger is not None:
+            try:
+                ledger.check(tenant)
+            except QuotaExhaustedError as exc:
+                return _quota_halt(exc, stage, slug)
+
         text = store.read(tenant, rel)
         with get_usage_metadata_callback() as callback:
-            verdict = await reviewer.areview(stage.key, text)
+            try:
+                verdict = await reviewer.areview(stage.key, text)
+            finally:
+                _charge(ledger, state, stage, callback, _usage_delta(callback))
         qa_iterations = state.get("qa_iterations", 0)
         discrepancies = [d.model_dump() for d in verdict.discrepancies]
         _emit(
