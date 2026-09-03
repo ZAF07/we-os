@@ -734,6 +734,73 @@ paths:
                     status: 409
                     message: "Deliverable 'brand-strategy' has reached its revision limit (5)."
 
+  /campaigns/{campaignId}/stages/{stageKey}/reopen:
+    post:
+      operationId: reopenStage
+      summary: Re-open an approved stage to revise it
+      description: |
+        Re-runs **only** the named stage with this feedback, seeded with the
+        deliverable the owner is reacting to. Every downstream deliverable is
+        then marked `stale`: flagged, **not** regenerated, and no model call is
+        made on its behalf. The owner re-runs each stale stage explicitly when
+        they are ready, which is what stops a change of mind quietly spending
+        the budget on work nobody asked to have redone.
+
+        A campaign held only by the caller's own run waiting at a gate is
+        released — re-opening an earlier decision is itself a decision about the
+        pending one. A campaign someone is actively running is refused.
+      tags: [runs]
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+        - $ref: "#/components/parameters/StageKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReopenStage"
+            example:
+              feedback: We have moved the price point; re-anchor the positioning to convenience.
+      responses:
+        "202":
+          description: The run re-working the re-opened stage.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+              example:
+                run_id: run_01j9
+                campaign_id: cmp_spring
+                status: running
+                current_stage_key: brand-strategy
+                awaiting_approval_stage_key: null
+                started_at: "2026-08-26T09:10:00Z"
+                finished_at: null
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "402":
+          $ref: "#/components/responses/QuotaExhausted"
+        "404":
+          description: No such stage, or it has produced nothing to re-open.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                type: not_found
+                status: 404
+                message: Stage 'brand-strategy' has produced nothing for 'cmp_spring'.
+        "409":
+          description: The campaign has an active run, its gate failed, or the revision cap is spent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                type: run_conflict
+                status: 409
+                message: Campaign 'cmp_spring' already has an active run 'run_01j8'.
+
   /campaigns/{campaignId}/deliverables:
     get:
       operationId: listDeliverables
@@ -1183,7 +1250,7 @@ components:
 
     Stage:
       type: object
-      required: [key, phase, state, approval_policy]
+      required: [key, phase, state, approval_policy, stale]
       properties:
         key:
           $ref: "#/components/schemas/StageKey"
@@ -1193,6 +1260,18 @@ components:
           $ref: "#/components/schemas/StageState"
         approval_policy:
           $ref: "#/components/schemas/ApprovalPolicy"
+        stale:
+          type: boolean
+          description: |
+            True when an upstream decision was re-opened after this stage ran, so
+            its deliverable rests on a decision that has since changed. Reported
+            alongside `state` because a stage halted at a gate reports
+            `awaiting_approval` even while stale — what the person must decide on
+            is the draft in front of them.
+        latest_version:
+          type: integer
+          nullable: true
+          description: The newest version of this stage's deliverable, or null if it has produced none.
 
     Campaign:
       type: object
@@ -1333,6 +1412,15 @@ components:
           type: string
           minLength: 1
           description: Recorded on the new version it produces.
+
+    ReopenStage:
+      type: object
+      required: [feedback]
+      properties:
+        feedback:
+          type: string
+          minLength: 1
+          description: What the owner wants changed, now that they have changed their mind.
 
     DeliverableSummary:
       type: object
@@ -1485,12 +1573,12 @@ components:
           creative: 30% hook rate on launch video
         status: draft
         stages:
-          - {key: research, phase: Research, state: pending, approval_policy: auto}
-          - {key: brand-strategy, phase: Strategy, state: pending, approval_policy: human}
-          - {key: campaign-strategy, phase: Strategy, state: pending, approval_policy: human}
-          - {key: performance-plan, phase: Plan, state: pending, approval_policy: human}
-          - {key: creative-brief, phase: Produce, state: pending, approval_policy: human}
-          - {key: asset-prompts, phase: Produce, state: pending, approval_policy: human}
+          - {key: research, phase: Research, state: pending, approval_policy: auto, stale: false}
+          - {key: brand-strategy, phase: Strategy, state: pending, approval_policy: human, stale: false}
+          - {key: campaign-strategy, phase: Strategy, state: pending, approval_policy: human, stale: false}
+          - {key: performance-plan, phase: Plan, state: pending, approval_policy: human, stale: false}
+          - {key: creative-brief, phase: Produce, state: pending, approval_policy: human, stale: false}
+          - {key: asset-prompts, phase: Produce, state: pending, approval_policy: human, stale: false}
         created_at: "2026-08-19T15:40:00Z"
         updated_at: "2026-08-19T15:40:00Z"
     CampaignAwaitingApproval:
@@ -1512,12 +1600,12 @@ components:
           creative: 30% hook rate on launch video
         status: awaiting_approval
         stages:
-          - {key: research, phase: Research, state: completed, approval_policy: auto}
-          - {key: brand-strategy, phase: Strategy, state: awaiting_approval, approval_policy: human}
-          - {key: campaign-strategy, phase: Strategy, state: pending, approval_policy: human}
-          - {key: performance-plan, phase: Plan, state: pending, approval_policy: human}
-          - {key: creative-brief, phase: Produce, state: pending, approval_policy: human}
-          - {key: asset-prompts, phase: Produce, state: pending, approval_policy: human}
+          - {key: research, phase: Research, state: completed, approval_policy: auto, stale: false}
+          - {key: brand-strategy, phase: Strategy, state: awaiting_approval, approval_policy: human, stale: false}
+          - {key: campaign-strategy, phase: Strategy, state: pending, approval_policy: human, stale: false}
+          - {key: performance-plan, phase: Plan, state: pending, approval_policy: human, stale: false}
+          - {key: creative-brief, phase: Produce, state: pending, approval_policy: human, stale: false}
+          - {key: asset-prompts, phase: Produce, state: pending, approval_policy: human, stale: false}
         created_at: "2026-08-19T15:40:00Z"
         updated_at: "2026-08-19T16:04:00Z"
     CampaignArchived:
@@ -1539,12 +1627,12 @@ components:
           creative: 25% hook rate
         status: archived
         stages:
-          - {key: research, phase: Research, state: completed, approval_policy: auto}
-          - {key: brand-strategy, phase: Strategy, state: completed, approval_policy: human}
-          - {key: campaign-strategy, phase: Strategy, state: completed, approval_policy: human}
-          - {key: performance-plan, phase: Plan, state: completed, approval_policy: human}
-          - {key: creative-brief, phase: Produce, state: completed, approval_policy: human}
-          - {key: asset-prompts, phase: Produce, state: completed, approval_policy: human}
+          - {key: research, phase: Research, state: completed, approval_policy: auto, stale: false}
+          - {key: brand-strategy, phase: Strategy, state: completed, approval_policy: human, stale: false}
+          - {key: campaign-strategy, phase: Strategy, state: completed, approval_policy: human, stale: false}
+          - {key: performance-plan, phase: Plan, state: completed, approval_policy: human, stale: false}
+          - {key: creative-brief, phase: Produce, state: completed, approval_policy: human, stale: false}
+          - {key: asset-prompts, phase: Produce, state: completed, approval_policy: human, stale: false}
         created_at: "2026-07-01T09:00:00Z"
         updated_at: "2026-08-02T09:12:00Z"
     DeliverableLatest:

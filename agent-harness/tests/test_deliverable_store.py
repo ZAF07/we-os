@@ -21,6 +21,7 @@ from marketing_os.adapters.deliverables import (
     FilesystemDeliverableStore,
     InMemoryDeliverableStore,
 )
+from marketing_os.governance.staleness import stale_stages
 from marketing_os.ports import DeliverableStore
 
 
@@ -134,3 +135,57 @@ def test_numbering_is_per_stage_not_per_campaign(store: DeliverableStore) -> Non
     store.append(TENANT, SLUG, "research", "# r2")
     first_brand = store.append(TENANT, SLUG, "brand-strategy", "# b1")
     assert first_brand.version == 1
+
+
+def test_staleness_derives_the_same_way_over_every_adapter(store: DeliverableStore) -> None:
+    """Staleness is read off the version chain, so it must agree across stores.
+
+    An in-memory fake that ordered its versions differently from Postgres would
+    let downstream work look current in tests and stale in production, which is
+    exactly the silent inconsistency the flag exists to prevent (ADR-0015).
+    """
+    for stage_key in ("research", "brand-strategy", "campaign-strategy", "performance-plan"):
+        store.append(TENANT, SLUG, stage_key, f"# {stage_key}")
+    assert stale_stages(store, TENANT, SLUG) == []
+
+    store.append(TENANT, SLUG, "brand-strategy", "# revised", feedback="x", feedback_source="human")
+
+    assert stale_stages(store, TENANT, SLUG) == ["campaign-strategy", "performance-plan"]
+
+
+def test_re_running_a_stale_stage_clears_it_over_every_adapter(store: DeliverableStore) -> None:
+    for stage_key in ("research", "brand-strategy", "campaign-strategy", "performance-plan"):
+        store.append(TENANT, SLUG, stage_key, f"# {stage_key}")
+    store.append(TENANT, SLUG, "brand-strategy", "# revised")
+
+    store.append(TENANT, SLUG, "campaign-strategy", "# re-run")
+
+    assert stale_stages(store, TENANT, SLUG) == ["performance-plan"]
+
+
+def test_sequence_increases_across_the_whole_campaign(store: DeliverableStore) -> None:
+    """Write order is campaign-wide, which is what makes staleness answerable.
+
+    Version numbers count within one stage, so they cannot say whether the brand
+    strategy was written before the campaign strategy. The sequence can, and every
+    adapter must agree on it or staleness would differ between stores.
+    """
+    first = store.append(TENANT, SLUG, "research", "# r")
+    second = store.append(TENANT, SLUG, "brand-strategy", "# b")
+    third = store.append(TENANT, SLUG, "research", "# r2")
+
+    assert first.sequence < second.sequence < third.sequence
+
+
+def test_another_campaigns_writes_do_not_make_this_one_stale(store: DeliverableStore) -> None:
+    """Staleness is read within one campaign, so a busy neighbour cannot flag it.
+
+    The sequence itself need not restart per campaign — what matters is that a
+    write to one campaign never moves another campaign's watermark.
+    """
+    store.append(TENANT, SLUG, "research", "# ours")
+    store.append(TENANT, "other-campaign", "research", "# theirs")
+    store.append(TENANT, SLUG, "brand-strategy", "# ours too")
+
+    assert stale_stages(store, TENANT, SLUG) == []
+    assert stale_stages(store, TENANT, "other-campaign") == []

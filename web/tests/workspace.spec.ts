@@ -148,3 +148,54 @@ test("approving Strategy fans out to Home and Campaigns, and undo reverses it", 
   ).toBeVisible();
   await expect(page.getByText("Approve audience & positioning")).toBeVisible();
 });
+
+test("re-opening an approved decision marks the downstream stage stale", async ({
+  page,
+}) => {
+  await page.goto(WORKSPACE);
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(page.getByText("✓ Positioning approved")).toBeVisible();
+
+  await page.getByRole("button", { name: "Re-open this decision" }).click();
+
+  await expect(page.getByText("Revise audience & positioning")).toBeVisible();
+  await expect(page.getByText("Plan is now stale.")).toBeVisible();
+
+  const stageNav = page.getByRole("navigation", { name: "Stages" });
+  await expect(page.getByText("Stale — re-run when ready")).toBeVisible();
+
+  await stageNav.getByRole("button", { name: /^Plan/ }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "Re-run this stage to bring it up to date",
+  );
+  await expect(page.getByText("Stale", { exact: true }).first()).toBeVisible();
+});
+
+test("re-approving a re-opened decision clears the stale flag", async ({
+  page,
+}) => {
+  await page.goto(WORKSPACE);
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.getByRole("button", { name: "Re-open this decision" }).click();
+  await expect(page.getByText("Plan is now stale.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Approve revision" }).click();
+
+  await expect(page.getByText("✓ Positioning approved")).toBeVisible();
+  await expect(page.getByText("Stale — re-run when ready")).toBeHidden();
+});
+
+test("re-running a stale stage clears its flag", async ({ page }) => {
+  await page.goto(WORKSPACE);
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.getByRole("button", { name: "Re-open this decision" }).click();
+
+  const stageNav = page.getByRole("navigation", { name: "Stages" });
+  await stageNav.getByRole("button", { name: /^Plan/ }).click();
+  await expect(page.getByRole("status")).toBeVisible();
+
+  await page.getByRole("button", { name: "Re-run this stage" }).click();
+
+  await expect(page.getByRole("status")).toBeHidden();
+  await expect(page.getByText("Stale — re-run when ready")).toBeHidden();
+});

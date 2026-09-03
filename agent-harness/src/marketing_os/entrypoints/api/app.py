@@ -10,7 +10,8 @@ Endpoints:
   POST /campaigns                       -> scaffold a campaign goal from the template
   GET  /campaigns/{slug}/gate           -> Stage 0 gate report
   GET  /campaigns/{slug}/deliverables   -> list written deliverables
-  GET  /campaigns/{slug}/stages         -> stages with approval policy and version
+  GET  /campaigns/{slug}/stages         -> stages with approval policy, version and staleness
+  POST /campaigns/{slug}/stages/{key}/reopen -> revise an approved stage; downstream goes stale
   GET  /campaigns/{slug}/deliverables/{name}/versions -> a deliverable's version history
   GET  /campaigns/{slug}/deliverables/{name}/versions/{v} -> one historical version
   POST /campaigns/{slug}/run            -> start a background run, return its run_id (202)
@@ -77,7 +78,13 @@ from marketing_os.errors import (
     ValidationError,
 )
 from marketing_os.governance import check_gate
-from marketing_os.governance.pipeline import PIPELINE, Stage, apply_approval_policies
+from marketing_os.governance.pipeline import (
+    PIPELINE,
+    PIPELINE_BY_KEY,
+    Stage,
+    apply_approval_policies,
+)
+from marketing_os.governance.staleness import stale_stages
 from marketing_os.graph.registry import RunRegistry, read_run_status, resolve_trace_path
 from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage
 from marketing_os.ports import (
@@ -510,6 +517,8 @@ def me(identity: Identity) -> dict[str, object]:
 
 DNA_DOCUMENT = "dna.md"
 
+STALE = "stale"
+
 
 def read_brand_dna(tenant: str) -> tuple[Questionnaire, BrandDnaRecord]:
     """Return the published question set and one business's answers to it.
@@ -735,13 +744,17 @@ def deliverables(slug: str, identity: Identity) -> dict[str, object]:
         identity: The verified identity whose tenant owns the campaign.
 
     Returns:
-        The campaign slug and the list of written documents.
+        The campaign slug, the list of written documents, and one entry per
+        stage that has produced a deliverable carrying its latest version and
+        whether it is stale — so the interface can flag superseded work at a
+        glance rather than one deliverable-read at a time.
 
     Raises:
         HTTPException: 404 if the caller's tenant has no such campaign.
     """
+    tenant = identity.tenant_id
     store = get_document_store()
-    documents = store.list(identity.tenant_id, f"campaigns/{slug}")
+    documents = store.list(tenant, f"campaigns/{slug}")
     if not documents:
         raise _http_error(DocumentNotFoundError(f"No campaign '{slug}'"))
     files = [
@@ -749,7 +762,36 @@ def deliverables(slug: str, identity: Identity) -> dict[str, object]:
         for document in documents
         if document.endswith(".md")
     ]
-    return {"slug": slug, "files": files}
+    return {"slug": slug, "files": files, "deliverables": _deliverable_summaries(tenant, slug)}
+
+
+def _deliverable_summaries(tenant: str, slug: str) -> list[dict[str, object]]:
+    """Summarise every deliverable a campaign has produced, with its staleness.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+
+    Returns:
+        One entry per produced deliverable in pipeline order, each with its
+        stage key, latest version, staleness, and when it was last written.
+    """
+    versions = get_deliverable_store()
+    stale = set(stale_stages(versions, tenant, slug))
+    summaries: list[dict[str, object]] = []
+    for stage_key in versions.stages(tenant, slug):
+        latest = versions.latest(tenant, slug, stage_key)
+        if latest is None:
+            continue
+        summaries.append(
+            {
+                "stage_key": stage_key,
+                "latest_version": latest.version,
+                "stale": stage_key in stale,
+                "updated_at": latest.created_at,
+            }
+        )
+    return summaries
 
 
 @app.get("/campaigns/{slug}/deliverables/{name}")
@@ -768,13 +810,17 @@ def deliverable(slug: str, name: str, identity: Identity) -> dict[str, object]:
         HTTPException: 404 if the caller's tenant has no such deliverable.
     """
     document = f"campaigns/{slug}/{name}"
+    tenant = identity.tenant_id
     store = get_document_store()
-    if not name.endswith(".md") or not store.exists(identity.tenant_id, document):
+    if not name.endswith(".md") or not store.exists(tenant, document):
         raise _http_error(DocumentNotFoundError(f"No deliverable '{name}' for campaign '{slug}'"))
+    stage_key = _stage_key_for(name)
     return {
         "name": name,
         "path": document,
-        "content": store.read(identity.tenant_id, document),
+        "stage_key": stage_key,
+        "stale": stage_key in stale_stages(get_deliverable_store(), tenant, slug),
+        "content": store.read(tenant, document),
     }
 
 
@@ -784,26 +830,65 @@ async def stages(slug: str, identity: Identity) -> dict[str, object]:
 
     The approval policy is reported alongside the stage so the interface can say
     which stages the system handles itself and which will stop and ask — before
-    the run starts, not when it halts (ADR-0015).
+    the run starts, not when it halts (ADR-0015). A stage whose input was
+    re-opened since it ran reads ``stale``, which is how the interface shows that
+    work rests on a superseded decision rather than quietly rendering it as done.
 
     Args:
         slug: The campaign slug.
         identity: The verified identity whose tenant owns the campaign.
 
     Returns:
-        The campaign slug and its stages in mandatory pipeline order, each with
-        its key, operator Phase, state, approval policy, and latest deliverable
-        version if it has one.
+        The campaign slug, its lifecycle status, and its stages in mandatory
+        pipeline order, each with its key, operator Phase, state, approval
+        policy, and latest deliverable version if it has one.
     """
     tenant = identity.tenant_id
     versions = get_deliverable_store()
     configured = apply_approval_policies(PIPELINE, get_settings().human_gate_stages)
     waiting = await _stage_awaiting_approval(tenant, slug)
-    reported = [
-        _report_stage(stage, versions.latest(tenant, slug, stage.key), waiting)
-        for stage in configured
-    ]
-    return {"slug": slug, "stages": reported}
+    stale = set(stale_stages(versions, tenant, slug))
+    latest = {stage.key: versions.latest(tenant, slug, stage.key) for stage in configured}
+    produced = {key for key, version in latest.items() if version is not None}
+    reported = [_report_stage(stage, latest[stage.key], waiting, stale) for stage in configured]
+    return {
+        "slug": slug,
+        "status": _campaign_status(produced, stale, waiting),
+        "stages": reported,
+    }
+
+
+def _campaign_status(produced: set[str], stale: set[str], waiting: str | None) -> str:
+    """Return the campaign's lifecycle status, a separate axis from stage progress.
+
+    Lifecycle answers "what is this campaign's situation?" while stage state
+    answers "how far has it got?" (ADR-0017), so a campaign waiting on a person
+    is ``awaiting_approval`` whichever stage it is holding at.
+
+    A campaign is only ``approved`` once every stage has produced a deliverable
+    **and none of them is stale**. That is the criterion that stops re-opening a
+    decision leaving the campaign looking signed off while creative underneath it
+    rests on strategy the owner has since replaced (ADR-0015).
+
+    Derived from the deliverables themselves rather than from the state strings
+    rendered for the interface, so the lifecycle cannot drift from the stages it
+    describes by way of a presentation change.
+
+    Args:
+        produced: The stages that have produced a deliverable.
+        stale: The stages resting on a decision that has since been re-opened.
+        waiting: The stage holding at an Approval Gate, if any.
+
+    Returns:
+        One of ``draft``, ``running``, ``awaiting_approval`` or ``approved``.
+    """
+    if waiting is not None:
+        return AWAITING_APPROVAL
+    if not produced:
+        return "draft"
+    if stale or len(produced) < len(PIPELINE):
+        return RUNNING
+    return "approved"
 
 
 async def _stage_awaiting_approval(tenant: str, slug: str) -> str | None:
@@ -829,23 +914,31 @@ async def _stage_awaiting_approval(tenant: str, slug: str) -> str | None:
 
 
 def _report_stage(
-    stage: Stage, latest: DeliverableVersion | None, waiting: str | None
+    stage: Stage, latest: DeliverableVersion | None, waiting: str | None, stale: set[str]
 ) -> dict[str, object]:
     """Describe one stage for the interface: its phase, its state, and its policy.
 
     The phase is what the operator's stepper groups by, so the interface renders
     its designed steps without the engine adopting UI vocabulary (ADR-0017).
 
+    A stage holding at a gate reports ``awaiting_approval`` even when its
+    deliverable is stale: what the person must do next is decide on the draft in
+    front of them, and telling them the stage is stale instead would hide the
+    decision the run is actually blocked on.
+
     Args:
         stage: The pipeline stage, carrying its configured approval policy.
         latest: The newest version of its deliverable, if it has produced one.
         waiting: The stage currently halted at an Approval Gate, if any.
+        stale: The stages resting on a decision that has since been re-opened.
 
     Returns:
         The stage's key, phase, state, approval policy, and latest version.
     """
     if stage.key == waiting:
         state = AWAITING_APPROVAL
+    elif stage.key in stale:
+        state = STALE
     elif latest is not None:
         state = "completed"
     else:
@@ -856,6 +949,7 @@ def _report_stage(
         "state": state,
         "approval_policy": stage.approval_policy,
         "latest_version": latest.version if latest else None,
+        "stale": stage.key in stale,
     }
 
 
@@ -1002,6 +1096,134 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
     except RunConflictError as exc:
         raise _http_error(exc) from exc
     return {"run_id": run_id, "slug": slug, "stage": body.stage, "status": RUNNING}
+
+
+async def _release_gate_held_by(identity: VerifiedIdentity, slug: str) -> None:
+    """Free a campaign whose only claim is the caller's own run waiting at a gate.
+
+    Re-opening an earlier decision **is** a decision about the pending one: the
+    owner has stopped caring what the gate is asking and wants to change
+    something upstream instead. Leaving that halted run holding the campaign
+    would refuse them their own campaign until they separately cancelled a run
+    they have already moved on from.
+
+    Only a run halted at a gate is released, and only the caller's own. A run
+    that is genuinely executing is left alone, so re-opening still refuses a
+    campaign someone is actively working on rather than pulling the work out
+    from under it.
+
+    Args:
+        identity: The verified identity re-opening the stage.
+        slug: The campaign slug.
+    """
+    registry = get_registry()
+    held = registry.active_for_campaign(identity.tenant_id, slug)
+    if held is None or held.status != AWAITING_APPROVAL:
+        return
+    if held.user_id and held.user_id != identity.user_id:
+        return
+    await registry.cancel(held.run_id, identity.tenant_id, identity.user_id)
+    _LOGGER.info("run.released_for_reopen run_id=%s slug=%s", held.run_id, slug)
+
+
+class ReopenStage(BaseModel):
+    """Request body for re-opening a stage the business owner already approved.
+
+    Attributes:
+        feedback: What they want changed, now that they have changed their mind.
+            Required: re-opening with nothing to act on would re-run the stage
+            identically and charge for it.
+    """
+
+    feedback: str
+
+
+@app.post("/campaigns/{slug}/stages/{stage_key}/reopen", status_code=202)
+async def reopen_stage(
+    slug: str, stage_key: str, body: ReopenStage, identity: Identity
+) -> dict[str, object]:
+    """Re-open an approved stage to revise it; everything downstream goes stale.
+
+    A campaign gets edited weeks later, after work has been built on top of it.
+    Re-opening runs **only the named stage**, seeded with the owner's feedback
+    and the deliverable they are reacting to. Every downstream deliverable then
+    reads ``stale``: it is flagged, not regenerated, and no model is called on
+    its behalf until the owner re-runs it themselves (ADR-0015). Auto-re-running
+    was rejected — it would spend tokens and image budget redoing work nobody
+    asked to have redone — so the inconsistency is made visible and left the
+    owner's to resolve.
+
+    The stage's checkpoint thread is cleared first, so a re-open starts the stage
+    afresh rather than resuming whatever a previous re-open of it left halted.
+
+    Args:
+        slug: The campaign slug.
+        stage_key: The stage to re-open.
+        body: The feedback to re-run the stage with.
+        identity: The verified identity whose tenant owns the campaign.
+
+    Returns:
+        The new run's id, slug, re-opened stage, and initial ``running`` status.
+
+    Raises:
+        HTTPException: 404 if the caller's tenant has no such stage deliverable;
+            409 if the gate fails or the campaign already has an active run; 422
+            if the feedback is empty.
+    """
+    feedback = body.feedback.strip()
+    if not feedback:
+        raise _http_error(ValidationError("Say what you want changed."))
+    if stage_key not in PIPELINE_BY_KEY:
+        raise _http_error(DocumentNotFoundError(f"No stage '{stage_key}'"))
+    tenant = identity.tenant_id
+    settings = get_settings()
+    store = get_document_store()
+    if get_deliverable_store().latest(tenant, slug, stage_key) is None:
+        raise _http_error(
+            DocumentNotFoundError(f"Stage '{stage_key}' has produced nothing for '{slug}'")
+        )
+    report = check_gate(
+        settings, tenant, slug, store=store, questionnaire=get_questionnaire_store().published()
+    )
+    if not report.ok:
+        raise _http_error(GateError("Stage 0 gate failed", missing=report.all_issues))
+    _refuse_when_revisions_spent(tenant, slug, stage_key)
+    await _release_gate_held_by(identity, slug)
+    run_id = new_run_id()
+
+    async def launch() -> CampaignResult:
+        """Re-run the single re-opened stage with the owner's feedback.
+
+        Returns:
+            The structured campaign result.
+        """
+        return await arun_campaign(
+            settings,
+            tenant,
+            slug,
+            stage=stage_key,
+            run_id=run_id,
+            checkpointer=get_checkpointer(),
+            document_store=store,
+            deliverable_store=get_deliverable_store(),
+            feedback=feedback,
+        )
+
+    try:
+        get_registry().start(
+            run_id=run_id,
+            slug=slug,
+            stage=stage_key,
+            tenant=tenant,
+            user_id=identity.user_id,
+            launch=launch,
+        )
+    except RunConflictError as exc:
+        raise _http_error(exc) from exc
+    _LOGGER.info(
+        "stage.reopened tenant=%s slug=%s stage=%s run_id=%s", tenant, slug, stage_key, run_id
+    )
+    return {"run_id": run_id, "slug": slug, "stage": stage_key, "status": RUNNING}
 
 
 @app.get("/runs")

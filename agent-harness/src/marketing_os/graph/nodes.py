@@ -235,8 +235,9 @@ def _stage_seed_body(slug: str, stage: Stage, feedback: str | None, previous: st
     """Build the specialist's seed body for a stage attempt.
 
     A first attempt is seeded with the stage's task. An attempt following an
-    Approval Gate refusal is seeded with the person's written feedback and the
-    draft they refused, so the specialist revises what was rejected rather than
+    Approval Gate refusal — or a re-opening of a stage the owner had already
+    approved — is seeded with the person's written feedback and the draft they
+    are reacting to, so the specialist revises what was rejected rather than
     starting from a blank page and losing everything that already passed.
 
     Args:
@@ -346,7 +347,8 @@ def make_enter_node(stage: Stage, store: DocumentStore) -> CampaignNode:
             }
         _emit("stage.start", slug=slug, stage=stage.key, agent=stage.agent)
         feedback = state.get("human_feedback")
-        task_body = _stage_seed_body(slug, stage, feedback, state.get("deliverable_text"))
+        previous = _previous_draft(store, state, tenant, slug, stage)
+        task_body = _stage_seed_body(slug, stage, feedback, previous)
         return {
             "messages": _fresh_conversation(state["dna_text"], task_body),
             "qa_iterations": 0,
@@ -357,6 +359,39 @@ def make_enter_node(stage: Stage, store: DocumentStore) -> CampaignNode:
         }
 
     return enter_node
+
+
+def _previous_draft(
+    store: DocumentStore, state: CampaignState, tenant: str, slug: str, stage: Stage
+) -> str | None:
+    """Return the draft a revising attempt should work from, if there is one.
+
+    Only an attempt carrying the owner's feedback has a draft to react to, so a
+    first attempt reads nothing. Within a run the refused draft is already on
+    state. A re-opened stage starts a **fresh** run, so state carries nothing —
+    the draft the owner is reacting to is the deliverable currently saved.
+    Reading it here is what makes re-opening a revision of existing work rather
+    than a rewrite from scratch (ADR-0015).
+
+    Args:
+        store: The document store the saved deliverable resolves through.
+        state: The current campaign state.
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+        stage: The stage being entered.
+
+    Returns:
+        The previous draft, or ``None`` when the stage has produced none.
+    """
+    if not state.get("human_feedback"):
+        return None
+    on_state = state.get("deliverable_text")
+    if on_state:
+        return on_state
+    document = stage_document(slug, stage)
+    if not store.exists(tenant, document):
+        return None
+    return store.read(tenant, document)
 
 
 def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> AsyncCampaignNode:

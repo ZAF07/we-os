@@ -8,6 +8,7 @@ export const STATUSES = [
   "Published",
   "Needs attention",
   "Not started",
+  "Stale",
 ] as const;
 
 export type Status = (typeof STATUSES)[number];
@@ -22,6 +23,7 @@ const STATUS_PILL_CLASSES: Record<Status, string> = {
   Published: "bg-slate-100 text-slate-700",
   "Needs attention": "bg-red-100 text-red-700",
   "Not started": "bg-slate-50 text-slate-400",
+  Stale: "bg-orange-100 text-orange-800",
 };
 
 const STATUS_EDGE_CLASSES: Record<Status, string> = {
@@ -34,6 +36,7 @@ const STATUS_EDGE_CLASSES: Record<Status, string> = {
   Published: "border-slate-700",
   "Needs attention": "border-red-700",
   "Not started": "border-slate-400",
+  Stale: "border-orange-800",
 };
 
 const STATUS_DOT_CLASSES: Record<Status, string> = {
@@ -46,13 +49,14 @@ const STATUS_DOT_CLASSES: Record<Status, string> = {
   Published: "bg-slate-500",
   "Needs attention": "bg-red-500",
   "Not started": "bg-slate-300",
+  Stale: "bg-orange-500",
 };
 
 /**
  * Returns the background/foreground classes for a status pill.
  *
  * Args:
- *   status: One of the nine canonical statuses.
+ *   status: One of the canonical statuses.
  *
  * Returns:
  *   Tailwind classes for the pill's background and text colors.
@@ -65,7 +69,7 @@ export function statusPillClasses(status: Status): string {
  * Returns the border color class matching a status's foreground color.
  *
  * Args:
- *   status: One of the nine canonical statuses.
+ *   status: One of the canonical statuses.
  *
  * Returns:
  *   A Tailwind border-color class, used for status-colored edges.
@@ -78,7 +82,7 @@ export function statusEdgeClass(status: Status): string {
  * Returns the background class for a small status indicator dot.
  *
  * Args:
- *   status: One of the nine canonical statuses.
+ *   status: One of the canonical statuses.
  *
  * Returns:
  *   A Tailwind background-color class for the dot.

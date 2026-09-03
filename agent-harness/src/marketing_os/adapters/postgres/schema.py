@@ -43,6 +43,11 @@ Six tables (ADR-0014, ADR-0015, ADR-0018):
     ``(tenant_id, slug, stage_key, version)`` is what stops a revision
     overwriting the version it supersedes, so "nothing is overwritten" is the
     database's guarantee rather than a convention each call site must keep.
+    ``sequence`` is a ``bigserial`` recording the order writes actually happened
+    in. Downstream staleness is a question about which stage's deliverable was
+    written first, and neither ``version`` (which counts within one stage) nor
+    ``created_at`` can answer it — ``now()`` is fixed for a whole transaction, so
+    two versions written together would tie and the staleness would vanish.
 
 ``dna_answers``
     Each business's answers to those questions — the *source of truth* for the
@@ -138,6 +143,7 @@ CREATE TABLE IF NOT EXISTS deliverable_versions (
     feedback_source    text,
     supersedes_version integer,
     created_at         timestamptz NOT NULL DEFAULT now(),
+    sequence           bigserial NOT NULL,
     PRIMARY KEY (tenant_id, slug, stage_key, version)
 );
 

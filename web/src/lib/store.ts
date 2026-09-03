@@ -12,6 +12,8 @@ export type AiActionKey = AiAction["key"];
 export interface DemoState {
   stage: number;
   approved: boolean;
+  reopened: boolean;
+  staleCleared: boolean;
   calMode: CalendarMode;
   calSelIdx: number;
   brandIdx: number;
@@ -23,6 +25,8 @@ export interface DemoState {
   setStage: (stage: number) => void;
   approve: () => void;
   undoApprove: () => void;
+  reopen: () => void;
+  rerunStale: () => void;
   setCalMode: (mode: CalendarMode) => void;
   setCalSelIdx: (index: number) => void;
   setBrandIdx: (index: number) => void;
@@ -40,6 +44,8 @@ export const useDemoStore = create<DemoState>()(
     (set) => ({
       stage: STRATEGY_STAGE_INDEX,
       approved: false,
+      reopened: false,
+      staleCleared: false,
       calMode: "calendar",
       calSelIdx: 0,
       brandIdx: 0,
@@ -49,8 +55,15 @@ export const useDemoStore = create<DemoState>()(
       onboarding: null,
       createdCampaigns: [],
       setStage: (stage) => set({ stage }),
-      approve: () => set({ approved: true }),
+      approve: () => set({ approved: true, reopened: false }),
       undoApprove: () => set({ approved: false }),
+      reopen: () =>
+        set({
+          reopened: true,
+          staleCleared: false,
+          stage: STRATEGY_STAGE_INDEX,
+        }),
+      rerunStale: () => set({ staleCleared: true }),
       setCalMode: (calMode) => set({ calMode }),
       setCalSelIdx: (calSelIdx) => set({ calSelIdx }),
       setBrandIdx: (brandIdx) => set({ brandIdx }),

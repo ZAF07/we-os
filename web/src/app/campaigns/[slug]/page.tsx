@@ -227,11 +227,14 @@ function StrategyDocument() {
 function GenericStageDocument() {
   const stage = useDemoStore((state) => state.stage);
   const approved = useDemoStore((state) => state.approved);
+  const reopened = useDemoStore((state) => state.reopened);
+  const staleCleared = useDemoStore((state) => state.staleCleared);
   const detail = stageDetail(stage, approved);
-  const status = stageStatus(stage, approved);
+  const status = stageStatus(stage, approved, reopened, staleCleared);
 
   return (
     <div className="max-w-[660px]">
+      {status === "Stale" && <StaleBanner />}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <StatusPill status={status} />
       </div>
@@ -387,9 +390,10 @@ function DecisionPanel() {
   );
 }
 
-/** Renders the post-approval confirmation panel with the undo action. */
+/** Renders the post-approval confirmation panel with the undo and re-open actions. */
 function ApprovedPanel() {
   const undoApprove = useDemoStore((state) => state.undoApprove);
+  const reopen = useDemoStore((state) => state.reopen);
 
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5">
@@ -400,11 +404,82 @@ function ApprovedPanel() {
         Plan stage started — channel strategy draft expected today, 4:00 pm.
         You&apos;ll approve it before anything is produced.
       </div>
+      <div className="mt-2.5 flex gap-2">
+        <button
+          onClick={undoApprove}
+          className="cursor-pointer rounded-lg border border-emerald-200 bg-card px-2.5 py-[5px] text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+        >
+          Return to review
+        </button>
+        <button
+          onClick={reopen}
+          className="cursor-pointer rounded-lg border border-orange-200 bg-card px-2.5 py-[5px] text-xs font-semibold text-orange-800 hover:bg-orange-50"
+        >
+          Re-open this decision
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders the panel shown while a re-opened decision is waiting on the owner.
+ *
+ * Re-opening marks the work downstream Stale rather than regenerating it, so the
+ * panel says plainly what has been flagged and that nothing is being redone
+ * until the owner asks for it.
+ */
+function ReopenedPanel() {
+  const approve = useDemoStore((state) => state.approve);
+
+  return (
+    <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3.5">
+      <div className="text-[11px] font-bold tracking-wide text-orange-800 uppercase">
+        Re-opened
+      </div>
+      <div className="mt-1 text-sm font-bold">
+        Revise audience &amp; positioning
+      </div>
+      <div className="mt-2 rounded-lg border border-orange-200 bg-card px-2.5 py-2 text-xs text-orange-800">
+        <strong>Plan is now stale.</strong> It was built on the positioning you
+        just re-opened. Nothing has been regenerated and nothing has been
+        charged — re-run it when you are ready.
+      </div>
       <button
-        onClick={undoApprove}
-        className="mt-2.5 cursor-pointer rounded-lg border border-emerald-200 bg-card px-2.5 py-[5px] text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+        onClick={approve}
+        className="mt-3 w-full cursor-pointer rounded-lg bg-primary py-2 text-[13px] font-semibold text-primary-foreground hover:bg-indigo-700"
       >
-        Return to review
+        Approve revision
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Renders the banner marking a stage document as resting on a superseded decision.
+ *
+ * The re-run control lives here rather than elsewhere because staleness is the
+ * owner's to resolve: the flag and the one action that clears it belong together,
+ * and nothing re-runs until they ask for it.
+ */
+function StaleBanner() {
+  const rerunStale = useDemoStore((state) => state.rerunStale);
+
+  return (
+    <div
+      role="status"
+      className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3"
+    >
+      <StatusPill status="Stale" />
+      <span className="flex-1 text-[12.5px] text-orange-900">
+        Built on a positioning that has since been re-opened. Re-run this stage
+        to bring it up to date — it will not update on its own.
+      </span>
+      <button
+        onClick={rerunStale}
+        className="cursor-pointer rounded-lg border border-orange-300 bg-card px-2.5 py-[5px] text-xs font-semibold text-orange-800 hover:bg-orange-100"
+      >
+        Re-run this stage
       </button>
     </div>
   );
@@ -569,6 +644,8 @@ export default function WorkspacePage() {
   const { slug } = useParams<{ slug: string }>();
   const stage = useDemoStore((state) => state.stage);
   const approved = useDemoStore((state) => state.approved);
+  const reopened = useDemoStore((state) => state.reopened);
+  const staleCleared = useDemoStore((state) => state.staleCleared);
   const created = useDemoStore((state) =>
     state.createdCampaigns.find((campaign) => campaign.slug === slug),
   );
@@ -591,8 +668,10 @@ export default function WorkspacePage() {
   const status: Status = created ? "Draft" : fixture!.status;
   const statusFor = created
     ? createdStageStatus
-    : (index: number) => stageStatus(index, approved);
-  const subtitles = created ? CREATED_SUBTITLES : stageSubtitles(approved);
+    : (index: number) => stageStatus(index, approved, reopened, staleCleared);
+  const subtitles = created
+    ? CREATED_SUBTITLES
+    : stageSubtitles(approved, reopened, staleCleared);
 
   const document =
     created && stage === 0 ? (
@@ -626,7 +705,13 @@ export default function WorkspacePage() {
         </div>
         <div className="w-full shrink-0 border-t bg-card p-4 lg:w-[312px] lg:overflow-auto lg:border-t-0 lg:border-l">
           {stage === STRATEGY_STAGE_INDEX &&
-            (approved ? <ApprovedPanel /> : <DecisionPanel />)}
+            (reopened ? (
+              <ReopenedPanel />
+            ) : approved ? (
+              <ApprovedPanel />
+            ) : (
+              <DecisionPanel />
+            ))}
           <AiActionRail />
           <EvidencePanel />
         </div>

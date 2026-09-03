@@ -24,7 +24,10 @@ from marketing_os.adapters.documents import validate_tenant_id
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
 from marketing_os.schemas import DeliverableVersion
 
-_COLUMNS = "stage_key, version, content, created_at, feedback, feedback_source, supersedes_version"
+_COLUMNS = (
+    "stage_key, version, content, created_at, feedback, feedback_source, "
+    "supersedes_version, sequence"
+)
 
 
 def _to_version(row: tuple[Any, ...]) -> DeliverableVersion:
@@ -44,6 +47,7 @@ def _to_version(row: tuple[Any, ...]) -> DeliverableVersion:
         feedback=row[4],
         feedback_source=row[5],
         supersedes_version=row[6],
+        sequence=int(row[7]),
     )
 
 

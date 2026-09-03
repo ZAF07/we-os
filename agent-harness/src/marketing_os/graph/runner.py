@@ -419,6 +419,28 @@ async def _drive(
     return snapshot.values, _awaiting_stage(snapshot)
 
 
+def _initial_state(tenant: str, slug: str, feedback: str | None) -> dict[str, Any]:
+    """Build the state a fresh run starts from.
+
+    A re-opened stage carries the owner's feedback in on ``human_feedback``, the
+    same key an Approval Gate refusal sets, so one seeding path serves both:
+    "you approved this and have changed your mind" reaches the specialist as
+    "the owner sent this back", with the previous deliverable to revise.
+
+    Args:
+        tenant: The tenant the campaign runs for.
+        slug: The campaign slug.
+        feedback: What the owner wants changed, when re-opening a stage.
+
+    Returns:
+        The initial campaign state.
+    """
+    state: dict[str, Any] = {"tenant": tenant, "slug": slug}
+    if feedback:
+        state["human_feedback"] = feedback
+    return state
+
+
 async def awaiting_approval_stage(
     tenant: str,
     slug: str,
@@ -481,6 +503,7 @@ async def arun_campaign(
     document_store: DocumentStore | None = None,
     deliverable_store: DeliverableStore | None = None,
     resume: Command | None = None,
+    feedback: str | None = None,
 ) -> CampaignResult:
     """Run a campaign (or a single stage) to completion on the async graph path.
 
@@ -510,6 +533,10 @@ async def arun_campaign(
         resume: A :class:`~langgraph.types.Command` carrying a person's decision
             at an Approval Gate, which continues the checkpointed run from where
             it halted instead of starting a fresh one.
+        feedback: What the person wants changed, when this run re-opens a stage
+            they had already approved. Seeded onto the stage exactly as an
+            Approval Gate refusal is, so re-opening revises the previous
+            deliverable rather than starting from a blank page (ADR-0015).
 
     Returns:
         The structured campaign result. A run halted at an Approval Gate returns
@@ -537,7 +564,7 @@ async def arun_campaign(
             deliverable_store=deliverable_store,
         )
         config = _config(tenant, slug, stage)
-        inbound: Any = resume if resume is not None else {"tenant": tenant, "slug": slug}
+        inbound: Any = resume if resume is not None else _initial_state(tenant, slug, feedback)
         state, awaiting = await _drive(graph, inbound, config, trace, on_event)
         if awaiting is not None:
             _write_awaiting_summary(trace, awaiting, run_log)

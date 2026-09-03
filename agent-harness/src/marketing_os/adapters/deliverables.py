@@ -59,6 +59,7 @@ def next_version(
     content: str,
     feedback: str | None,
     feedback_source: str | None,
+    sequence: int = 0,
 ) -> DeliverableVersion:
     """Build the version that follows an existing history.
 
@@ -71,6 +72,7 @@ def next_version(
         content: The full deliverable markdown.
         feedback: The feedback that prompted this version, if any.
         feedback_source: ``human`` or ``reviewer``, if any.
+        sequence: The campaign-wide write order the store assigned.
 
     Returns:
         The next version, numbered one past the highest already stored.
@@ -84,6 +86,7 @@ def next_version(
         feedback=feedback,
         feedback_source=feedback_source,
         supersedes_version=highest or None,
+        sequence=sequence,
     )
 
 
@@ -196,9 +199,29 @@ class InMemoryDeliverableStore(VersionHistoryReader):
         """
         key = (tenant, slug, stage_key)
         stored = self._versions.setdefault(key, [])
-        version = next_version(stored, stage_key, content, feedback, feedback_source)
+        version = next_version(
+            stored, stage_key, content, feedback, feedback_source, self._next_sequence(tenant, slug)
+        )
         stored.append(version)
         return version
+
+    def _next_sequence(self, tenant: str, slug: str) -> int:
+        """Return the next campaign-wide write order number.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+
+        Returns:
+            One past the highest sequence already written for the campaign.
+        """
+        written = [
+            version.sequence
+            for (owner, campaign, _), versions in self._versions.items()
+            if owner == tenant and campaign == slug
+            for version in versions
+        ]
+        return max(written, default=0) + 1
 
     def _load(self, tenant: str, slug: str, stage_key: str) -> list[DeliverableVersion]:
         """Return one stage's stored versions in the order they were appended.
@@ -306,7 +329,9 @@ class FilesystemDeliverableStore(VersionHistoryReader):
         """
         path = self._history_file(tenant, slug, stage_key)
         stored = self._load(tenant, slug, stage_key)
-        version = next_version(stored, stage_key, content, feedback, feedback_source)
+        version = next_version(
+            stored, stage_key, content, feedback, feedback_source, self._next_sequence(tenant, slug)
+        )
         stored.append(version)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -325,11 +350,40 @@ class FilesystemDeliverableStore(VersionHistoryReader):
         Returns:
             The stage keys in mandatory pipeline order.
         """
+        return in_pipeline_order([path.stem for path in self._history_files(tenant, slug)])
+
+    def _history_files(self, tenant: str, slug: str) -> list[Path]:
+        """Return every stage history file a campaign has written.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+
+        Returns:
+            The history files, empty when the campaign has produced nothing.
+        """
         scoped = validate_tenant_id(tenant)
         directory = self._root / "tenants" / scoped / "campaigns" / slug / VERSIONS_DIR
         if not directory.is_dir():
             return []
-        return in_pipeline_order([path.stem for path in directory.glob("*.json")])
+        return list(directory.glob("*.json"))
+
+    def _next_sequence(self, tenant: str, slug: str) -> int:
+        """Return the next campaign-wide write order number.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+
+        Returns:
+            One past the highest sequence already written for the campaign.
+        """
+        written = [
+            version.sequence
+            for path in self._history_files(tenant, slug)
+            for version in self._load(tenant, slug, path.stem)
+        ]
+        return max(written, default=0) + 1
 
 
 def human_revisions_used(versions: list[DeliverableVersion]) -> int:

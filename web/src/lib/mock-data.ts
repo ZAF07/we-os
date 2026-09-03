@@ -386,20 +386,53 @@ export function upcomingItems(): CalendarItem[] {
 }
 
 /**
- * Returns a stage's canonical status, reflecting the approve flag.
+ * Returns a stage's canonical status, reflecting the approve and reopen flags.
+ *
+ * Re-opening Strategy marks every stage downstream of it Stale: the work still
+ * exists and is still readable, but it rests on a decision that has since been
+ * changed, so it is flagged rather than silently re-rendered as done. Stale work
+ * is never regenerated on its own — the owner re-runs it when they are ready.
  *
  * Args:
  *   stage: Stage index 0–7.
  *   approved: Whether the Fernway Strategy stage has been approved.
+ *   reopened: Whether Strategy has been re-opened since it was approved.
+ *   staleCleared: Whether the stale downstream work has since been re-run.
  *
  * Returns:
  *   The stage's status per the prototype's stageStatus logic.
  */
-export function stageStatus(stage: number, approved: boolean): Status {
+export function stageStatus(
+  stage: number,
+  approved: boolean,
+  reopened = false,
+  staleCleared = false,
+): Status {
   if (stage < 2) return "Approved";
-  if (stage === 2) return approved ? "Approved" : "Ready for review";
+  if (stage === 2) {
+    if (reopened) return "Ready for review";
+    return approved ? "Approved" : "Ready for review";
+  }
+  if (reopened && !staleCleared) return staleOrNotStarted(stage, approved);
   if (stage === 3) return approved ? "In progress" : "Not started";
   return "Not started";
+}
+
+/**
+ * Returns whether a downstream stage had produced work worth marking Stale.
+ *
+ * Staleness describes work that exists and has been superseded, never work that
+ * was never done — a stage that had not started is simply still Not started.
+ *
+ * Args:
+ *   stage: Stage index 0–7.
+ *   approved: Whether Strategy had been approved before it was re-opened.
+ *
+ * Returns:
+ *   `Stale` when the stage had produced work, `Not started` otherwise.
+ */
+function staleOrNotStarted(stage: number, approved: boolean): Status {
+  return stage === 3 && approved ? "Stale" : "Not started";
 }
 
 /**
@@ -407,11 +440,29 @@ export function stageStatus(stage: number, approved: boolean): Status {
  *
  * Args:
  *   approved: Whether the Fernway Strategy stage has been approved.
+ *   reopened: Whether Strategy has been re-opened since it was approved.
+ *   staleCleared: Whether the stale downstream work has since been re-run.
  *
  * Returns:
  *   Eight subtitle strings, one per stage.
  */
-export function stageSubtitles(approved: boolean): string[] {
+export function stageSubtitles(
+  approved: boolean,
+  reopened = false,
+  staleCleared = false,
+): string[] {
+  if (reopened && !staleCleared) {
+    return [
+      "Approved Jul 2",
+      "Approved Jul 8",
+      "Re-opened — awaiting your decision",
+      approved ? "Stale — re-run when ready" : "Starts after Strategy",
+      "Not started",
+      "Not started",
+      "Not started",
+      "Not started",
+    ];
+  }
   return [
     "Approved Jul 2",
     "Approved Jul 8",

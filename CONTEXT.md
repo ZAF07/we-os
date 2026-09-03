@@ -81,8 +81,12 @@ The markdown document a stage produces (e.g. `research.md`, `brand-strategy.md`)
 _Avoid_: output, artifact, document.
 
 **Stale**:
-The state of a deliverable whose upstream decision has since been re-opened and re-approved. A stale deliverable is not silently regenerated — it requires an explicit re-run, so creative never rests on superseded strategy without someone noticing.
+The state of a deliverable whose upstream decision has since been **re-opened** — from the moment the re-open happens, not once the revision is approved. A stale deliverable is not silently regenerated: it is flagged, and clearing it takes an explicit re-run, so creative never rests on superseded strategy without someone noticing. Staleness is *derived* from the version chain (a deliverable written before its input's newest version), never stored as a flag that could drift. A campaign with any stale deliverable cannot read as approved.
 _Avoid_: outdated, dirty, invalidated.
+
+**Re-open**:
+The owner's act of returning to a stage they already approved in order to revise it. Runs that stage alone, seeded with their written feedback and the deliverable they are reacting to, and marks everything downstream Stale. Distinct from a **revision** at an Approval Gate, which happens before the stage was ever approved (see [ADR-0015](docs/adr/0015-human-approval-gates-and-versioned-deliverables.md)).
+_Avoid_: reset, rollback, undo.
 
 **Stage**:
 One step of the mandatory pipeline, owned by exactly one role, producing exactly one deliverable. Stages never run out of order and never skip an upstream decision. Each stage carries an **approval policy** — `auto` (advance when the reviewer passes it) or `human` (halt at an Approval Gate).

@@ -209,6 +209,13 @@ class DeliverableVersion(BaseModel):
         feedback_source: ``human`` when a person sent the stage back, ``reviewer``
             when the QA reviewer did, or ``None`` for the first version.
         supersedes_version: The version this replaces, or ``None`` for the first.
+        sequence: A campaign-wide, strictly increasing write order. Version
+            numbers count *within* a stage, so they cannot say whether one
+            stage's deliverable was written before another's, and ``created_at``
+            cannot either — clocks tie, and a transaction timestamp is fixed for
+            its whole transaction. Downstream staleness is exactly a question
+            about that cross-stage order, so the store assigns it explicitly
+            rather than inferring it from a wall clock (ADR-0015).
     """
 
     stage_key: str
@@ -218,6 +225,7 @@ class DeliverableVersion(BaseModel):
     feedback: str | None = None
     feedback_source: str | None = None
     supersedes_version: int | None = None
+    sequence: int = 0
 
 
 class ApprovalDecision(BaseModel):
