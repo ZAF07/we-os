@@ -11,13 +11,13 @@ Type: task
 
 Every billable model call is recorded against its tenant with its cost, and the tenant's allowance is checked **before** the call rather than after.
 
-Today the only cost telemetry is per-run token usage folded into the run result — neither persisted per tenant nor capped — and the QA iteration limit bounds only the *automated* revision loop. Nothing bounds human revision, which slice 07 just introduced. With image generation arriving in a later PRD, one business clicking "try again" repeatedly costs real money with no ceiling and no record.
+Today the only cost telemetry is per-run token usage folded into the run result — neither persisted per tenant nor capped — and the QA iteration limit bounds only the _automated_ revision loop. Nothing bounds human revision, which slice 07 just introduced. With image generation arriving in a later PRD, one business clicking "try again" repeatedly costs real money with no ceiling and no record.
 
 Exceeding the allowance raises a typed quota failure, surfaced as **402**, so starting a run and revising a stage both carry that outcome in their contract. An endpoint that cannot fail with "quota exceeded" is an endpoint whose contract has to change later — which is why this is built while pre-revenue rather than after.
 
 Hard caps sit alongside the ledger: a maximum number of revisions per deliverable, and runs per campaign.
 
-How the allowance is *presented* — credits, fair use on a flat plan, metered billing — is deliberately out of scope. The mechanism is not.
+How the allowance is _presented_ — credits, fair use on a flat plan, metered billing — is deliberately out of scope. The mechanism is not.
 
 The ledger doubles as the unit-economics dataset: what a campaign, a revision, and a business actually cost.
 
@@ -42,7 +42,7 @@ End-to-end behaviour: run campaigns until the allowance is exhausted, see work r
 ## Completion
 
 - Completed: 2026-09-03
-- Commit: <to be filled in manually>
+- Commit: 8d43b48017616ec3292446ba0f9fb895be5135c9
 
 ### Evidence per criterion
 
