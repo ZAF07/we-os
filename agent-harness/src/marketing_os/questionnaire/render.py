@@ -19,6 +19,8 @@ REQUIRED_HEADING = "## Required (the agent will not start without these)"
 RECOMMENDED_HEADING = "## Recommended (sharper inputs = sharper output)"
 RECOMMENDED_SECTION = "Recommended"
 
+BUSINESS_NAME_QUESTION = "q_business_name"
+
 _PREAMBLE = (
     "> Authored by the business through the we-OS questionnaire. "
     "The structured answers are the source of truth; this file is their canonical "
@@ -43,6 +45,26 @@ def _render_field(question: Question, answer: str) -> list[str]:
     return [f"- **{question.field}:**", *[f"  - {line.lstrip('-* ')}" for line in lines]]
 
 
+def _title_for(record: BrandDnaRecord, fallback: str) -> str:
+    """Return the name the Brand DNA titles itself with.
+
+    The structured answers are the source of truth and this markdown their
+    projection (ADR-0018), so the business's own answer is authoritative over the
+    identity provider's organization name.
+
+    Args:
+        record: The business's stored answers.
+        fallback: The name to use when the Business name question is unanswered.
+
+    Returns:
+        The answered business name, or the fallback.
+    """
+    answer = record.answer_for(BUSINESS_NAME_QUESTION)
+    if answer and answer.strip():
+        return answer.strip().splitlines()[0].strip()
+    return fallback
+
+
 def render_brand_dna(
     questionnaire: Questionnaire, record: BrandDnaRecord, *, business_name: str
 ) -> str:
@@ -56,11 +78,15 @@ def render_brand_dna(
         questionnaire: The published question set defining the fields and their
             order and sections.
         record: The business's stored answers.
-        business_name: The business's display name, used in the title.
+        business_name: The name to title the document with when the business has
+            not answered the Business name question — the verified identity's
+            organization name. The answer wins when there is one, so editing it
+            moves the heading rather than leaving a second, stale name behind.
 
     Returns:
         The Brand DNA markdown, ready to write to the tenant's ``dna.md``.
     """
+    title = _title_for(record, business_name)
     required_lines: list[str] = []
     recommended_lines: list[str] = []
     current_section: str | None = None
@@ -76,7 +102,7 @@ def render_brand_dna(
             target.extend(["", f"### {question.section}"])
         target.extend(_render_field(question, answer))
 
-    body = [f"# Brand DNA — {business_name}", "", _PREAMBLE, "", REQUIRED_HEADING]
+    body = [f"# Brand DNA — {title}", "", _PREAMBLE, "", REQUIRED_HEADING]
     body.extend(required_lines)
     if recommended_lines:
         body.extend(["", RECOMMENDED_HEADING, "", *recommended_lines])

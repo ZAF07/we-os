@@ -96,6 +96,7 @@ policy to scope.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 TENANT_SETTING = "marketing_os.tenant_id"
@@ -139,6 +140,8 @@ CREATE TABLE IF NOT EXISTS runs (
 DROP INDEX IF EXISTS runs_one_active_per_campaign;
 CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_campaign
     ON runs (tenant_id, slug) WHERE status IN ('running', 'awaiting_approval');
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT '';
+
 CREATE INDEX IF NOT EXISTS runs_by_status ON runs (status);
 
 CREATE TABLE IF NOT EXISTS questionnaires (
@@ -219,6 +222,58 @@ TABLES = (
 )
 
 
+def _parse_expected_columns(ddl: str) -> dict[str, tuple[str, ...]]:
+    """Read each table's column names out of the schema DDL.
+
+    Deriving the expectation from the DDL rather than restating it keeps the two
+    from drifting: a column added to :data:`SCHEMA_SQL` is checked for from the
+    moment it is written, with nothing to remember to update.
+
+    Args:
+        ddl: The schema DDL, as one script.
+
+    Returns:
+        Each table name mapped to its declared column names, in order.
+    """
+    expected: dict[str, tuple[str, ...]] = {}
+    for match in re.finditer(r"CREATE TABLE IF NOT EXISTS\s+(\w+)\s*\((.*?)\n\);", ddl, re.DOTALL):
+        table, body = match.group(1), match.group(2)
+        columns = []
+        for line in body.splitlines():
+            stripped = line.strip().rstrip(",")
+            if not stripped or stripped.upper().startswith(("PRIMARY KEY", "UNIQUE", "CONSTRAINT")):
+                continue
+            columns.append(stripped.split()[0])
+        expected[table] = tuple(columns)
+    for match in re.finditer(r"ALTER TABLE\s+(\w+)\s+ADD COLUMN IF NOT EXISTS\s+(\w+)", ddl):
+        table, column = match.group(1), match.group(2)
+        if table in expected and column not in expected[table]:
+            expected[table] = (*expected[table], column)
+    return expected
+
+
+def _parse_expected_indexes(ddl: str) -> dict[str, str]:
+    """Read each index name and the table it belongs to out of the schema DDL.
+
+    Args:
+        ddl: The schema DDL, as one script.
+
+    Returns:
+        Each index name mapped to its table.
+    """
+    return {
+        match.group(1): match.group(2)
+        for match in re.finditer(
+            r"CREATE (?:UNIQUE )?INDEX IF NOT EXISTS\s+(\w+)\s+\n?\s*ON\s+(\w+)", ddl
+        )
+    }
+
+
+EXPECTED_COLUMNS = _parse_expected_columns(SCHEMA_SQL)
+
+EXPECTED_INDEXES = _parse_expected_indexes(SCHEMA_SQL)
+
+
 def ensure_schema(connection: Any) -> None:
     """Create the harness tables, indexes and policies if they are absent.
 
@@ -248,6 +303,50 @@ def missing_tables(connection: Any) -> list[str]:
     ).fetchall()
     present = {row[0] for row in rows}
     return [name for name in TABLES if name not in present]
+
+
+def schema_drift(connection: Any) -> list[str]:
+    """Return everything the database is missing, table by table.
+
+    ``missing_tables`` answers presence only, which a database provisioned before
+    a column existed passes — and it then fails on the first query naming that
+    column, which is the confusing error the check exists to prevent. This looks
+    at columns and indexes too, so an out-of-date database is named as stale
+    while there is still something useful to say about it.
+
+    Args:
+        connection: An open psycopg connection.
+
+    Returns:
+        Human-readable descriptions of each absent table, column and index,
+        empty when the database matches the schema.
+    """
+    absent_tables = missing_tables(connection)
+    present_tables = [name for name in TABLES if name not in absent_tables]
+    drift = [f"table {name}" for name in absent_tables]
+
+    rows = connection.execute(
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = ANY(%s)",
+        (present_tables,),
+    ).fetchall()
+    present_columns: dict[str, set[str]] = {}
+    for table, column in rows:
+        present_columns.setdefault(table, set()).add(column)
+    for table in present_tables:
+        for column in EXPECTED_COLUMNS[table]:
+            if column not in present_columns.get(table, set()):
+                drift.append(f"column {table}.{column}")
+
+    index_rows = connection.execute(
+        "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = ANY(%s)",
+        (list(EXPECTED_INDEXES),),
+    ).fetchall()
+    present_indexes = {row[0] for row in index_rows}
+    for index, table in EXPECTED_INDEXES.items():
+        if index not in present_indexes and table in present_tables:
+            drift.append(f"index {index} on {table}")
+    return drift
 
 
 def grant_application_role_sql(role: str) -> str:

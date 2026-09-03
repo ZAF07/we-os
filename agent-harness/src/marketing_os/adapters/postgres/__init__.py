@@ -17,7 +17,7 @@ from marketing_os.adapters.postgres.questionnaire import (
     PostgresQuestionnaireStore,
 )
 from marketing_os.adapters.postgres.runs import PostgresRunStore
-from marketing_os.adapters.postgres.schema import ensure_schema, missing_tables
+from marketing_os.adapters.postgres.schema import ensure_schema, missing_tables, schema_drift
 from marketing_os.adapters.postgres.tenants import PostgresTenantDirectory
 from marketing_os.adapters.postgres.usage import PostgresUsageLedger
 from marketing_os.config import Settings
@@ -34,6 +34,7 @@ __all__ = [
     "PostgresUsageLedger",
     "ensure_schema",
     "missing_tables",
+    "schema_drift",
 ]
 
 
@@ -74,20 +75,21 @@ class PostgresBackend:
         too, so nothing here needs DDL rights.
 
         Raises:
-            ConfigError: If the harness tables are absent. The service does not
-                create them — it connects as a role without those rights — so it
-                names the command that does rather than failing later on a query.
+            ConfigError: If the schema is absent or out of date. The service does
+                not create or alter tables — it connects as a role without those
+                rights — so it names the command that does rather than failing
+                later on a query against a column that is not there.
         """
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from psycopg_pool import ConnectionPool
 
         self._pool = ConnectionPool(self.dsn, open=True)
         with self._pool.connection() as connection:
-            absent = missing_tables(connection)
-        if absent:
+            drift = schema_drift(connection)
+        if drift:
             raise ConfigError(
-                f"Postgres is missing the harness tables: {', '.join(absent)}. "
-                "Provision the database first: marketing-os init-db --dsn <admin dsn>."
+                f"Postgres is out of date. Missing: {', '.join(drift)}. "
+                "Bring the database up to date: marketing-os init-db --dsn <admin dsn>."
             )
 
         self._checkpointer_context = AsyncPostgresSaver.from_conn_string(self.dsn)
