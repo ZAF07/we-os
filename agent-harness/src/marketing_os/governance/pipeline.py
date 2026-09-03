@@ -1,21 +1,30 @@
 """The mandatory decision pipeline.
 
-Encodes the stage order, who owns each stage, the deliverable each writes, and
-the prerequisite deliverable that gates it. A stage cannot start until its
-prerequisite deliverable exists in the document store — the same
-"deliverable-exists is the gate" rule the orchestrator skill enforces. Never
-reordered, never skipped.
+Encodes the stage order, who owns each stage, the deliverable each writes, the
+prerequisite deliverable that gates it, and whether a person must approve it. A
+stage cannot start until its prerequisite deliverable exists in the document
+store — the same "deliverable-exists is the gate" rule the orchestrator skill
+enforces. Never reordered, never skipped.
+
+The **approval policy** is data rather than code (ADR-0015): ``auto`` advances
+on a passing QA verdict, ``human`` halts at an Approval Gate until a person says
+yes. Tightening or loosening the gates is therefore a configuration change
+(:func:`apply_approval_policies`), not a rewrite of the graph.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from marketing_os.ports import DocumentStore
 
 # Sentinel for stages the Marketing Director (orchestrator) owns directly,
 # rather than delegating to a specialist subagent.
 DIRECTOR = "marketing-director"
+
+# The two approval policies a stage can carry.
+AUTO = "auto"
+HUMAN = "human"
 
 
 @dataclass(frozen=True)
@@ -29,6 +38,11 @@ class Stage:
         prerequisite: The deliverable filename required first, or ``None`` when the
             stage is gated only by Stage 0.
         task: The brief handed to the agent, formatted with paths and context.
+        approval_policy: :data:`AUTO` to advance on a passing QA verdict, or
+            :data:`HUMAN` to halt at an Approval Gate until a person approves.
+        phase: The operator-facing grouping the stage belongs to. A phase may
+            cover more than one stage; phases are presentation and stages stay
+            canonical, so the engine never adopts UI vocabulary (ADR-0017).
     """
 
     key: str
@@ -36,6 +50,8 @@ class Stage:
     deliverable: str
     prerequisite: str | None
     task: str
+    approval_policy: str = HUMAN
+    phase: str = ""
 
 
 # Order is mandatory and mirrors .claude/rules/decision-hierarchy.md +
@@ -54,6 +70,8 @@ PIPELINE: list[Stage] = [
             "only, no strategy. Cite the framework behind each finding and flag gaps "
             "honestly. Save the result to {deliverable_path}."
         ),
+        approval_policy=AUTO,
+        phase="Research",
     ),
     Stage(
         key="brand-strategy",
@@ -67,6 +85,7 @@ PIPELINE: list[Stage] = [
             "each explained with the 'why', grounded in a research finding. Save to "
             "{deliverable_path}."
         ),
+        phase="Strategy",
     ),
     Stage(
         key="campaign-strategy",
@@ -81,6 +100,7 @@ PIPELINE: list[Stage] = [
             "plan will make the channel mix and spend allocation concrete. Tie every "
             "choice to the business objective. Save to {deliverable_path}."
         ),
+        phase="Strategy",
     ),
     Stage(
         key="performance-plan",
@@ -97,6 +117,7 @@ PIPELINE: list[Stage] = [
             "metrics before recommending spend; tie every recommendation to the "
             "business KPI. Save to {deliverable_path}."
         ),
+        phase="Plan",
     ),
     Stage(
         key="creative-brief",
@@ -112,6 +133,7 @@ PIPELINE: list[Stage] = [
             "format spec — briefs only, no generation prompts. Tie every concept to the "
             "business objective. Save to {deliverable_path}."
         ),
+        phase="Produce",
     ),
     Stage(
         key="asset-prompts",
@@ -125,6 +147,7 @@ PIPELINE: list[Stage] = [
             "placement and format spec the brief names — invent no new strategy. Ground "
             "in the DNA at {dna_path}. Save to {deliverable_path}."
         ),
+        phase="Produce",
     ),
 ]
 
@@ -160,3 +183,27 @@ def prerequisite_met(store: DocumentStore, tenant: str, slug: str, stage: Stage)
     if stage.prerequisite is None:
         return True
     return store.exists(tenant, f"campaigns/{slug}/{stage.prerequisite}")
+
+
+def apply_approval_policies(stages: list[Stage], human_stages: list[str] | None) -> list[Stage]:
+    """Return the pipeline with its approval policies set from configuration.
+
+    The policy is data, so an operator tunes the friction without a rewrite
+    (ADR-0015). ``human_stages`` names every stage that halts at an Approval
+    Gate; each other stage advances on a passing QA verdict. ``None`` means no
+    configuration was supplied, so the shipped defaults stand.
+
+    Args:
+        stages: The pipeline stages to re-policy, in order.
+        human_stages: The stage keys requiring human approval, or ``None`` to
+            keep each stage's shipped policy.
+
+    Returns:
+        The stages in the same order, each carrying its configured policy.
+    """
+    if human_stages is None:
+        return list(stages)
+    required = set(human_stages)
+    return [
+        replace(stage, approval_policy=HUMAN if stage.key in required else AUTO) for stage in stages
+    ]

@@ -18,6 +18,7 @@ from conftest import (
     SLUG,
     TENANT,
     install_scripted_graph,
+    run_without_approval_gates,
     write_all_agent_specs,
 )
 from marketing_os.config import Settings
@@ -78,8 +79,9 @@ def test_new_campaign_single_stage_writes_deliverable(
 
 
 def test_new_campaign_full_pipeline_runs_every_stage(
-    cli: None, repo: Path, capsys: pytest.CaptureFixture[str]
+    cli: None, repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    run_without_approval_gates(monkeypatch)
     write_all_agent_specs(Settings(root=repo))
     code = main(["new-campaign", "acme"])
     out = capsys.readouterr().out
@@ -196,3 +198,14 @@ def test_an_absent_question_set_file_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError):
         load_questionnaire_file(tmp_path / "nope.json")
+
+
+def test_new_campaign_reports_a_run_waiting_on_approval(
+    cli: None, repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_all_agent_specs(Settings(root=repo))
+    code = main(["new-campaign", "acme"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "waiting for your approval of 'brand-strategy'" in out
+    assert "complete" not in out

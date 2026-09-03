@@ -82,6 +82,20 @@ def authenticate(app: Any, tenant: str = TENANT, user: str | None = None) -> Non
     app.dependency_overrides[get_identity] = lambda: identity_for(tenant, user)
 
 
+def run_without_approval_gates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set every stage's approval policy to ``auto`` for this test.
+
+    The approval policy is data (ADR-0015), so a test about pipeline traversal
+    turns the gates off through the same configuration lever an operator would,
+    rather than through a code path only tests can reach. An empty value means
+    "no stage is gated", which is distinct from the variable being unset.
+
+    Args:
+        monkeypatch: The pytest monkeypatch fixture.
+    """
+    monkeypatch.setenv("MARKETING_OS_HUMAN_GATES", "")
+
+
 PASS_VERDICT = ReviewVerdict(passed=True, summary="ok")
 FAIL_VERDICT = ReviewVerdict(
     passed=False,
@@ -659,6 +673,11 @@ def postgres_dsn(postgres_superuser_dsn: str) -> str:
 def postgres_pool(postgres_dsn: str, postgres_superuser_dsn: str) -> Iterator[Any]:
     """Yield a fresh connection pool over empty tables.
 
+    Every harness table is truncated, derived from the schema's own table list
+    rather than spelled out here — a table added to the schema and forgotten in a
+    hand-written list leaks rows between tests, which shows up as a failure in
+    whichever test happens to run second.
+
     Args:
         postgres_dsn: The application role's connection string.
         postgres_superuser_dsn: The admin connection string, used to truncate.
@@ -669,7 +688,9 @@ def postgres_pool(postgres_dsn: str, postgres_superuser_dsn: str) -> Iterator[An
     import psycopg
     from psycopg_pool import ConnectionPool
 
+    from marketing_os.adapters.postgres.schema import TABLES
+
     with psycopg.connect(postgres_superuser_dsn, autocommit=True) as connection:
-        connection.execute("TRUNCATE documents, runs, tenants, questionnaires, dna_answers")
+        connection.execute(f"TRUNCATE {', '.join(TABLES)}")
     with ConnectionPool(postgres_dsn, open=True) as pool:
         yield pool

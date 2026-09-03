@@ -1,13 +1,20 @@
-"""Graph nodes — the gate, per-stage specialist, and per-stage QA review.
+"""Graph nodes — the gate, per-stage specialist, QA review, and Approval Gate.
 
-Each stage contributes three nodes wired by :mod:`marketing_os.graph.graph`:
+Each stage contributes four nodes wired by :mod:`marketing_os.graph.graph`:
 
 * ``<stage>__enter`` validates the prerequisite, resets the per-stage working
   state, and seeds the task (with the Brand DNA) as the first message.
 * ``<stage>__specialist`` runs the specialist agent's tool-use loop and folds its
   token usage into state.
 * ``<stage>__review`` verifies the deliverable was saved (forcing a save-retry if
-  not), scores it against the rubric, and records the routing decision.
+  not), scores it against the rubric, records the version it produced, and sets
+  the routing decision.
+* ``<stage>__approval`` halts a ``human``-policy stage on a LangGraph
+  ``interrupt()`` until a person approves it or sends it back with feedback.
+
+The Approval Gate is deliberately not the QA reviewer. The reviewer is a model
+scoring a deliverable against a Guardrail; the gate is a person's decision. Both
+can send a stage back, but only the gate blocks progress on a human (ADR-0015).
 
 Routing decisions are stored on ``state["route"]`` and read by the router
 functions so the branching logic lives in one place.
@@ -22,15 +29,21 @@ from langchain_core.messages import BaseMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import Runnable
 from langgraph.config import get_stream_writer
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
+from langgraph.types import interrupt
 
+from marketing_os.adapters.deliverables import (
+    HUMAN_FEEDBACK,
+    REVIEWER_FEEDBACK,
+    human_revisions_used,
+)
 from marketing_os.adapters.observability import get_logger
 from marketing_os.config import Settings
 from marketing_os.governance import load_governance
 from marketing_os.governance.gate import check_gate
-from marketing_os.governance.pipeline import Stage, prerequisite_met, stage_document
+from marketing_os.governance.pipeline import HUMAN, Stage, prerequisite_met, stage_document
 from marketing_os.graph.state import CampaignState
-from marketing_os.ports import DocumentStore, Reviewer
-from marketing_os.schemas import StageResult
+from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer
+from marketing_os.schemas import ApprovalDecision, StageResult
 
 _LOGGER = get_logger("marketing_os.graph")
 
@@ -218,6 +231,36 @@ def _stage_task(slug: str, stage: Stage) -> str:
     )
 
 
+def _stage_seed_body(slug: str, stage: Stage, feedback: str | None, previous: str | None) -> str:
+    """Build the specialist's seed body for a stage attempt.
+
+    A first attempt is seeded with the stage's task. An attempt following an
+    Approval Gate refusal is seeded with the person's written feedback and the
+    draft they refused, so the specialist revises what was rejected rather than
+    starting from a blank page and losing everything that already passed.
+
+    Args:
+        slug: The campaign slug.
+        stage: The pipeline stage being entered.
+        feedback: The person's feedback from the Approval Gate, if any.
+        previous: The draft the person refused, if it is still on state.
+
+    Returns:
+        The seed body to compose with the Brand DNA.
+    """
+    task = _stage_task(slug, stage)
+    if not feedback:
+        return f"{_path_anchor(slug)}\n\n# Your task\n\n{task}"
+    draft = f"## Previous draft\n\n{previous}\n\n" if previous else ""
+    return (
+        f"{_path_anchor(slug)}\n\n# Your task\n\n{task}\n\n"
+        f"# Feedback from the business owner\n\nThe owner reviewed your previous "
+        f"work and sent it back. Address their feedback in full, keeping everything "
+        f"they did not object to.\n\n{draft}"
+        f"## What they asked for\n\n{feedback}"
+    )
+
+
 def make_gate_node(settings: Settings, store: DocumentStore) -> CampaignNode:
     """Build the Stage 0 gate node.
 
@@ -280,8 +323,13 @@ def make_enter_node(stage: Stage, store: DocumentStore) -> CampaignNode:
             state: The campaign state carrying the tenant, slug, and DNA.
 
         Returns:
-            A state update seeding a fresh specialist conversation, or an error
-            and halt flag if the prerequisite deliverable is missing.
+            A state update seeding a fresh specialist conversation — carrying the
+            person's feedback when the stage was sent back from its Approval Gate
+            — or an error and halt flag if the prerequisite deliverable is missing.
+
+            ``human_feedback`` is deliberately **not** cleared here: the review
+            node needs it to record on the version this attempt produces. The
+            Approval Gate clears it once the person has decided again.
         """
         slug = state["slug"]
         tenant = state["tenant"]
@@ -297,8 +345,8 @@ def make_enter_node(stage: Stage, store: DocumentStore) -> CampaignNode:
                 "route": "end",
             }
         _emit("stage.start", slug=slug, stage=stage.key, agent=stage.agent)
-        task = _stage_task(slug, stage)
-        task_body = f"{_path_anchor(slug)}\n\n# Your task\n\n{task}"
+        feedback = state.get("human_feedback")
+        task_body = _stage_seed_body(slug, stage, feedback, state.get("deliverable_text"))
         return {
             "messages": _fresh_conversation(state["dna_text"], task_body),
             "qa_iterations": 0,
@@ -356,7 +404,11 @@ def make_specialist_node(settings: Settings, stage: Stage, agent: Runnable) -> A
 
 
 def make_review_node(
-    settings: Settings, stage: Stage, reviewer: Reviewer, store: DocumentStore
+    settings: Settings,
+    stage: Stage,
+    reviewer: Reviewer,
+    store: DocumentStore,
+    deliverables: DeliverableStore,
 ) -> AsyncCampaignNode:
     """Build a stage's QA review node.
 
@@ -365,9 +417,11 @@ def make_review_node(
         stage: The pipeline stage this node reviews.
         reviewer: The QA reviewer scoring the deliverable.
         store: The document store the deliverable resolves through.
+        deliverables: The store each passing deliverable is versioned into.
 
     Returns:
-        A node that verifies the save, scores the deliverable, and routes.
+        A node that verifies the save, scores the deliverable, records its
+        version, and routes.
     """
     budget = settings.max_qa_iterations
 
@@ -415,19 +469,21 @@ def make_review_node(
                 verdict=verdict,
                 approved=True,
             )
+            version = _record_version(deliverables, state, stage, text)
             _emit(
                 "stage.done",
                 slug=slug,
                 stage=stage.key,
                 deliverable=rel,
                 qa_iterations=qa_iterations,
+                version=version,
             )
             return {
                 "deliverable_text": text,
                 "verdict": verdict.model_dump(),
                 "results": [result.model_dump()],
                 "usage": usage,
-                "route": "advance",
+                "route": "approval" if stage.approval_policy == HUMAN else "advance",
             }
 
         if qa_iterations >= budget:
@@ -477,6 +533,117 @@ def make_review_node(
         }
 
     return review_node
+
+
+def _record_version(
+    deliverables: DeliverableStore, state: CampaignState, stage: Stage, text: str
+) -> int:
+    """Append the passing deliverable as a new immutable version.
+
+    The feedback that prompted this attempt — a person's at the Approval Gate, or
+    the QA reviewer's within the revision loop — is recorded on the version, so
+    the history answers "why did this change?" rather than only "what changed?".
+    Nothing is overwritten (ADR-0015).
+
+    Args:
+        deliverables: The store holding the version chain.
+        state: The campaign state after the specialist ran.
+        stage: The stage whose deliverable passed.
+        text: The full deliverable markdown as saved.
+
+    Returns:
+        The version number assigned to this deliverable.
+    """
+    human_feedback = state.get("human_feedback")
+    verdict = state.get("verdict")
+    if human_feedback:
+        feedback, source = human_feedback, HUMAN_FEEDBACK
+    elif verdict and not verdict.get("passed"):
+        feedback, source = str(verdict.get("summary", "")), REVIEWER_FEEDBACK
+    else:
+        feedback, source = None, None
+    version = deliverables.append(
+        state["tenant"],
+        state["slug"],
+        stage.key,
+        text,
+        feedback=feedback,
+        feedback_source=source,
+    )
+    return version.version
+
+
+def make_approval_node(
+    settings: Settings, stage: Stage, deliverables: DeliverableStore
+) -> CampaignNode:
+    """Build a stage's Approval Gate node.
+
+    Only reached by ``human``-policy stages. The node halts the run on a
+    LangGraph ``interrupt()``, which suspends the graph at this point and
+    persists it to the checkpointer — which is why a durable checkpointer is a
+    hard prerequisite rather than a parallel chore (ADR-0015): a halted run must
+    survive a restart and still be approvable afterwards.
+
+    The revision cap is enforced **here**, in the graph, rather than only at the
+    HTTP edge, so every driver of the pipeline is bound by it — an endpoint is
+    not the only thing that can resume a run. Both the count shown to the person
+    and the count the cap tests come from the deliverable's version chain, so
+    there is one answer to "how many revisions have I used?" rather than two.
+
+    Args:
+        settings: The harness settings (for the per-deliverable revision cap).
+        stage: The pipeline stage this gate guards.
+        deliverables: The store the stage's version history is read from.
+
+    Returns:
+        A node that waits for a person's decision and routes on their answer.
+    """
+    cap = settings.max_revisions
+
+    def approval_node(state: CampaignState) -> dict[str, Any]:
+        """Halt until a person approves the stage or sends it back with feedback.
+
+        Args:
+            state: The campaign state after the stage passed QA.
+
+        Returns:
+            A state update routing to the next stage on approval, or back into
+            this stage carrying the person's feedback on a refusal.
+        """
+        slug = state["slug"]
+        spent = human_revisions_used(deliverables.history(state["tenant"], slug, stage.key))
+        remaining = max(cap - spent, 0)
+        _emit(
+            "stage.awaiting_approval",
+            slug=slug,
+            stage=stage.key,
+            revisions_used=spent,
+            revisions_allowed=cap,
+        )
+        decision = ApprovalDecision(
+            **interrupt(
+                {
+                    "stage": stage.key,
+                    "deliverable": stage_document(slug, stage),
+                    "revisions_used": spent,
+                    "revisions_allowed": cap,
+                }
+            )
+        )
+        if decision.approved:
+            _emit("stage.approved", slug=slug, stage=stage.key)
+            return {"human_feedback": None, "route": "advance"}
+        if remaining <= 0:
+            _emit("stage.revision_limit", slug=slug, stage=stage.key, revisions_allowed=cap)
+            return {
+                "error": {"type": "revision_limit", "stage": stage.key, "limit": cap},
+                "halt": True,
+                "route": "fail",
+            }
+        _emit("stage.revision_requested", slug=slug, stage=stage.key, revision=spent + 1)
+        return {"human_feedback": decision.feedback, "route": "revise"}
+
+    return approval_node
 
 
 def _handle_missing_deliverable(
@@ -537,6 +704,19 @@ def route_after_review(state: CampaignState) -> str:
         state: The campaign state after the review node ran.
 
     Returns:
-        ``"revise"``, ``"advance"``, or ``"fail"``.
+        ``"revise"``, ``"approval"``, ``"advance"``, or ``"fail"``.
     """
     return state.get("route", "fail")
+
+
+def route_after_approval(state: CampaignState) -> str:
+    """Route out of a stage's Approval Gate node.
+
+    Args:
+        state: The campaign state after the person decided.
+
+    Returns:
+        ``"advance"`` when approved, ``"revise"`` to re-run the stage with the
+        feedback, or ``"fail"`` when the deliverable's revision cap is spent.
+    """
+    return state.get("route", "advance")

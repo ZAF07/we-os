@@ -1,6 +1,6 @@
 """The Postgres schema the harness owns, and how tenant isolation is enforced in it.
 
-Five tables (ADR-0014, ADR-0018):
+Six tables (ADR-0014, ADR-0015, ADR-0018):
 
 ``tenants``
     The pairing the identity provider cannot be trusted to hold. ``tenant_id``
@@ -21,10 +21,12 @@ Five tables (ADR-0014, ADR-0018):
 ``runs``
     The one-active-run-per-campaign claim, who holds it, and each run's
     lifecycle status. The partial unique index is what makes the claim real: a
-    second ``running`` row for the same ``(tenant_id, slug)`` cannot exist, so
-    the guard is Postgres's to enforce rather than a check some new call site
-    can forget. ``user_id`` records the person driving the campaign, since one
-    campaign is run by one person at a time.
+    second live row for the same ``(tenant_id, slug)`` cannot exist, so the
+    guard is Postgres's to enforce rather than a check some new call site can
+    forget. The index covers ``awaiting_approval`` as well as ``running``,
+    because a run halted at an Approval Gate still owns its campaign — it is
+    going to be resumed (ADR-0015). ``user_id`` records the person driving the
+    campaign, since one campaign is run by one person at a time.
 
 ``questionnaires``
     The admin-curated question set, one row per published version, holding its
@@ -33,6 +35,14 @@ Five tables (ADR-0014, ADR-0018):
     publishes is what the wizard renders and what the DNA Gate enforces as
     Required (ADR-0018). Versioning it in the database is what lets the admin
     improve onboarding without a deploy.
+
+``deliverable_versions``
+    The immutable version chain behind each stage's deliverable — the content,
+    the feedback that prompted it, and whether that feedback came from a person
+    or the QA reviewer (ADR-0015). Append-only by design: the primary key on
+    ``(tenant_id, slug, stage_key, version)`` is what stops a revision
+    overwriting the version it supersedes, so "nothing is overwritten" is the
+    database's guarantee rather than a convention each call site must keep.
 
 ``dna_answers``
     Each business's answers to those questions — the *source of truth* for the
@@ -51,7 +61,8 @@ provisions with an administrative DSN; the service only checks the tables are
 there and says what to run if they are not.
 
 **Row-level security backstops the tenant-partitioned tables.** Every read and
-write of ``documents`` and ``dna_answers`` runs inside a transaction that has set
+write of ``documents``, ``dna_answers`` and ``deliverable_versions`` runs inside a
+transaction that has set
 ``marketing_os.tenant_id``, and the policy admits only rows matching it — so even
 a query that forgot its ``WHERE tenant_id`` clause returns nothing across
 tenants. ``FORCE ROW LEVEL SECURITY`` extends the policy to the table's owner. It
@@ -59,7 +70,7 @@ does **not** extend to superusers or roles with ``BYPASSRLS``: the application
 must connect as an ordinary role, which is what
 :func:`grant_application_role_sql` provisions.
 
-RLS is applied to the two tenant-partitioned tables and not to ``runs``, because
+RLS is applied to the three tenant-partitioned tables and not to ``runs``, because
 resolving runs left over from a crash is a cross-tenant maintenance sweep with no
 tenant in scope; the runs queries carry an explicit ``tenant_id`` predicate on
 every tenant-facing path instead. ``questionnaires`` is not partitioned at all —
@@ -106,8 +117,9 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at double precision NOT NULL DEFAULT 0
 );
 
+DROP INDEX IF EXISTS runs_one_active_per_campaign;
 CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_campaign
-    ON runs (tenant_id, slug) WHERE status = 'running';
+    ON runs (tenant_id, slug) WHERE status IN ('running', 'awaiting_approval');
 CREATE INDEX IF NOT EXISTS runs_by_status ON runs (status);
 
 CREATE TABLE IF NOT EXISTS questionnaires (
@@ -115,6 +127,26 @@ CREATE TABLE IF NOT EXISTS questionnaires (
     published_at timestamptz NOT NULL DEFAULT now(),
     questions    jsonb NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS deliverable_versions (
+    tenant_id          text NOT NULL,
+    slug               text NOT NULL,
+    stage_key          text NOT NULL,
+    version            integer NOT NULL,
+    content            text NOT NULL,
+    feedback           text,
+    feedback_source    text,
+    supersedes_version integer,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, slug, stage_key, version)
+);
+
+ALTER TABLE deliverable_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE deliverable_versions FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS deliverable_versions_tenant_isolation ON deliverable_versions;
+CREATE POLICY deliverable_versions_tenant_isolation ON deliverable_versions
+    USING (tenant_id = current_setting('{TENANT_SETTING}', true))
+    WITH CHECK (tenant_id = current_setting('{TENANT_SETTING}', true));
 
 CREATE TABLE IF NOT EXISTS dna_answers (
     tenant_id            text NOT NULL,
@@ -134,7 +166,14 @@ CREATE POLICY dna_answers_tenant_isolation ON dna_answers
 """
 
 
-TABLES = ("tenants", "documents", "runs", "questionnaires", "dna_answers")
+TABLES = (
+    "tenants",
+    "documents",
+    "runs",
+    "questionnaires",
+    "dna_answers",
+    "deliverable_versions",
+)
 
 
 def ensure_schema(connection: Any) -> None:

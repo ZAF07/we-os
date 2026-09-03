@@ -4,6 +4,12 @@ A single flat :class:`CampaignState` carries both campaign-level data (tenant,
 DNA, accumulated results, usage) and the per-stage working set for the QA loop
 (the specialist conversation, the current verdict, and the retry counters). The
 per-stage working keys are reset at each stage's entry node.
+
+``revisions`` is the exception to that reset: it counts human revision rounds
+per stage for the lifetime of the run, so an Approval Gate can tell the person how
+many of their revisions they have spent. Which stage is currently waiting is
+deliberately **not** kept here — it is read from the checkpoint's pending
+interrupt, which is the one place that stays true across a restart.
 """
 
 from __future__ import annotations
@@ -49,6 +55,10 @@ class CampaignState(TypedDict, total=False):
         qa_iterations: The current stage's completed QA revision rounds.
         save_retries: The current stage's completed save-retry prompts.
         route: The routing decision the review node produced for the router.
+        human_feedback: The written feedback a person sent the current stage back
+            with, applied on the next specialist attempt.
+        revisions: Completed human revision rounds, per stage key, which is what
+            the per-deliverable revision cap counts.
     """
 
     tenant: str
@@ -65,3 +75,5 @@ class CampaignState(TypedDict, total=False):
     qa_iterations: int
     save_retries: int
     route: str
+    human_feedback: str | None
+    revisions: dict[str, int]

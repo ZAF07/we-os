@@ -122,6 +122,63 @@ class RunConflictError(MarketingOSError):
         }
 
 
+class StageNotAwaitingApprovalError(MarketingOSError):
+    """A stage was approved or revised while nothing was waiting at its gate.
+
+    Raised when the named stage is not the one holding the run — because the run
+    already advanced past it, never reached it, or is not halted at all. Refusing
+    rather than guessing is the point: an approval must apply to the deliverable
+    the person actually read.
+    """
+
+    http_status = 409
+    error_type = "stage_not_awaiting_approval"
+
+    def __init__(self, stage_key: str) -> None:
+        """Initialise the error.
+
+        Args:
+            stage_key: The stage the caller tried to decide on.
+        """
+        message = f"Stage '{stage_key}' is not awaiting approval."
+        super().__init__(message)
+        self.stage_key = stage_key
+        self.detail = {
+            "type": self.error_type,
+            "status": self.http_status,
+            "message": message,
+        }
+
+
+class RevisionLimitError(MarketingOSError):
+    """One deliverable has been sent back as many times as it is allowed to be.
+
+    The cap exists so a single item cannot burn a whole allowance: without it, an
+    owner dissatisfied with one brand strategy could spend everything they have
+    revising it (ADR-0015, ADR-0020).
+    """
+
+    http_status = 409
+    error_type = "revision_limit_reached"
+
+    def __init__(self, stage_key: str, limit: int) -> None:
+        """Initialise the error.
+
+        Args:
+            stage_key: The deliverable that has hit its cap.
+            limit: How many revisions each deliverable is allowed.
+        """
+        message = f"Deliverable '{stage_key}' has reached its revision limit ({limit})."
+        super().__init__(message)
+        self.stage_key = stage_key
+        self.limit = limit
+        self.detail = {
+            "type": self.error_type,
+            "status": self.http_status,
+            "message": message,
+        }
+
+
 class PipelineError(MarketingOSError):
     """A stage was started out of order or its prerequisite deliverable is absent."""
 
@@ -195,7 +252,7 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
 
     The graph records why a run halted as a plain, JSON-serialisable dict on
     ``state["error"]`` (its ``type`` is one of ``gate`` / ``pipeline`` / ``save`` /
-    ``guardrail``). Those are the graph's internal discriminators; the ``type``
+    ``guardrail`` / ``revision_limit``). Those are the graph's internal discriminators; the ``type``
     on the returned payload is the exception's ``error_type``, which is the name
     the frozen API contract uses. This is the one place that maps between them,
     building the human message and the structured ``detail`` payload once so no
@@ -227,6 +284,11 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
         message = f"Stage '{stage}' did not save its deliverable to {error.get('deliverable')}."
         exc = PipelineError(message)
         detail = {"message": message, "deliverable": error.get("deliverable")}
+    elif kind == "revision_limit":
+        limit = error.get("limit")
+        exc = RevisionLimitError(str(stage), int(limit) if limit is not None else 0)
+        message = str(exc)
+        detail = {"message": message, "limit": limit}
     elif kind == "guardrail":
         message = f"Stage '{stage}' failed QA and could not be reconciled."
         exc = GuardrailError(message, discrepancies=error.get("discrepancies", []))

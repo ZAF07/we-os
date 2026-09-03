@@ -25,21 +25,31 @@ import time
 from typing import Any
 
 import pytest
+from langgraph.types import Command
 
-from conftest import OTHER_TENANT, SLUG, TENANT, install_scripted_graph
+from conftest import (
+    OTHER_TENANT,
+    SLUG,
+    TENANT,
+    install_scripted_graph,
+    write_all_agent_specs,
+)
+from marketing_os.adapters.deliverables import InMemoryDeliverableStore
 from marketing_os.adapters.observability import new_run_id
 from marketing_os.adapters.postgres import (
     PostgresAnswerStore,
+    PostgresDeliverableStore,
     PostgresDocumentStore,
     PostgresQuestionnaireStore,
     PostgresRunStore,
     PostgresTenantDirectory,
 )
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
+from marketing_os.adapters.runs import AWAITING_APPROVAL
 from marketing_os.config import Settings
 from marketing_os.errors import RunConflictError
 from marketing_os.graph.checkpoints import clear_campaign_threads, thread_id
-from marketing_os.graph.runner import arun_campaign
+from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import DnaAnswer, RunRecord
 
@@ -186,6 +196,94 @@ def test_finishing_a_run_frees_its_campaign_for_a_colleague(postgres_pool: Any) 
     assert store.get(first, TENANT).status == "completed"
 
 
+def test_a_run_halted_at_an_approval_gate_keeps_its_campaign_claim(postgres_pool: Any) -> None:
+    """The claim is what stops a second run racing the one waiting on a person.
+
+    The partial unique index has to cover ``awaiting_approval`` as well as
+    ``running``, or a halted run's campaign quietly becomes free the moment it
+    stops to ask (ADR-0015).
+    """
+    store = PostgresRunStore(postgres_pool)
+    halted = new_run_id()
+    store.claim(_record(halted, user="usr_a"))
+
+    store.set_live_status(halted, AWAITING_APPROVAL)
+
+    with pytest.raises(RunConflictError) as refused:
+        store.claim(_record(new_run_id(), user="usr_b"))
+    assert refused.value.active_run_id == halted
+    assert store.active_for_campaign(TENANT, SLUG).run_id == halted
+
+
+def test_resuming_a_halted_run_returns_it_to_running(postgres_pool: Any) -> None:
+    store = PostgresRunStore(postgres_pool)
+    run_id = new_run_id()
+    store.claim(_record(run_id))
+    store.set_live_status(run_id, AWAITING_APPROVAL)
+
+    resumed = store.set_live_status(run_id, "running")
+
+    assert resumed is not None
+    assert store.get(run_id, TENANT).status == "running"
+
+
+def test_a_run_waiting_on_a_person_is_not_swept_away_by_a_restart(postgres_pool: Any) -> None:
+    """A deploy must not discard work the owner was about to approve."""
+    store = PostgresRunStore(postgres_pool)
+    halted = new_run_id()
+    store.claim(_record(halted))
+    store.set_live_status(halted, AWAITING_APPROVAL)
+
+    reclaimed = store.reclaim_running("interrupted")
+
+    assert reclaimed == []
+    assert store.get(halted, TENANT).status == AWAITING_APPROVAL
+
+
+def test_deliverable_versions_are_not_readable_across_tenants(postgres_pool: Any) -> None:
+    """Row-level security backstops the version chain as it does the documents."""
+    store = PostgresDeliverableStore(postgres_pool)
+    store.append(TENANT, SLUG, "brand-strategy", "# ours", feedback=None)
+
+    assert store.latest(OTHER_TENANT, SLUG, "brand-strategy") is None
+    assert store.stages(OTHER_TENANT, SLUG) == []
+
+
+def test_a_version_query_with_no_tenant_scope_returns_nothing(postgres_pool: Any) -> None:
+    PostgresDeliverableStore(postgres_pool).append(TENANT, SLUG, "research", "# ours")
+
+    with postgres_pool.connection() as connection:
+        connection.execute("SELECT set_config(%s, %s, true)", (TENANT_SETTING, OTHER_TENANT))
+        rows = connection.execute("SELECT stage_key FROM deliverable_versions").fetchall()
+
+    assert rows == []
+
+
+def test_the_database_assigns_the_version_number(postgres_pool: Any) -> None:
+    """Numbering in the insert is what stops two writers both claiming version 3."""
+    store = PostgresDeliverableStore(postgres_pool)
+    store.append(TENANT, SLUG, "brand-strategy", "# v1")
+
+    second = store.append(
+        TENANT, SLUG, "brand-strategy", "# v2", feedback="sharper", feedback_source="human"
+    )
+
+    assert second.version == 2
+    assert second.supersedes_version == 1
+    assert store.version(TENANT, SLUG, "brand-strategy", 1).content == "# v1"
+
+
+def test_a_deliverable_history_outlives_the_process_that_wrote_it(postgres_pool: Any) -> None:
+    """A second store over the same pool stands in for the restarted service."""
+    PostgresDeliverableStore(postgres_pool).append(
+        TENANT, SLUG, "brand-strategy", "# v1", feedback=None
+    )
+
+    reopened = PostgresDeliverableStore(postgres_pool)
+
+    assert reopened.latest(TENANT, SLUG, "brand-strategy").content == "# v1"
+
+
 def test_two_tenants_may_hold_the_same_slug_at_once(postgres_pool: Any) -> None:
     store = PostgresRunStore(postgres_pool)
     mine = new_run_id()
@@ -271,6 +369,47 @@ async def test_a_run_checkpoint_outlives_the_process_that_wrote_it(
 
     assert stored is not None
     assert stored.checkpoint["channel_values"]["error"] is None
+
+
+async def test_a_run_halted_at_a_gate_is_approvable_after_a_restart(
+    settings: Settings,
+    postgres_superuser_dsn: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The acceptance criterion the whole Postgres prerequisite exists for.
+
+    Two savers opened and closed independently stand in for a deploy: the first
+    process runs until the brand-strategy gate and goes away entirely; the second
+    finds the run still waiting, approves it, and the pipeline continues into
+    campaign strategy. Nothing of the first process survives but the database.
+    """
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+    write_all_agent_specs(settings)
+    install_scripted_graph(monkeypatch)
+    versions = InMemoryDeliverableStore()
+
+    async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as first:
+        await first.setup()
+        halted = await arun_campaign(
+            settings, TENANT, SLUG, checkpointer=first, deliverable_store=versions
+        )
+    assert halted.awaiting_approval_stage == "brand-strategy"
+
+    async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as second:
+        waiting = await awaiting_approval_stage(TENANT, SLUG, checkpointer=second)
+        assert waiting == "brand-strategy"
+        resumed = await arun_campaign(
+            settings,
+            TENANT,
+            SLUG,
+            checkpointer=second,
+            deliverable_store=versions,
+            resume=Command(resume={"stage_key": "brand-strategy", "approved": True}),
+        )
+
+    assert resumed.awaiting_approval_stage == "campaign-strategy"
+    assert versions.latest(TENANT, SLUG, "campaign-strategy") is not None
 
 
 async def test_clearing_a_campaigns_threads_removes_its_durable_state(

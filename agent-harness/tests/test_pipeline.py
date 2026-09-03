@@ -5,7 +5,14 @@ from __future__ import annotations
 from conftest import SLUG, TENANT
 from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.governance import PIPELINE, prerequisite_met
-from marketing_os.governance.pipeline import DIRECTOR, PIPELINE_BY_KEY, stage_document
+from marketing_os.governance.pipeline import (
+    AUTO,
+    DIRECTOR,
+    HUMAN,
+    PIPELINE_BY_KEY,
+    apply_approval_policies,
+    stage_document,
+)
 
 
 def test_pipeline_order_is_mandatory():
@@ -71,3 +78,26 @@ def test_creative_brief_blocked_until_performance_plan_exists(settings):
 def test_stage_document_is_the_tenant_relative_path():
     research = PIPELINE_BY_KEY["research"]
     assert stage_document(SLUG, research) == "campaigns/acme/research.md"
+
+
+def test_approval_policy_is_data_on_every_stage():
+    policies = {stage.key: stage.approval_policy for stage in PIPELINE}
+    assert policies == {
+        "research": AUTO,
+        "brand-strategy": HUMAN,
+        "campaign-strategy": HUMAN,
+        "performance-plan": HUMAN,
+        "creative-brief": HUMAN,
+        "asset-prompts": HUMAN,
+    }
+
+
+def test_approval_policies_can_be_loosened_by_configuration():
+    stages = apply_approval_policies(PIPELINE, human_stages=["brand-strategy"])
+    assert [s.approval_policy for s in stages] == [AUTO, HUMAN, AUTO, AUTO, AUTO, AUTO]
+    assert [s.key for s in stages] == [s.key for s in PIPELINE]
+
+
+def test_configuring_no_human_stages_leaves_the_shipped_defaults():
+    stages = apply_approval_policies(PIPELINE, human_stages=None)
+    assert [s.approval_policy for s in stages] == [s.approval_policy for s in PIPELINE]

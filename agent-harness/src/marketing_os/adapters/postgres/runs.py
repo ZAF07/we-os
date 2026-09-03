@@ -12,12 +12,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from marketing_os.adapters.runs import RUNNING
+from marketing_os.adapters.runs import LIVE_STATUSES, RUNNING, validate_live_status
 from marketing_os.errors import RunConflictError
 from marketing_os.schemas import RunRecord
 
 _COLUMNS = "run_id, tenant_id, user_id, slug, stage, status, started_at"
 _IS_RUNNING = f"status = '{RUNNING}'"
+_IS_LIVE = "status = ANY(%s)"
+_LIVE = list(LIVE_STATUSES)
 
 
 def _to_record(row: Any) -> RunRecord:
@@ -86,11 +88,33 @@ class PostgresRunStore:
             raise RunConflictError(record.slug, record.run_id)
         raise RunConflictError(record.slug, held.run_id, held.user_id)
 
+    def set_live_status(self, run_id: str, status: str) -> RunRecord | None:
+        """Move a live run between the non-terminal statuses, keeping its claim.
+
+        Args:
+            run_id: The run to move.
+            status: The non-terminal status to record.
+
+        Returns:
+            The updated record, or ``None`` when the run is already resolved.
+
+        Raises:
+            ValidationError: If the status is not one that holds a claim.
+        """
+        held_status = validate_live_status(status)
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                f"UPDATE runs SET status = %s WHERE run_id = %s AND {_IS_LIVE} "
+                f"RETURNING {_COLUMNS}",
+                (held_status, run_id, _LIVE),
+            ).fetchone()
+        return None if row is None else _to_record(row)
+
     def finish(self, run_id: str, status: str) -> None:
         """Record a run's terminal status, releasing its campaign claim.
 
-        The ``status = 'running'`` predicate is what stops a late callback from
-        overwriting a run that was already cancelled or reclaimed.
+        The live-status predicate is what stops a late callback from overwriting
+        a run that was already cancelled or reclaimed.
 
         Args:
             run_id: The run to resolve.
@@ -98,8 +122,8 @@ class PostgresRunStore:
         """
         with self._pool.connection() as connection:
             connection.execute(
-                f"UPDATE runs SET status = %s WHERE run_id = %s AND {_IS_RUNNING}",
-                (status, run_id),
+                f"UPDATE runs SET status = %s WHERE run_id = %s AND {_IS_LIVE}",
+                (status, run_id, _LIVE),
             )
 
     def get(self, run_id: str, tenant: str) -> RunRecord | None:
@@ -127,13 +151,14 @@ class PostgresRunStore:
             tenant: The tenant whose runs to list.
 
         Returns:
-            The tenant's running records, one per busy campaign.
+            The tenant's live records, one per busy campaign — including runs
+            halted at an Approval Gate, which still hold their campaign.
         """
         with self._pool.connection() as connection:
             rows = connection.execute(
-                f"SELECT {_COLUMNS} FROM runs WHERE tenant_id = %s AND {_IS_RUNNING} "
+                f"SELECT {_COLUMNS} FROM runs WHERE tenant_id = %s AND {_IS_LIVE} "
                 "ORDER BY started_at",
-                (tenant,),
+                (tenant, _LIVE),
             ).fetchall()
         return [_to_record(row) for row in rows]
 
@@ -149,8 +174,8 @@ class PostgresRunStore:
         """
         with self._pool.connection() as connection:
             row = connection.execute(
-                f"SELECT {_COLUMNS} FROM runs WHERE tenant_id = %s AND slug = %s AND {_IS_RUNNING}",
-                (tenant, slug),
+                f"SELECT {_COLUMNS} FROM runs WHERE tenant_id = %s AND slug = %s AND {_IS_LIVE}",
+                (tenant, slug, _LIVE),
             ).fetchone()
         return None if row is None else _to_record(row)
 
@@ -174,6 +199,10 @@ class PostgresRunStore:
 
     def reclaim_running(self, status: str) -> list[RunRecord]:
         """Resolve every run still marked running, and return them.
+
+        Runs halted at an Approval Gate are deliberately left alone: they are
+        not mid-execution, they are waiting on a person, and their state is
+        durably checkpointed (ADR-0015).
 
         Args:
             status: The terminal status to record for the abandoned runs.

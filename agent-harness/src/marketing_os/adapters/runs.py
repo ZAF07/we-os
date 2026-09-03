@@ -9,18 +9,51 @@ work.
 The store also carries each run's lifecycle status, so a status outlives the
 process that produced it and a restart can resolve the runs it was holding
 rather than leaving them ``running`` forever.
+
+``awaiting_approval`` is the one non-terminal status besides ``running``: a run
+halted at an Approval Gate is not finished and has not failed, it is waiting on a
+person (ADR-0015, ADR-0017). It **keeps its campaign claim**, because the person
+approving it is going to resume this run and nobody else may start a competing
+one in the meantime — which is what ``LIVE_STATUSES`` names: the statuses that
+still hold a claim.
 """
 
 from __future__ import annotations
 
-from marketing_os.errors import RunConflictError
+from marketing_os.errors import RunConflictError, ValidationError
 from marketing_os.schemas import RunRecord
 
 RUNNING = "running"
+AWAITING_APPROVAL = "awaiting_approval"
 COMPLETED = "completed"
 FAILED = "failed"
 CANCELLED = "cancelled"
 INTERRUPTED = "interrupted"
+LIVE_STATUSES = (RUNNING, AWAITING_APPROVAL)
+
+
+def validate_live_status(status: str) -> str:
+    """Return a status that still holds a campaign claim, refusing any other.
+
+    The claim index covers exactly the live statuses, so writing anything else
+    through :meth:`set_live_status` would free the campaign for a competing run without
+    anyone intending it. Checking here means every adapter refuses the same
+    values rather than each one trusting its caller.
+
+    Args:
+        status: The status a caller wants to hold a live run at.
+
+    Returns:
+        The status, unchanged.
+
+    Raises:
+        ValidationError: If the status is not one that holds a claim.
+    """
+    if status not in LIVE_STATUSES:
+        raise ValidationError(
+            f"'{status}' is not a live run status. Use one of: {', '.join(LIVE_STATUSES)}."
+        )
+    return status
 
 
 class InMemoryRunStore:
@@ -54,6 +87,27 @@ class InMemoryRunStore:
         self._records[stored.run_id] = stored
         return stored
 
+    def set_live_status(self, run_id: str, status: str) -> RunRecord | None:
+        """Move a live run between the non-terminal statuses, keeping its claim.
+
+        Args:
+            run_id: The run to move.
+            status: The non-terminal status to record.
+
+        Returns:
+            The updated record, or ``None`` when the run is already resolved.
+
+        Raises:
+            ValidationError: If the status is not one that holds a claim.
+        """
+        held_status = validate_live_status(status)
+        record = self._records.get(run_id)
+        if record is None or record.status not in LIVE_STATUSES:
+            return None
+        held = record.model_copy(update={"status": held_status})
+        self._records[run_id] = held
+        return held
+
     def finish(self, run_id: str, status: str) -> None:
         """Record a run's terminal status, releasing its campaign claim.
 
@@ -62,7 +116,7 @@ class InMemoryRunStore:
             status: The terminal status to record.
         """
         record = self._records.get(run_id)
-        if record is None or record.status != RUNNING:
+        if record is None or record.status not in LIVE_STATUSES:
             return
         self._records[run_id] = record.model_copy(update={"status": status})
 
@@ -89,12 +143,13 @@ class InMemoryRunStore:
             tenant: The tenant whose runs to list.
 
         Returns:
-            The tenant's running records, one per busy campaign.
+            The tenant's live records, one per busy campaign — including runs
+            halted at an Approval Gate, which still hold their campaign.
         """
         return [
             record
             for record in self._records.values()
-            if record.tenant_id == tenant and record.status == RUNNING
+            if record.tenant_id == tenant and record.status in LIVE_STATUSES
         ]
 
     def active_for_campaign(self, tenant: str, slug: str) -> RunRecord | None:
@@ -108,7 +163,11 @@ class InMemoryRunStore:
             The claiming record, or ``None`` when the campaign is idle.
         """
         for record in self._records.values():
-            if record.tenant_id == tenant and record.slug == slug and record.status == RUNNING:
+            if (
+                record.tenant_id == tenant
+                and record.slug == slug
+                and record.status in LIVE_STATUSES
+            ):
                 return record
         return None
 
@@ -131,6 +190,11 @@ class InMemoryRunStore:
 
     def reclaim_running(self, status: str) -> list[RunRecord]:
         """Resolve every run still marked running, and return them.
+
+        A run halted at an Approval Gate is deliberately left alone: it is not
+        mid-execution, it is waiting on a person, and its state is durably
+        checkpointed. Sweeping it would mean a deploy silently discarded work
+        the owner was about to approve (ADR-0015).
 
         Args:
             status: The terminal status to record for the abandoned runs.

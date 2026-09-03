@@ -10,10 +10,15 @@ Endpoints:
   POST /campaigns                       -> scaffold a campaign goal from the template
   GET  /campaigns/{slug}/gate           -> Stage 0 gate report
   GET  /campaigns/{slug}/deliverables   -> list written deliverables
+  GET  /campaigns/{slug}/stages         -> stages with approval policy and version
+  GET  /campaigns/{slug}/deliverables/{name}/versions -> a deliverable's version history
+  GET  /campaigns/{slug}/deliverables/{name}/versions/{v} -> one historical version
   POST /campaigns/{slug}/run            -> start a background run, return its run_id (202)
   GET  /runs                            -> list in-flight runs
   GET  /runs/{run_id}                   -> report a run's lifecycle status
   POST /runs/{run_id}/cancel            -> cancel an in-flight run
+  POST /runs/{run_id}/approve           -> approve the stage at the gate; the run resumes
+  POST /runs/{run_id}/revise            -> send the stage back with feedback (new version)
   GET  /runs/{run_id}/stream            -> attach to a run and tail its trace as SSE
 
 Every route except ``/health`` requires a verified bearer token, and the tenant
@@ -37,9 +42,14 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command
 from pydantic import BaseModel
 
 from marketing_os.adapters.auth import JwksTokenVerifier
+from marketing_os.adapters.deliverables import (
+    FilesystemDeliverableStore,
+    human_revisions_used,
+)
 from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.observability import (
     configure_logging,
@@ -51,7 +61,7 @@ from marketing_os.adapters.observability import (
     tail_trace,
 )
 from marketing_os.adapters.questionnaire import InMemoryAnswerStore, InMemoryQuestionnaireStore
-from marketing_os.adapters.runs import CANCELLED, RUNNING, InMemoryRunStore
+from marketing_os.adapters.runs import AWAITING_APPROVAL, CANCELLED, RUNNING, InMemoryRunStore
 from marketing_os.adapters.tenants import PassthroughTenantDirectory
 from marketing_os.config import Settings, load_settings
 from marketing_os.entrypoints.env import load_env
@@ -60,15 +70,19 @@ from marketing_os.errors import (
     DocumentNotFoundError,
     GateError,
     MarketingOSError,
+    RevisionLimitError,
     RunConflictError,
+    StageNotAwaitingApprovalError,
     UnauthenticatedError,
     ValidationError,
 )
 from marketing_os.governance import check_gate
+from marketing_os.governance.pipeline import PIPELINE, Stage, apply_approval_policies
 from marketing_os.graph.registry import RunRegistry, read_run_status, resolve_trace_path
-from marketing_os.graph.runner import arun_campaign
+from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage
 from marketing_os.ports import (
     AnswerStore,
+    DeliverableStore,
     DocumentStore,
     QuestionnaireStore,
     RunStore,
@@ -77,8 +91,10 @@ from marketing_os.ports import (
 )
 from marketing_os.questionnaire import completeness, render_brand_dna
 from marketing_os.schemas import (
+    ApprovalDecision,
     BrandDnaRecord,
     CampaignResult,
+    DeliverableVersion,
     DnaAnswer,
     DnaCompleteness,
     Questionnaire,
@@ -221,6 +237,21 @@ def get_document_store() -> DocumentStore:
     if backend is not None:
         return backend.documents
     return FilesystemDocumentStore(get_settings().root)
+
+
+@lru_cache(maxsize=1)
+def get_deliverable_store() -> DeliverableStore:
+    """Return the process-wide store holding each deliverable's version history.
+
+    Returns:
+        The Postgres adapter when a DSN is configured — where a halted run's
+        history survives a restart — otherwise the filesystem adapter rooted at
+        the repo root.
+    """
+    backend = get_backend()
+    if backend is not None:
+        return backend.deliverables
+    return FilesystemDeliverableStore(get_settings().root)
 
 
 @lru_cache(maxsize=1)
@@ -390,6 +421,7 @@ def get_registry() -> RunRegistry:
 _BACKED_PROVIDERS = (
     get_backend,
     get_document_store,
+    get_deliverable_store,
     get_tenant_directory,
     get_checkpointer,
     get_run_store,
@@ -746,6 +778,169 @@ def deliverable(slug: str, name: str, identity: Identity) -> dict[str, object]:
     }
 
 
+@app.get("/campaigns/{slug}/stages")
+async def stages(slug: str, identity: Identity) -> dict[str, object]:
+    """Report each pipeline stage with its approval policy and where it has got to.
+
+    The approval policy is reported alongside the stage so the interface can say
+    which stages the system handles itself and which will stop and ask — before
+    the run starts, not when it halts (ADR-0015).
+
+    Args:
+        slug: The campaign slug.
+        identity: The verified identity whose tenant owns the campaign.
+
+    Returns:
+        The campaign slug and its stages in mandatory pipeline order, each with
+        its key, operator Phase, state, approval policy, and latest deliverable
+        version if it has one.
+    """
+    tenant = identity.tenant_id
+    versions = get_deliverable_store()
+    configured = apply_approval_policies(PIPELINE, get_settings().human_gate_stages)
+    waiting = await _stage_awaiting_approval(tenant, slug)
+    reported = [
+        _report_stage(stage, versions.latest(tenant, slug, stage.key), waiting)
+        for stage in configured
+    ]
+    return {"slug": slug, "stages": reported}
+
+
+async def _stage_awaiting_approval(tenant: str, slug: str) -> str | None:
+    """Return the stage a campaign's live run is halted at, if one is.
+
+    Read from the checkpoint, the same durable source the approve and revise
+    endpoints consult, so the stepper cannot disagree with what those endpoints
+    will accept — and so the answer holds when run tracing is switched off.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+
+    Returns:
+        The waiting stage key, or ``None`` when no run is holding at a gate.
+    """
+    record = get_registry().active_for_campaign(tenant, slug)
+    if record is None or record.status != AWAITING_APPROVAL:
+        return None
+    return await awaiting_approval_stage(
+        tenant, slug, stage=record.stage, checkpointer=get_checkpointer()
+    )
+
+
+def _report_stage(
+    stage: Stage, latest: DeliverableVersion | None, waiting: str | None
+) -> dict[str, object]:
+    """Describe one stage for the interface: its phase, its state, and its policy.
+
+    The phase is what the operator's stepper groups by, so the interface renders
+    its designed steps without the engine adopting UI vocabulary (ADR-0017).
+
+    Args:
+        stage: The pipeline stage, carrying its configured approval policy.
+        latest: The newest version of its deliverable, if it has produced one.
+        waiting: The stage currently halted at an Approval Gate, if any.
+
+    Returns:
+        The stage's key, phase, state, approval policy, and latest version.
+    """
+    if stage.key == waiting:
+        state = AWAITING_APPROVAL
+    elif latest is not None:
+        state = "completed"
+    else:
+        state = "pending"
+    return {
+        "key": stage.key,
+        "phase": stage.phase,
+        "state": state,
+        "approval_policy": stage.approval_policy,
+        "latest_version": latest.version if latest else None,
+    }
+
+
+@app.get("/campaigns/{slug}/deliverables/{name}/versions")
+def deliverable_versions(slug: str, name: str, identity: Identity) -> dict[str, object]:
+    """List a deliverable's versions, newest first.
+
+    Each entry names the feedback that produced it and whether that feedback came
+    from a person or the QA reviewer, so the history explains itself months later
+    (ADR-0015).
+
+    Args:
+        slug: The campaign slug.
+        name: The deliverable filename, e.g. ``brand-strategy.md``.
+        identity: The verified identity whose tenant owns the campaign.
+
+    Returns:
+        The stage key and its version summaries, newest first.
+
+    Raises:
+        HTTPException: 404 if the caller's tenant has no such deliverable.
+    """
+    stage_key = _stage_key_for(name)
+    history = get_deliverable_store().history(identity.tenant_id, slug, stage_key)
+    if not history:
+        raise _http_error(DocumentNotFoundError(f"No deliverable '{name}' for campaign '{slug}'"))
+    return {
+        "slug": slug,
+        "stage_key": stage_key,
+        "versions": [version.model_dump(exclude={"content"}) for version in history],
+    }
+
+
+@app.get("/campaigns/{slug}/deliverables/{name}/versions/{version}")
+def deliverable_version(
+    slug: str, name: str, version: int, identity: Identity
+) -> dict[str, object]:
+    """Return one historical version of a deliverable, with the feedback behind it.
+
+    Args:
+        slug: The campaign slug.
+        name: The deliverable filename, e.g. ``brand-strategy.md``.
+        version: The version number to read.
+        identity: The verified identity whose tenant owns the campaign.
+
+    Returns:
+        The version's full content, feedback, and the version it supersedes.
+
+    Raises:
+        HTTPException: 404 if the caller's tenant has no such version.
+    """
+    stage_key = _stage_key_for(name)
+    store = get_deliverable_store()
+    stored = store.version(identity.tenant_id, slug, stage_key, version)
+    if stored is None:
+        raise _http_error(
+            DocumentNotFoundError(f"No version {version} of '{name}' for campaign '{slug}'")
+        )
+    latest = store.latest(identity.tenant_id, slug, stage_key)
+    return {
+        "slug": slug,
+        **stored.model_dump(),
+        "latest": latest is not None and latest.version == stored.version,
+    }
+
+
+def _stage_key_for(name: str) -> str:
+    """Return the pipeline stage a deliverable filename belongs to.
+
+    Args:
+        name: The deliverable filename, e.g. ``brand-strategy.md``.
+
+    Returns:
+        The stage key.
+
+    Raises:
+        HTTPException: 404 if no pipeline stage writes that filename — an
+            unknown name is absent, not a server error.
+    """
+    for stage in PIPELINE:
+        if stage.deliverable == name:
+            return stage.key
+    raise _http_error(DocumentNotFoundError(f"No deliverable '{name}'"))
+
+
 @app.post("/campaigns/{slug}/run", status_code=202)
 async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, object]:
     """Start a detached background run and return its ``run_id`` immediately.
@@ -792,6 +987,7 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
             run_id=run_id,
             checkpointer=get_checkpointer(),
             document_store=store,
+            deliverable_store=get_deliverable_store(),
         )
 
     try:
@@ -879,6 +1075,187 @@ async def cancel_run(run_id: str, identity: Identity) -> dict[str, object]:
     if cancelled is None:
         raise _http_error(DocumentNotFoundError(f"No active run '{run_id}'"))
     return {"run_id": run_id, "slug": cancelled.slug, "status": CANCELLED}
+
+
+class ApproveStage(BaseModel):
+    """Request body for approving the stage waiting at an Approval Gate.
+
+    The stage is named rather than implied, so an approval always applies to the
+    deliverable the person actually read — never to whatever the run happened to
+    advance to while they were reading (ADR-0015).
+
+    Attributes:
+        stage_key: The stage being approved.
+    """
+
+    stage_key: str
+
+
+class ReviseStage(BaseModel):
+    """Request body for sending the waiting stage back with written feedback.
+
+    Attributes:
+        stage_key: The stage being sent back.
+        feedback: What the business owner wants changed; recorded on the new
+            version this produces.
+    """
+
+    stage_key: str
+    feedback: str
+
+
+async def _resume_run(
+    run_id: str, identity: VerifiedIdentity, decision: ApprovalDecision
+) -> dict[str, object]:
+    """Resume a run halted at an Approval Gate with a person's decision.
+
+    The same run continues on its existing checkpoint thread, so approving is
+    one action rather than "start a second run and hope it picks up where the
+    first stopped" (ADR-0015).
+
+    **The checkpoint is authoritative** about whether a gate is waiting, because
+    it is the thing the resume actually answers; the run store only records what
+    a process last observed. When the two disagree — a startup sweep that raced a
+    halt, say — a run with a live gate is re-marked ``awaiting_approval`` and the
+    approval proceeds, rather than the owner being told nothing is waiting for a
+    decision that plainly is.
+
+    Args:
+        run_id: The halted run to resume.
+        identity: The verified identity that must own the run.
+        decision: What the person decided at the gate.
+
+    Returns:
+        The resumed run's id, slug, and ``running`` status.
+
+    Raises:
+        HTTPException: 404 if the caller has no run with that id; 409 if the
+            named stage is not the one holding the run.
+    """
+    settings = get_settings()
+    registry = get_registry()
+    record = registry.get(run_id, identity.tenant_id)
+    if record is None:
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
+    tenant = record.tenant_id
+    slug = record.slug
+    waiting = await awaiting_approval_stage(
+        tenant, slug, stage=record.stage, checkpointer=get_checkpointer()
+    )
+    if waiting != decision.stage_key:
+        raise _http_error(StageNotAwaitingApprovalError(decision.stage_key))
+    if record.status != AWAITING_APPROVAL:
+        _LOGGER.warning(
+            "run.gate_out_of_sync run_id=%s slug=%s recorded=%s checkpoint_stage=%s",
+            run_id,
+            slug,
+            record.status,
+            waiting,
+        )
+        if registry.mark_awaiting_approval(run_id, tenant) is None:
+            raise _http_error(StageNotAwaitingApprovalError(decision.stage_key))
+
+    async def relaunch() -> CampaignResult:
+        """Continue the halted run from its Approval Gate.
+
+        Returns:
+            The structured campaign result.
+        """
+        return await arun_campaign(
+            settings,
+            tenant,
+            slug,
+            stage=record.stage,
+            run_id=run_id,
+            checkpointer=get_checkpointer(),
+            document_store=get_document_store(),
+            deliverable_store=get_deliverable_store(),
+            resume=Command(resume=decision.model_dump()),
+        )
+
+    resumed = registry.resume(
+        run_id=run_id, tenant=tenant, user_id=identity.user_id, launch=relaunch
+    )
+    if resumed is None:
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
+    return {"run_id": run_id, "slug": slug, "stage": decision.stage_key, "status": RUNNING}
+
+
+@app.post("/runs/{run_id}/approve")
+async def approve_stage(run_id: str, body: ApproveStage, identity: Identity) -> dict[str, object]:
+    """Approve the stage waiting at the gate; the run resumes into the next stage.
+
+    Args:
+        run_id: The halted run.
+        body: The approval, naming the stage being approved.
+        identity: The verified identity that must own the run.
+
+    Returns:
+        The resumed run's id, slug, approved stage, and ``running`` status.
+
+    Raises:
+        HTTPException: 404 if the caller has no such run; 409 if the named stage
+            is not awaiting approval.
+    """
+    decision = ApprovalDecision(stage_key=body.stage_key, approved=True)
+    return await _resume_run(run_id, identity, decision)
+
+
+@app.post("/runs/{run_id}/revise", status_code=202)
+async def revise_stage(run_id: str, body: ReviseStage, identity: Identity) -> dict[str, object]:
+    """Send the waiting stage back with feedback, producing a new version.
+
+    Nothing is overwritten: the re-run appends a new version of the deliverable
+    carrying this feedback, and the version the person refused stays readable
+    (ADR-0015).
+
+    Args:
+        run_id: The halted run.
+        body: The refusal, naming the stage and the feedback to re-run with.
+        identity: The verified identity that must own the run.
+
+    Returns:
+        The resumed run's id, slug, re-running stage, and ``running`` status.
+
+    Raises:
+        HTTPException: 404 if the caller has no such run; 409 if the named stage
+            is not awaiting approval, or its revision cap is spent; 422 if the
+            feedback is empty — a refusal with nothing to act on would re-run
+            the stage identically and charge for it.
+    """
+    feedback = body.feedback.strip()
+    if not feedback:
+        raise _http_error(ValidationError("Say what you want changed."))
+    record = get_registry().get(run_id, identity.tenant_id)
+    if record is None:
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
+    _refuse_when_revisions_spent(identity.tenant_id, record.slug, body.stage_key)
+    decision = ApprovalDecision(stage_key=body.stage_key, approved=False, feedback=feedback)
+    return await _resume_run(run_id, identity, decision)
+
+
+def _refuse_when_revisions_spent(tenant: str, slug: str, stage_key: str) -> None:
+    """Refuse a revision once a deliverable has been sent back its allowed number of times.
+
+    Counted from the version chain rather than from run state, because the cap is
+    about the deliverable — it must hold across restarts and across separate runs
+    of the same campaign, not only within one run's memory (ADR-0015). Only a
+    person's revisions count, which is the same quantity the Approval Gate shows
+    them: the QA reviewer's rounds have their own budget, and charging them here
+    would refuse the owner's first real revision.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+        stage_key: The deliverable being sent back.
+
+    Raises:
+        HTTPException: 409 once the cap is reached.
+    """
+    limit = get_settings().max_revisions
+    versions = get_deliverable_store().history(tenant, slug, stage_key)
+    if human_revisions_used(versions) >= limit:
+        raise _http_error(RevisionLimitError(stage_key, limit))
 
 
 @app.get("/campaigns/{slug}/runs")

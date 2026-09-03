@@ -6,15 +6,22 @@ mapping, and result assembly live in one place. A run is keyed by ``thread_id``
 use a stage-scoped thread so they do not collide with the full-campaign thread,
 and every thread is tenant-scoped so two businesses running the same slug cannot
 share checkpointed state.
+
+``INTERRUPT_CHANNEL`` is the channel LangGraph records a pending ``interrupt()``
+under in a checkpoint's writes, and is how a halted run's Approval Gate is found
+after a restart. LangGraph exports the name only from a module it asks callers
+not to import, so it is spelled here instead.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import Any, cast
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.types import Command
 
 from marketing_os.adapters.observability import (
     RunTrace,
@@ -22,16 +29,19 @@ from marketing_os.adapters.observability import (
     new_run_id,
     run_config,
 )
+from marketing_os.adapters.runs import AWAITING_APPROVAL
 from marketing_os.adapters.tools import WebSearchTool
 from marketing_os.config import Settings
 from marketing_os.errors import exception_from_state_error
 from marketing_os.graph.checkpoints import thread_id
 from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
 from marketing_os.graph.state import CampaignState
-from marketing_os.ports import DocumentStore
+from marketing_os.ports import DeliverableStore, DocumentStore
 from marketing_os.schemas import CampaignResult, StageResult, Usage
 
 _LOGGER = get_logger("marketing_os.runner")
+
+INTERRUPT_CHANNEL = "__interrupt__"
 
 
 def _select_graph(
@@ -41,6 +51,7 @@ def _select_graph(
     web_backend: WebSearchTool | None,
     checkpointer: BaseCheckpointSaver | None,
     document_store: DocumentStore | None,
+    deliverable_store: DeliverableStore | None = None,
 ) -> Any:
     """Build the campaign or single-stage graph for a run.
 
@@ -51,6 +62,8 @@ def _select_graph(
         checkpointer: An optional checkpointer.
         document_store: The store tenant documents resolve through, or ``None``
             for the filesystem default.
+        deliverable_store: The store deliverable versions are appended to, or
+            ``None`` for the filesystem default.
 
     Returns:
         The compiled graph to run.
@@ -62,12 +75,14 @@ def _select_graph(
             web_backend=web_backend,
             checkpointer=checkpointer,
             document_store=document_store,
+            deliverable_store=deliverable_store,
         )
     return build_campaign_graph(
         settings,
         web_backend=web_backend,
         checkpointer=checkpointer,
         document_store=document_store,
+        deliverable_store=deliverable_store,
     )
 
 
@@ -129,7 +144,13 @@ def _raise_on_error(state: CampaignState, run_log: str | None) -> None:
     raise exception_from_state_error(error, run_log)
 
 
-def _to_result(tenant: str, slug: str, state: CampaignState, run_log: str | None) -> CampaignResult:
+def _to_result(
+    tenant: str,
+    slug: str,
+    state: CampaignState,
+    run_log: str | None,
+    awaiting: str | None = None,
+) -> CampaignResult:
     """Assemble a :class:`CampaignResult` from the final graph state.
 
     Args:
@@ -137,13 +158,21 @@ def _to_result(tenant: str, slug: str, state: CampaignState, run_log: str | None
         slug: The campaign slug.
         state: The final campaign state.
         run_log: The repo-relative path of the run's JSONL trace, if any.
+        awaiting: The stage halted at an Approval Gate, if the run stopped there.
 
     Returns:
         The structured campaign result.
     """
     stages = [StageResult(**record) for record in state.get("results", [])]
     usage = Usage(**state.get("usage", {}))
-    return CampaignResult(tenant=tenant, slug=slug, stages=stages, usage=usage, run_log=run_log)
+    return CampaignResult(
+        tenant=tenant,
+        slug=slug,
+        stages=stages,
+        usage=usage,
+        run_log=run_log,
+        awaiting_approval_stage=awaiting,
+    )
 
 
 def _open_trace(settings: Settings, tenant: str, slug: str, run_id: str) -> RunTrace | None:
@@ -207,19 +236,23 @@ def _emit_summary(
     error: Any,
     results: list[Any],
     usage: dict[str, int],
+    **extra: Any,
 ) -> None:
     """Write one terminal ``run.summary`` line to the trace and console log.
 
     Args:
         trace: The open trace, or ``None``.
         run_log: The repo-relative trace path, if any.
-        outcome: The terminal outcome, ``"ok"`` or ``"error"``.
+        outcome: The terminal outcome — ``"ok"``, ``"error"``, ``"cancelled"``,
+            or ``"awaiting_approval"`` when a person is holding the run.
         error: The structured error payload, or ``None`` on success.
         results: The per-stage results to record.
         usage: The token usage to record.
+        **extra: Additional fields to record on the summary, such as the stage
+            an ``awaiting_approval`` run is waiting at.
     """
     if trace is not None:
-        trace.summary(outcome=outcome, error=error, results=results, usage=usage)
+        trace.summary(outcome=outcome, error=error, results=results, usage=usage, **extra)
     if error is None:
         _LOGGER.info("run.summary outcome=%s run_log=%s", outcome, run_log)
     else:
@@ -291,6 +324,150 @@ def _write_error_summary(trace: RunTrace | None, exc: BaseException, run_log: st
     )
 
 
+def _gated_stage(pending: Any) -> str | None:
+    """Return the stage named by the first Approval Gate interrupt in a sequence.
+
+    The one place a pending ``interrupt()`` is read, so the snapshot path and the
+    checkpoint path cannot come to different answers about which stage is
+    waiting.
+
+    Args:
+        pending: The pending interrupts to inspect.
+
+    Returns:
+        The waiting stage key, or ``None`` when none of them names a stage.
+    """
+    for interrupted in pending or ():
+        payload = getattr(interrupted, "value", None)
+        if isinstance(payload, dict) and payload.get("stage"):
+            return str(payload["stage"])
+    return None
+
+
+def _awaiting_stage(snapshot: Any) -> str | None:
+    """Return the stage a graph snapshot is halted at an Approval Gate for.
+
+    LangGraph records a pending ``interrupt()`` on the snapshot's tasks. Reading
+    it from the snapshot rather than from the stream is what makes the answer the
+    same whether the run just halted or was reloaded from a checkpoint after a
+    restart — which is the whole point of a durable gate (ADR-0015).
+
+    Args:
+        snapshot: The graph state snapshot to inspect.
+
+    Returns:
+        The waiting stage key, or ``None`` when nothing is waiting on a person.
+    """
+    for task in getattr(snapshot, "tasks", ()) or ():
+        waiting = _gated_stage(getattr(task, "interrupts", ()))
+        if waiting is not None:
+            return waiting
+    return None
+
+
+def _write_awaiting_summary(trace: RunTrace | None, stage_key: str, run_log: str | None) -> None:
+    """Write the terminal ``awaiting_approval`` summary for a gated run.
+
+    A run halted at an Approval Gate has stopped executing, so its trace needs a
+    terminal event exactly as a finished one does — but the outcome says the run
+    is waiting on a person, not that it is done (ADR-0017).
+
+    Args:
+        trace: The open trace, or ``None``.
+        stage_key: The stage waiting for approval.
+        run_log: The repo-relative trace path, if any.
+    """
+    _emit_summary(
+        trace,
+        run_log,
+        outcome=AWAITING_APPROVAL,
+        error=None,
+        results=[],
+        usage={},
+        stage=stage_key,
+    )
+
+
+async def _drive(
+    graph: Any,
+    inbound: Any,
+    config: dict[str, Any],
+    trace: RunTrace | None,
+    on_event: Callable[[dict[str, Any]], None] | None,
+) -> tuple[CampaignState, str | None]:
+    """Stream a graph to a halt and report where it stopped.
+
+    Args:
+        graph: The compiled graph to drive.
+        inbound: The initial state, or a ``Command`` resuming an interrupt.
+        config: The invocation config carrying the checkpoint thread id.
+        trace: The open trace events are appended to, or ``None``.
+        on_event: An optional callback invoked with each progress event.
+
+    Returns:
+        The final state and the stage waiting at an Approval Gate, if any.
+    """
+    stream = graph.astream(inbound, config=config, stream_mode=["custom", "updates"])
+    async for mode, chunk in stream:
+        if mode != "custom":
+            continue
+        if trace is not None:
+            trace.event(chunk)
+        if on_event is not None:
+            on_event(chunk)
+    snapshot = await graph.aget_state(config)
+    return snapshot.values, _awaiting_stage(snapshot)
+
+
+async def awaiting_approval_stage(
+    tenant: str,
+    slug: str,
+    *,
+    stage: str | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> str | None:
+    """Return the stage a campaign's checkpointed run is halted at, if any.
+
+    Read from the checkpoint rather than from memory or from the trace, so the
+    answer survives a restart: a halted run's gate is exactly where its persisted
+    state says it is, whichever process asks (ADR-0015). Only the saved state is
+    needed, so this asks the checkpointer directly rather than compiling the
+    pipeline to get a snapshot.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+        stage: The single stage the run targeted, or ``None`` for a full run.
+        checkpointer: The checkpointer holding the run's state.
+
+    Returns:
+        The waiting stage key, or ``None`` when nothing is waiting on a person.
+    """
+    if checkpointer is None:
+        return None
+    thread = {"configurable": {"thread_id": thread_id(tenant, slug, stage)}}
+    saved = await checkpointer.aget_tuple(cast("RunnableConfig", thread))
+    if saved is None:
+        return None
+    writes = list(saved.pending_writes or ())
+    for _, channel, value in writes:
+        if channel != INTERRUPT_CHANNEL:
+            continue
+        waiting = _gated_stage(value if isinstance(value, list) else [value])
+        if waiting is not None:
+            return waiting
+    if writes:
+        _LOGGER.warning(
+            "run.gate_unreadable tenant=%s slug=%s channels=%s — a halted run will look "
+            "finished; check whether LangGraph renamed %s",
+            tenant,
+            slug,
+            sorted({channel for _, channel, _ in writes}),
+            INTERRUPT_CHANNEL,
+        )
+    return None
+
+
 async def arun_campaign(
     settings: Settings,
     tenant: str,
@@ -302,6 +479,8 @@ async def arun_campaign(
     web_backend: WebSearchTool | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     document_store: DocumentStore | None = None,
+    deliverable_store: DeliverableStore | None = None,
+    resume: Command | None = None,
 ) -> CampaignResult:
     """Run a campaign (or a single stage) to completion on the async graph path.
 
@@ -326,9 +505,16 @@ async def arun_campaign(
         checkpointer: An optional checkpointer.
         document_store: The store tenant documents resolve through, or ``None``
             for the filesystem default.
+        deliverable_store: The store deliverable versions are appended to, or
+            ``None`` for the filesystem default.
+        resume: A :class:`~langgraph.types.Command` carrying a person's decision
+            at an Approval Gate, which continues the checkpointed run from where
+            it halted instead of starting a fresh one.
 
     Returns:
-        The structured campaign result.
+        The structured campaign result. A run halted at an Approval Gate returns
+        the work done so far rather than raising: it has not failed, it is
+        waiting on a person (ADR-0015).
 
     Raises:
         GateError: If the run halted on the Stage 0 gate.
@@ -348,20 +534,15 @@ async def arun_campaign(
             web_backend=backend,
             checkpointer=checkpointer,
             document_store=document_store,
+            deliverable_store=deliverable_store,
         )
         config = _config(tenant, slug, stage)
-        inbound = {"tenant": tenant, "slug": slug}
-        async for mode, chunk in graph.astream(
-            inbound, config=config, stream_mode=["custom", "updates"]
-        ):
-            if mode != "custom":
-                continue
-            if trace is not None:
-                trace.event(chunk)
-            if on_event is not None:
-                on_event(chunk)
-        state: CampaignState = (await graph.aget_state(config)).values
-        _write_summary(trace, state, run_log)
+        inbound: Any = resume if resume is not None else {"tenant": tenant, "slug": slug}
+        state, awaiting = await _drive(graph, inbound, config, trace, on_event)
+        if awaiting is not None:
+            _write_awaiting_summary(trace, awaiting, run_log)
+        else:
+            _write_summary(trace, state, run_log)
     except asyncio.CancelledError:
         _write_cancelled_summary(trace, run_log)
         raise
@@ -374,7 +555,7 @@ async def arun_campaign(
         if owns_backend and backend is not None:
             backend.close()
     _raise_on_error(state, run_log)
-    return _to_result(tenant, slug, state, run_log)
+    return _to_result(tenant, slug, state, run_log, awaiting)
 
 
 def run_campaign(
@@ -487,8 +668,13 @@ async def astream_campaign(
             if trace is not None:
                 trace.event(chunk)
             yield chunk
-        final = (await graph.aget_state(config)).values
-        _write_summary(trace, final, run_log)
+        snapshot = await graph.aget_state(config)
+        final = snapshot.values
+        awaiting = _awaiting_stage(snapshot)
+        if awaiting is not None:
+            _write_awaiting_summary(trace, awaiting, run_log)
+        else:
+            _write_summary(trace, final, run_log)
     except Exception as exc:
         _write_error_summary(trace, exc, run_log)
         raise
@@ -498,7 +684,9 @@ async def astream_campaign(
         if owns_backend and backend is not None:
             backend.close()
     error = final.get("error")
-    if error:
+    if awaiting is not None:
+        yield {"event": "stage.awaiting_approval", "stage": awaiting, "run_log": run_log}
+    elif error:
         yield {"event": "error", "error": error, "run_log": run_log}
     else:
         yield {"event": "campaign.done", "results": final.get("results", []), "run_log": run_log}

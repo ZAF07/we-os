@@ -133,6 +133,11 @@ def _cmd_agents(args: argparse.Namespace) -> int:
 def _cmd_new_campaign(args: argparse.Namespace) -> int:
     """Run the pipeline (or a single stage) for the configured tenant.
 
+    A run that reaches a stage requiring human approval stops there and says so
+    (ADR-0015). Approving is an API operation — the CLI is a local operator tool
+    with no gate to answer at — so it reports the halt rather than claiming the
+    campaign is complete.
+
     Args:
         args: Parsed CLI arguments.
 
@@ -153,7 +158,13 @@ def _cmd_new_campaign(args: argparse.Namespace) -> int:
 
     result = run_campaign(settings, tenant, slug, stage=args.stage, on_event=_render_event)
     print("\n" + "=" * 60)
-    print(f"Campaign '{result.slug}' complete. Stages run: {len(result.stages)}")
+    if result.awaiting_approval_stage:
+        print(
+            f"Campaign '{result.slug}' is waiting for your approval of "
+            f"'{result.awaiting_approval_stage}'. Stages run: {len(result.stages)}"
+        )
+    else:
+        print(f"Campaign '{result.slug}' complete. Stages run: {len(result.stages)}")
     for stage_result in result.stages:
         print(
             f"  - {stage_result.stage}: {stage_result.deliverable_path}  "

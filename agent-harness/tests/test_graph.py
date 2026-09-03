@@ -18,6 +18,7 @@ from conftest import (
     read_call,
     write_call,
 )
+from marketing_os.adapters.deliverables import InMemoryDeliverableStore
 from marketing_os.adapters.documents import InMemoryDocumentStore
 from marketing_os.config import Settings
 from marketing_os.governance.pipeline import PIPELINE
@@ -338,6 +339,7 @@ async def test_creative_brief_blocked_before_performance_plan_exists(settings: S
 
 
 async def test_full_pipeline_advances_through_every_stage(settings: Settings) -> None:
+    settings.human_gate_stages = []
     _write_specs(settings)
     reviewer = FakeReviewer([_PASS])
     graph = build_campaign_graph(
@@ -363,6 +365,7 @@ async def test_full_pipeline_on_in_memory_store_writes_nothing_to_disk(
 ) -> None:
     import shutil
 
+    settings.human_gate_stages = []
     _write_specs(settings)
     store = InMemoryDocumentStore()
     store.write(TENANT, "dna.md", (settings.tenant_dir(TENANT) / "dna.md").read_text())
@@ -373,16 +376,19 @@ async def test_full_pipeline_on_in_memory_store_writes_nothing_to_disk(
     )
     shutil.rmtree(settings.tenants_dir)
 
+    versions = InMemoryDeliverableStore()
     reviewer = FakeReviewer([_PASS])
     graph = build_campaign_graph(
         settings,
         model=ProgrammableChatModel(handler=_writing_handler),
         reviewer=reviewer,
         document_store=store,
+        deliverable_store=versions,
     )
     state = await graph.ainvoke({"tenant": TENANT, "slug": SLUG}, config=_config("mem"))
     assert state["error"] is None
     assert [record["stage"] for record in state["results"]] == [s.key for s in PIPELINE]
     for stage in PIPELINE:
         assert store.exists(TENANT, f"campaigns/{SLUG}/{stage.deliverable}")
+    assert versions.stages(TENANT, SLUG) == [s.key for s in PIPELINE]
     assert not settings.tenants_dir.exists()

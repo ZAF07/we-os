@@ -1,6 +1,6 @@
 # 07 — Approval gates: interrupt/resume and versioned revision
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Parent
@@ -28,19 +28,24 @@ End-to-end behaviour: start a run, watch it work through research automatically,
 
 ## Acceptance criteria
 
-- [ ] Each stage's approval policy is data and is reported by the API alongside the stage.
-- [ ] A `human`-policy stage halts and the run does not advance until an explicit approval.
-- [ ] The campaign's lifecycle status reads `awaiting_approval` while halted, distinct from its stage progress.
-- [ ] Approving resumes the run into the next stage without a new run being started.
-- [ ] Revising with feedback re-runs the stage and produces a new version; the prior version is still readable.
-- [ ] Each version records the feedback that prompted it and whether it came from a person or the reviewer.
-- [ ] Version history for a deliverable is retrievable in order.
-- [ ] An `auto`-policy stage still advances on a passing QA verdict with no human involvement.
-- [ ] A halted run survives a service restart and can still be approved afterwards.
-- [ ] Asset prompts cannot be produced while any upstream `human` stage is unapproved.
-- [ ] `uv run pytest`, `uv run ruff check .`, `uv run ruff format`, `uv run mypy src` all pass.
-- [ ] Verified in the running app.
+- [x] Each stage's approval policy is data and is reported by the API alongside the stage.
+- [x] A `human`-policy stage halts and the run does not advance until an explicit approval.
+- [x] The campaign's lifecycle status reads `awaiting_approval` while halted, distinct from its stage progress.
+- [x] Approving resumes the run into the next stage without a new run being started.
+- [x] Revising with feedback re-runs the stage and produces a new version; the prior version is still readable.
+- [x] Each version records the feedback that prompted it and whether it came from a person or the reviewer.
+- [x] Version history for a deliverable is retrievable in order.
+- [x] An `auto`-policy stage still advances on a passing QA verdict with no human involvement.
+- [x] A halted run survives a service restart and can still be approved afterwards.
+- [x] Asset prompts cannot be produced while any upstream `human` stage is unapproved.
+- [x] `uv run pytest`, `uv run ruff check .`, `uv run ruff format`, `uv run mypy src` all pass.
+- [x] Verified in the running app.
 
 ## Blocked by
 
 - [05 — Postgres: adapter, durable checkpointer, shared run registry](archive/05-postgres-adapter-durable-checkpointer-shared-registry.md)
+
+## Completion
+
+- Completed: 2026-09-02
+- Commit: <to be filled in manually>

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from marketing_os.adapters.postgres.deliverables import PostgresDeliverableStore
 from marketing_os.adapters.postgres.documents import PostgresDocumentStore
 from marketing_os.adapters.postgres.questionnaire import (
     PostgresAnswerStore,
@@ -23,6 +24,7 @@ from marketing_os.errors import ConfigError
 __all__ = [
     "PostgresAnswerStore",
     "PostgresBackend",
+    "PostgresDeliverableStore",
     "PostgresDocumentStore",
     "PostgresQuestionnaireStore",
     "PostgresRunStore",
@@ -40,7 +42,7 @@ class PostgresBackend:
     service opens one in its lifespan and hands the parts out through its
     dependency providers.
 
-    The document, tenant, run, questionnaire and answer adapters use a
+    The document, deliverable, tenant, run, questionnaire and answer adapters use a
     **synchronous** pool because the :class:`~marketing_os.ports.DocumentStore`
     port is synchronous; the LangGraph
     checkpointer uses its own asynchronous connection because the graph is driven
@@ -98,6 +100,11 @@ class PostgresBackend:
     def documents(self) -> PostgresDocumentStore:
         """Return the document store over this backend's pool."""
         return PostgresDocumentStore(self._pool)
+
+    @property
+    def deliverables(self) -> PostgresDeliverableStore:
+        """Return the deliverable version store over this backend's pool."""
+        return PostgresDeliverableStore(self._pool)
 
     @property
     def tenants(self) -> PostgresTenantDirectory:

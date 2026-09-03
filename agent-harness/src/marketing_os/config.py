@@ -93,6 +93,37 @@ def _parse_web_backends(raw: str) -> list[WebBackend]:
     return backends
 
 
+def _parse_human_gate_stages(raw: str | None) -> list[str] | None:
+    """Parse which pipeline stages halt at an Approval Gate.
+
+    An unset variable means "keep the shipped defaults", which is different from
+    an empty one: setting ``MARKETING_OS_HUMAN_GATES=`` deliberately turns every
+    gate off, and that must not be silently read as "no configuration given".
+
+    Args:
+        raw: The comma-separated ``MARKETING_OS_HUMAN_GATES`` value, or ``None``
+            when the variable is unset.
+
+    Returns:
+        The stage keys requiring human approval, or ``None`` when unset.
+
+    Raises:
+        ConfigError: If the value names a stage the pipeline does not have.
+    """
+    if raw is None:
+        return None
+    from marketing_os.governance.pipeline import PIPELINE_BY_KEY
+
+    keys = [item.strip() for item in raw.split(",") if item.strip()]
+    unknown = [key for key in keys if key not in PIPELINE_BY_KEY]
+    if unknown:
+        known = ", ".join(PIPELINE_BY_KEY)
+        raise ConfigError(
+            f"Unknown stage(s) in MARKETING_OS_HUMAN_GATES: {', '.join(unknown)}. Known: {known}."
+        )
+    return keys
+
+
 class Role(StrEnum):
     """A model role whose per-role overrides the settings may resolve.
 
@@ -175,6 +206,12 @@ class Settings:
         root: The Marketing OS repository root.
         max_steps: The tool-call budget bounding each specialist's inner loop.
         max_qa_iterations: The revision budget for the per-stage QA loop.
+        human_gate_stages: The stage keys that halt at an Approval Gate, or
+            ``None`` to keep each stage's shipped policy. The approval policy is
+            data, so tightening or loosening the gates is a configuration change
+            rather than a rewrite (ADR-0015).
+        max_revisions: How many times one deliverable may be sent back with
+            written feedback, so a single item cannot burn a whole allowance.
         stream: Whether the CLI streams progress events.
         enable_web: Whether web-search tools are wired for agents that declare them.
         web_backends: The ordered web-search backends to try when web is enabled
@@ -216,6 +253,12 @@ class Settings:
     )
     max_qa_iterations: int = field(
         default_factory=lambda: int(os.environ.get("MARKETING_OS_MAX_QA", "3"))
+    )
+    human_gate_stages: list[str] | None = field(
+        default_factory=lambda: _parse_human_gate_stages(os.environ.get("MARKETING_OS_HUMAN_GATES"))
+    )
+    max_revisions: int = field(
+        default_factory=lambda: int(os.environ.get("MARKETING_OS_MAX_REVISIONS", "5"))
     )
     stream: bool = field(default_factory=lambda: os.environ.get("MARKETING_OS_STREAM", "1") != "0")
     enable_web: bool = field(default_factory=lambda: os.environ.get("MARKETING_OS_WEB", "0") == "1")

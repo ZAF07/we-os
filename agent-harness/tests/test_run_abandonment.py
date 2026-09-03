@@ -39,6 +39,7 @@ from conftest import (
     authenticate,
     deliverable_from,
     install_scripted_graph,
+    run_without_approval_gates,
     write_all_agent_specs,
     write_call,
 )
@@ -229,6 +230,7 @@ def test_a_cancelled_run_restarts_from_stage_one_rather_than_resuming(
     ``results`` channel.
     """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    run_without_approval_gates(monkeypatch)
     write_all_agent_specs(settings)
     blocking = WriteFirstStageThenBlock()
     install_scripted_graph(monkeypatch, model_factory=lambda: blocking)

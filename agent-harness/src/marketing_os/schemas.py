@@ -177,6 +177,10 @@ class CampaignResult(BaseModel):
         stages: The per-stage results in pipeline order.
         usage: The aggregated token usage across every model call.
         run_log: The repo-relative path of the run's JSONL trace, if written.
+        awaiting_approval_stage: The stage halted at an Approval Gate, or ``None``
+            when the run reached the end of the pipeline. A halted run is not a
+            finished one, so the caller must not record it as completed
+            (ADR-0015).
     """
 
     tenant: str
@@ -184,6 +188,55 @@ class CampaignResult(BaseModel):
     stages: list[StageResult] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)
     run_log: str | None = None
+    awaiting_approval_stage: str | None = None
+
+
+class DeliverableVersion(BaseModel):
+    """One immutable version of a stage's deliverable.
+
+    Deliverables are never overwritten (ADR-0015). Each revision writes a new
+    version recording the feedback that prompted it and who that feedback came
+    from, so months later the history explains itself: what changed, why, and
+    whether a person or the QA reviewer asked for it.
+
+    Attributes:
+        stage_key: The pipeline stage that produced this deliverable.
+        version: The version number, starting at 1 and rising by one.
+        content: The full deliverable markdown as saved.
+        created_at: When the version was written, as an ISO-8601 timestamp.
+        feedback: The feedback that prompted this version, or ``None`` for the
+            first version, which nothing prompted.
+        feedback_source: ``human`` when a person sent the stage back, ``reviewer``
+            when the QA reviewer did, or ``None`` for the first version.
+        supersedes_version: The version this replaces, or ``None`` for the first.
+    """
+
+    stage_key: str
+    version: int
+    content: str
+    created_at: str
+    feedback: str | None = None
+    feedback_source: str | None = None
+    supersedes_version: int | None = None
+
+
+class ApprovalDecision(BaseModel):
+    """What a person decided at an Approval Gate.
+
+    The gate is a human decision, distinct from the QA reviewer's model verdict:
+    both can send a stage back, but only this one blocks progress on a person
+    (ADR-0015).
+
+    Attributes:
+        stage_key: The stage the decision applies to.
+        approved: ``True`` to resume into the next stage, ``False`` to re-run
+            this stage with the feedback.
+        feedback: The written feedback to re-run with; required when refusing.
+    """
+
+    stage_key: str
+    approved: bool
+    feedback: str | None = None
 
 
 class RunRecord(BaseModel):

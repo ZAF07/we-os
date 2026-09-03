@@ -6,12 +6,13 @@ benefit from an explicit contract: the QA :class:`Reviewer`, which the graph
 depends on, the :class:`DocumentStore`, which resolves where tenant documents
 live (ADR-0014), the :class:`TenantDirectory`, which maps an identity provider's
 organization onto the platform tenant that owns those documents, the
-:class:`RunStore`, which holds run state durably so the one-active-run-per-campaign
-guard survives a restart and spans workers, and the :class:`TokenVerifier`, which
-establishes who a caller is (ADR-0013), and the :class:`QuestionnaireStore` and
-:class:`AnswerStore`, which hold the admin-curated question set and each
-business's answers to it (ADR-0018). Tests substitute all of them with
-hermetic fakes.
+:class:`DeliverableStore`, which keeps every immutable version of a deliverable
+and the feedback that prompted it (ADR-0015), the :class:`RunStore`, which holds
+run state durably so the one-active-run-per-campaign guard survives a restart and
+spans workers, and the :class:`TokenVerifier`, which establishes who a caller is
+(ADR-0013), and the :class:`QuestionnaireStore` and :class:`AnswerStore`, which
+hold the admin-curated question set and each business's answers to it
+(ADR-0018). Tests substitute all of them with hermetic fakes.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import Protocol, runtime_checkable
 
 from marketing_os.schemas import (
     BrandDnaRecord,
+    DeliverableVersion,
     DnaAnswer,
     Questionnaire,
     ReviewVerdict,
@@ -134,6 +136,104 @@ class DocumentStore(Protocol):
 
 
 @runtime_checkable
+class DeliverableStore(Protocol):
+    """Tenant-scoped, append-only history of every version of every deliverable.
+
+    Separate from the :class:`DocumentStore` because the two answer different
+    questions. The document store holds *the* deliverable — one path, one
+    content, which is what a specialist reads when it needs its upstream input.
+    This store holds *how that deliverable came to be*: each revision appends a
+    version recording the feedback that prompted it and whether that feedback
+    came from a person or the QA reviewer, and nothing is ever overwritten
+    (ADR-0015). The version chain is what makes "compare the versions" and "see
+    why this changed" answerable months later.
+    """
+
+    def append(
+        self,
+        tenant: str,
+        slug: str,
+        stage_key: str,
+        content: str,
+        *,
+        feedback: str | None = None,
+        feedback_source: str | None = None,
+    ) -> DeliverableVersion:
+        """Append a new version of a stage's deliverable.
+
+        The version number is assigned by the store rather than by the caller,
+        so two writers cannot both believe they wrote version 3.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+            stage_key: The stage whose deliverable this is.
+            content: The full deliverable markdown.
+            feedback: The feedback that prompted this version, or ``None`` for
+                the first version.
+            feedback_source: ``human`` or ``reviewer``, or ``None`` for the first.
+
+        Returns:
+            The stored version, carrying the number it was assigned.
+        """
+        ...
+
+    def latest(self, tenant: str, slug: str, stage_key: str) -> DeliverableVersion | None:
+        """Return the newest version of a stage's deliverable.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+            stage_key: The stage whose deliverable to read.
+
+        Returns:
+            The newest version, or ``None`` when the stage has produced none.
+        """
+        ...
+
+    def version(
+        self, tenant: str, slug: str, stage_key: str, version: int
+    ) -> DeliverableVersion | None:
+        """Return one historical version of a stage's deliverable.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+            stage_key: The stage whose deliverable to read.
+            version: The version number to read.
+
+        Returns:
+            That version, or ``None`` when it was never written.
+        """
+        ...
+
+    def history(self, tenant: str, slug: str, stage_key: str) -> list[DeliverableVersion]:
+        """Return every version of a stage's deliverable, newest first.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+            stage_key: The stage whose history to read.
+
+        Returns:
+            The versions newest first, empty when the stage has produced none.
+        """
+        ...
+
+    def stages(self, tenant: str, slug: str) -> list[str]:
+        """Return the stage keys a campaign has produced a deliverable for.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+
+        Returns:
+            The stage keys in mandatory pipeline order.
+        """
+        ...
+
+
+@runtime_checkable
 class Reviewer(Protocol):
     """A QA judge that scores a deliverable against a stage rubric."""
 
@@ -213,6 +313,30 @@ class RunStore(Protocol):
 
         Raises:
             RunConflictError: If the campaign already has a running run.
+        """
+        ...
+
+    def set_live_status(self, run_id: str, status: str) -> RunRecord | None:
+        """Move a live run between the non-terminal statuses, keeping its claim.
+
+        Used when a run halts at an Approval Gate and when the person's decision
+        resumes it. The campaign claim is deliberately **not** released: the
+        halted run is the one that will be resumed, and a second run started
+        meanwhile would race it over the same deliverables (ADR-0015).
+
+        Args:
+            run_id: The run to move.
+            status: The non-terminal status to record — ``awaiting_approval``
+                while a person decides, or ``running`` once they have. Any other
+                value is refused: writing a status the claim index does not
+                cover would silently free the campaign.
+
+        Returns:
+            The updated record, or ``None`` when the run is already resolved and
+            so has no claim left to hold.
+
+        Raises:
+            ValidationError: If ``status`` is not one of the live statuses.
         """
         ...
 
