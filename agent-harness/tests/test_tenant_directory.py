@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import COMPLETE_GOAL_BODY
 from marketing_os.adapters.tenants import (
     InMemoryTenantDirectory,
     PassthroughTenantDirectory,
@@ -128,6 +129,25 @@ class _FakeVerifier:
         )
 
 
+def _seed_brand_dna(repo: Path, tenant_id: str) -> None:
+    """Give a tenant a Brand DNA naming the segment the goal fixture targets.
+
+    Creating a campaign refuses a segment the Brand DNA does not name, so a
+    tenant minted mid-test needs one before it can own a campaign.
+
+    Args:
+        repo: The hermetic repository root.
+        tenant_id: The platform tenant to write the Brand DNA for.
+    """
+    dna = repo / "tenants" / tenant_id / "dna.md"
+    dna.parent.mkdir(parents=True, exist_ok=True)
+    dna.write_text(
+        "# Brand DNA — Coast Coffee\n\n"
+        f"- **Primary segment(s):** {COMPLETE_GOAL_BODY['audience_segment']}\n",
+        encoding="utf-8",
+    )
+
+
 def test_a_request_stores_its_documents_under_the_platform_tenant_not_the_org_id(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -141,12 +161,15 @@ def test_a_request_stores_its_documents_under_the_platform_tenant_not_the_org_id
     directory = InMemoryTenantDirectory()
     monkeypatch.setattr(api, "get_token_verifier", lambda: _FakeVerifier())
     monkeypatch.setattr(api, "get_tenant_directory", lambda: directory)
+    _seed_brand_dna(repo, directory.resolve(external_auth_id=CLERK_ORG).tenant_id)
 
     with TestClient(api.app) as client:
         response = client.post(
-            "/campaigns", json={"slug": "spring"}, headers={"Authorization": "Bearer any.token"}
+            "/campaigns",
+            json={**COMPLETE_GOAL_BODY, "name": "Spring"},
+            headers={"Authorization": "Bearer any.token"},
         )
-        assert response.status_code == 200
+        assert response.status_code == 201
         assert client.get("/me", headers={"Authorization": "Bearer any.token"}).json() == {
             "user_id": "usr_9f2c",
             "email": "sam@coastcoffee.example",

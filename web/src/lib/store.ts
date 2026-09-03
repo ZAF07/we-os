@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import type { CreatedCampaign } from "@/lib/campaigns";
 import { STRATEGY_STAGE_INDEX, type AiAction } from "@/lib/mock-data";
 import type { Questionnaire } from "@/lib/engine";
 
@@ -21,7 +20,6 @@ export interface DemoState {
   rightTab: RightTab;
   questionnaire: Questionnaire | null;
   onboarding: Record<string, string> | null;
-  createdCampaigns: CreatedCampaign[];
   setStage: (stage: number) => void;
   approve: () => void;
   undoApprove: () => void;
@@ -36,7 +34,6 @@ export interface DemoState {
     questionnaire: Questionnaire,
     answers: Record<string, string>,
   ) => void;
-  addCampaign: (campaign: CreatedCampaign) => void;
 }
 
 export const useDemoStore = create<DemoState>()(
@@ -53,7 +50,6 @@ export const useDemoStore = create<DemoState>()(
       rightTab: "evidence",
       questionnaire: null,
       onboarding: null,
-      createdCampaigns: [],
       setStage: (stage) => set({ stage }),
       approve: () => set({ approved: true, reopened: false }),
       undoApprove: () => set({ approved: false }),
@@ -72,11 +68,6 @@ export const useDemoStore = create<DemoState>()(
       setRightTab: (rightTab) => set({ rightTab }),
       completeOnboarding: (questionnaire, onboarding) =>
         set({ questionnaire, onboarding }),
-      addCampaign: (campaign) =>
-        set((state) => ({
-          createdCampaigns: [...state.createdCampaigns, campaign],
-          stage: 0,
-        })),
     }),
     {
       name: "marketing-os-demo",

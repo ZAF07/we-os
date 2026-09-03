@@ -8,7 +8,11 @@ Endpoints:
   GET  /brand-dna                       -> the tenant's answers and rendered markdown
   GET  /brand-dna/completeness          -> what still stands between them and a run
   POST /brand-dna/answers               -> save answers, returning the updated report
-  POST /campaigns                       -> scaffold a campaign goal from the template
+  GET  /brand-dna/segments              -> the audience segments a campaign may target
+  POST /campaigns                       -> create a campaign from its goal (201)
+  GET  /campaigns                       -> list active campaigns with status and progress
+  GET  /campaigns/{slug}                -> one campaign: goal, status, per-stage state
+  POST /campaigns/{slug}/archive        -> archive a campaign; it leaves the active list
   GET  /campaigns/{slug}/gate           -> Stage 0 gate report
   GET  /campaigns/{slug}/deliverables   -> list written deliverables
   GET  /campaigns/{slug}/stages         -> stages with approval policy, version and staleness
@@ -46,6 +50,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 from pydantic import BaseModel
+from pydantic import Field as PydanticField
 
 from marketing_os.adapters.auth import JwksTokenVerifier
 from marketing_os.adapters.deliverables import (
@@ -66,6 +71,17 @@ from marketing_os.adapters.questionnaire import InMemoryAnswerStore, InMemoryQue
 from marketing_os.adapters.runs import AWAITING_APPROVAL, CANCELLED, RUNNING, InMemoryRunStore
 from marketing_os.adapters.tenants import PassthroughTenantDirectory
 from marketing_os.adapters.usage import InMemoryUsageLedger
+from marketing_os.campaign import (
+    Budget,
+    CampaignGoal,
+    KpiTiers,
+    Timeframe,
+    allocate_slug,
+    audience_segments,
+    missing_goal_fields,
+    parse_campaign_goal,
+    render_campaign_goal,
+)
 from marketing_os.config import Settings, load_settings
 from marketing_os.entrypoints.env import load_env
 from marketing_os.errors import (
@@ -485,16 +501,35 @@ class DnaAnswersUpsert(BaseModel):
 
 
 class CreateCampaign(BaseModel):
-    """Request body for scaffolding a campaign.
+    """Request body for creating a campaign from its goal.
 
     Carries no business identity: the tenant comes from the verified token
-    (ADR-0013), so this body describes only the campaign itself.
+    (ADR-0013), so this body describes only the campaign itself. It carries no
+    channels either — those are the performance specialist's decision at stage 4
+    (ADR-0016), not something the business owner is asked for.
+
+    Every field is optional here so an incomplete body is refused by naming the
+    fields it is missing, rather than by Pydantic's generic schema error.
 
     Attributes:
-        slug: The campaign slug.
+        name: The campaign's display name.
+        objective: One measurable business objective.
+        timeframe: When the campaign runs.
+        budget: The media spend available to it.
+        audience_segment: The Brand DNA segment this campaign targets.
+        kpis: All three KPI tiers.
+        offer: The promotion being run, if any.
+        constraints: Anything unique to this campaign beyond the DNA constraints.
     """
 
-    slug: str
+    name: str = ""
+    objective: str = ""
+    timeframe: Timeframe = PydanticField(default_factory=Timeframe)
+    budget: Budget = PydanticField(default_factory=Budget)
+    audience_segment: str = ""
+    kpis: KpiTiers = PydanticField(default_factory=KpiTiers)
+    offer: str = ""
+    constraints: str = ""
 
 
 class RunCampaign(BaseModel):
@@ -730,41 +765,342 @@ def answer_brand_dna(body: DnaAnswersUpsert, identity: Identity) -> DnaCompleten
     return completeness(published, record, answered_against=answered_against)
 
 
-@app.post("/campaigns")
-def create_campaign(body: CreateCampaign, identity: Identity) -> dict[str, object]:
-    """Scaffold a campaign goal from the template and report the gate.
+ARCHIVED = "archived"
+_ARCHIVE_MARKER = "archived.md"
+_GOAL_DOCUMENT = "goal.md"
+
+
+def _campaign_slugs(tenant: str, store: DocumentStore) -> list[str]:
+    """List every campaign slug the tenant owns.
+
+    Campaigns are derived from the documents themselves rather than from a
+    separate registry, so a goal authored by hand is a campaign on equal terms
+    with one created through the interface, and the two can never disagree.
 
     Args:
-        body: The create-campaign request.
+        tenant: The tenant whose campaigns are listed.
+        store: The tenant-scoped document store.
+
+    Returns:
+        The slugs, in sorted order.
+    """
+    return sorted(
+        {
+            path.split("/")[1]
+            for path in store.list(tenant, "campaigns")
+            if path.count("/") >= 2 and path.endswith(f"/{_GOAL_DOCUMENT}")
+        }
+    )
+
+
+def _read_goal(tenant: str, slug: str, store: DocumentStore) -> CampaignGoal:
+    """Read a campaign's goal, falling back to its slug for an unnamed one.
+
+    A goal authored by hand may carry no title, so the campaign still needs a
+    name to show in a list. The slug is the honest fallback: it is what the
+    business will see in the URL.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+        store: The tenant-scoped document store.
+
+    Returns:
+        The structured goal, named after the slug when the document is untitled.
+    """
+    goal = parse_campaign_goal(store.read(tenant, f"campaigns/{slug}/{_GOAL_DOCUMENT}"))
+    if not goal.name.strip():
+        return goal.model_copy(update={"name": slug})
+    return goal
+
+
+def _require_campaign(tenant: str, slug: str, store: DocumentStore) -> CampaignGoal:
+    """Read a campaign the caller's tenant owns, or 404.
+
+    A slug owned by another tenant is simply absent from this tenant's store, so
+    it is indistinguishable from one that was never created (ADR-0013).
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+        store: The tenant-scoped document store.
+
+    Returns:
+        The campaign's goal.
+
+    Raises:
+        HTTPException: 404 if the caller's tenant has no such campaign.
+    """
+    if not store.exists(tenant, f"campaigns/{slug}/{_GOAL_DOCUMENT}"):
+        raise _http_error(DocumentNotFoundError(f"No such campaign '{slug}'."))
+    return _read_goal(tenant, slug, store)
+
+
+def _is_archived(tenant: str, slug: str, store: DocumentStore) -> bool:
+    """Return whether a campaign has been archived.
+
+    Archival is recorded as a marker document beside the goal rather than as a
+    column, so it rides the same tenant-scoped store — and the same isolation —
+    as everything else the campaign owns.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+        store: The tenant-scoped document store.
+
+    Returns:
+        ``True`` when the campaign is archived.
+    """
+    return store.exists(tenant, f"campaigns/{slug}/{_ARCHIVE_MARKER}")
+
+
+async def _campaign_payload(
+    tenant: str, slug: str, goal: CampaignGoal, store: DocumentStore
+) -> dict[str, object]:
+    """Describe one campaign: its goal, its lifecycle status, and every stage.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+        goal: The campaign's goal.
+        store: The tenant-scoped document store.
+
+    Returns:
+        The campaign as the interface reads it.
+    """
+    reported, status = await _stage_report(tenant, slug)
+    return {
+        "id": slug,
+        **goal.model_dump(),
+        "status": ARCHIVED if _is_archived(tenant, slug, store) else status,
+        "stages": reported,
+    }
+
+
+async def _stage_report(tenant: str, slug: str) -> tuple[list[dict[str, object]], str]:
+    """Report a campaign's stages and the lifecycle status derived from them.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+
+    Returns:
+        The stages in pipeline order, and the campaign's lifecycle status.
+    """
+    versions = get_deliverable_store()
+    configured = apply_approval_policies(PIPELINE, get_settings().human_gate_stages)
+    waiting = await _stage_awaiting_approval(tenant, slug)
+    stale = set(stale_stages(versions, tenant, slug))
+    latest = {stage.key: versions.latest(tenant, slug, stage.key) for stage in configured}
+    produced = {key for key, version in latest.items() if version is not None}
+    reported = [_report_stage(stage, latest[stage.key], waiting, stale) for stage in configured]
+    return reported, _campaign_status(produced, stale, waiting)
+
+
+@app.post("/campaigns", status_code=201)
+async def create_campaign(body: CreateCampaign, identity: Identity) -> dict[str, object]:
+    """Create a campaign from its goal and return it, in ``draft``.
+
+    The goal is written as the canonical ``goal.md`` every specialist reads, so a
+    campaign created through the interface is gated exactly as a hand-authored
+    one is — and passes, since the Required fields were collected here.
+
+    Args:
+        body: The campaign goal.
         identity: The verified identity whose tenant owns the campaign.
 
     Returns:
-        The slug, whether the goal was created, and the gate status.
+        The created campaign.
 
     Raises:
-        HTTPException: If the campaign-goal template is missing.
+        HTTPException: 422 if a Required field is missing or the segment is not
+            one the tenant's Brand DNA names.
     """
-    settings = get_settings()
     store = get_document_store()
     tenant = identity.tenant_id
-    slug = body.slug
-    goal_document = f"campaigns/{slug}/goal.md"
-    created = False
-    if not store.exists(tenant, goal_document):
-        template = settings.templates_dir / "campaign-goal.md"
-        if not template.is_file():
-            raise HTTPException(500, "campaign-goal template missing")
-        store.write(tenant, goal_document, template.read_text(encoding="utf-8"))
-        created = True
-    report = check_gate(
-        settings, tenant, slug, store=store, questionnaire=get_questionnaire_store().published()
+    goal = CampaignGoal(**body.model_dump())
+
+    missing = missing_goal_fields(goal)
+    if missing:
+        raise _http_error(
+            ValidationError("The campaign goal is incomplete. Missing: " + ", ".join(missing) + ".")
+        )
+    _require_known_segment(tenant, goal.audience_segment, store)
+
+    slug = allocate_slug(goal.name, taken=_campaign_slugs(tenant, store))
+    store.write(tenant, f"campaigns/{slug}/{_GOAL_DOCUMENT}", render_campaign_goal(goal))
+    return await _campaign_payload(tenant, slug, goal, store)
+
+
+def _require_known_segment(tenant: str, segment: str, store: DocumentStore) -> None:
+    """Refuse a target segment the tenant's Brand DNA does not name.
+
+    A campaign targets one of the segments the business described, never free
+    text — the whole pipeline grounds its work in that segment, so inventing one
+    would ground it in nothing (the Brand DNA rule).
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        segment: The segment the campaign targets.
+        store: The tenant-scoped document store.
+
+    Raises:
+        HTTPException: 422 if the segment is not one the Brand DNA names.
+    """
+    known = (
+        audience_segments(store.read(tenant, DNA_DOCUMENT))
+        if store.exists(tenant, DNA_DOCUMENT)
+        else []
     )
+    if segment not in known:
+        named = ", ".join(known) if known else "none yet — complete your Brand DNA first"
+        raise _http_error(
+            ValidationError(
+                f"audience_segment must be one your Brand DNA names ({named}), not '{segment}'."
+            )
+        )
+
+
+@app.get("/campaigns")
+async def list_campaigns(identity: Identity) -> dict[str, object]:
+    """List the tenant's active campaigns with lifecycle status and stage progress.
+
+    Archived campaigns are left out: archiving is what takes a campaign off this
+    list, and reading it back is what ``GET /campaigns/{slug}`` is for.
+
+    Args:
+        identity: The verified identity whose tenant owns the campaigns.
+
+    Returns:
+        One summary per active campaign.
+    """
+    store = get_document_store()
+    tenant = identity.tenant_id
+    summaries: list[dict[str, object]] = []
+    for slug in _campaign_slugs(tenant, store):
+        if _is_archived(tenant, slug, store):
+            continue
+        goal = _read_goal(tenant, slug, store)
+        stages, status = await _stage_report(tenant, slug)
+        summaries.append(
+            {
+                "id": slug,
+                "name": goal.name,
+                "objective": goal.objective,
+                "status": status,
+                "stage_progress": _stage_progress(stages),
+                "blocked_reason": _blocked_reason(stages, status),
+            }
+        )
+    return {"campaigns": summaries}
+
+
+def _stage_progress(stages: list[dict[str, object]]) -> dict[str, object]:
+    """Summarise how far a campaign has got through the pipeline.
+
+    Args:
+        stages: The campaign's stages in pipeline order.
+
+    Returns:
+        How many stages have completed, how many there are, and the stage the
+        campaign is currently on — the first that has not completed.
+    """
+    completed = [stage for stage in stages if stage["state"] == "completed"]
+    current = next((stage for stage in stages if stage["state"] != "completed"), None)
     return {
-        "slug": slug,
-        "goal_created_from_template": created,
-        "gate_ok": report.ok,
-        "gate_issues": report.all_issues,
+        "completed": len(completed),
+        "total": len(stages),
+        "current_stage_key": current["key"] if current else None,
     }
+
+
+def _blocked_reason(stages: list[dict[str, object]], status: str) -> str | None:
+    """Say what is holding a campaign up, in the operator's language.
+
+    Args:
+        stages: The campaign's stages in pipeline order.
+        status: The campaign's lifecycle status.
+
+    Returns:
+        The reason, or ``None`` when nothing is blocking the campaign.
+    """
+    if status == AWAITING_APPROVAL:
+        waiting = next((stage for stage in stages if stage["state"] == AWAITING_APPROVAL), None)
+        phase = waiting["phase"] if waiting else "A stage"
+        return f"{phase} is waiting for your approval."
+    stale = [stage for stage in stages if stage["stale"]]
+    if stale:
+        return f"{stale[0]['phase']} rests on a decision you have since re-opened."
+    return None
+
+
+@app.get("/campaigns/{slug}")
+async def get_campaign(slug: str, identity: Identity) -> dict[str, object]:
+    """Read one campaign: its goal fields, lifecycle status, and per-stage state.
+
+    Args:
+        slug: The campaign slug.
+        identity: The verified identity whose tenant owns the campaign.
+
+    Returns:
+        The campaign.
+
+    Raises:
+        HTTPException: 404 if the caller's tenant has no such campaign.
+    """
+    store = get_document_store()
+    tenant = identity.tenant_id
+    goal = _require_campaign(tenant, slug, store)
+    return await _campaign_payload(tenant, slug, goal, store)
+
+
+@app.post("/campaigns/{slug}/archive")
+async def archive_campaign(slug: str, identity: Identity) -> dict[str, object]:
+    """Archive a campaign, taking it off the active list.
+
+    Archiving is a lifecycle change, not a deletion: the goal and every
+    deliverable stay readable, because a business that ran a campaign should be
+    able to look at what it decided.
+
+    Args:
+        slug: The campaign slug.
+        identity: The verified identity whose tenant owns the campaign.
+
+    Returns:
+        The archived campaign.
+
+    Raises:
+        HTTPException: 404 if the caller's tenant has no such campaign.
+    """
+    store = get_document_store()
+    tenant = identity.tenant_id
+    goal = _require_campaign(tenant, slug, store)
+    store.write(
+        tenant,
+        f"campaigns/{slug}/{_ARCHIVE_MARKER}",
+        "Archived. The campaign and its deliverables stay readable.\n",
+    )
+    return await _campaign_payload(tenant, slug, goal, store)
+
+
+@app.get("/brand-dna/segments")
+def brand_dna_segments(identity: Identity) -> dict[str, object]:
+    """List the audience segments a campaign may target.
+
+    The segments come from the tenant's Brand DNA, so the interface offers
+    exactly what the business described rather than a free-text box.
+
+    Args:
+        identity: The verified identity whose tenant owns the Brand DNA.
+
+    Returns:
+        The segment names the Brand DNA defines.
+    """
+    store = get_document_store()
+    tenant = identity.tenant_id
+    if not store.exists(tenant, DNA_DOCUMENT):
+        return {"segments": []}
+    return {"segments": audience_segments(store.read(tenant, DNA_DOCUMENT))}
 
 
 @app.get("/campaigns/{slug}/gate")
@@ -901,19 +1237,8 @@ async def stages(slug: str, identity: Identity) -> dict[str, object]:
         pipeline order, each with its key, operator Phase, state, approval
         policy, and latest deliverable version if it has one.
     """
-    tenant = identity.tenant_id
-    versions = get_deliverable_store()
-    configured = apply_approval_policies(PIPELINE, get_settings().human_gate_stages)
-    waiting = await _stage_awaiting_approval(tenant, slug)
-    stale = set(stale_stages(versions, tenant, slug))
-    latest = {stage.key: versions.latest(tenant, slug, stage.key) for stage in configured}
-    produced = {key for key, version in latest.items() if version is not None}
-    reported = [_report_stage(stage, latest[stage.key], waiting, stale) for stage in configured]
-    return {
-        "slug": slug,
-        "status": _campaign_status(produced, stale, waiting),
-        "stages": reported,
-    }
+    reported, status = await _stage_report(identity.tenant_id, slug)
+    return {"slug": slug, "status": status, "stages": reported}
 
 
 def _campaign_status(produced: set[str], stale: set[str], waiting: str | None) -> str:

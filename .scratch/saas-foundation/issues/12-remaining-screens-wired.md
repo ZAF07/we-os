@@ -39,3 +39,17 @@ End-to-end behaviour: a business owner moves through every screen and sees only 
 
 - [10 — Campaign creation wired to the engine](10-campaign-creation-wired.md)
 - [11 — Workspace wired: stages, deliverables, approval](11-workspace-wired-stages-deliverables-approval.md)
+
+## Comments
+
+**2026-09-03.** **"Verified in the running app" and the smoke-suite criterion
+are not currently dischargeable.** `pnpm test` in `web/` needs Clerk credentials
+(`.env.local`, gitignored) plus a running engine holding an onboarded tenant —
+see [13](13-frontend-suite-cannot-run-without-credentials.md). Specs for this
+slice can be written but not executed until that lands, so verify at the engine
+boundary and say so explicitly rather than ticking the criteria.
+
+Also note, for the Brand screen: `GET /brand-dna/segments` was added in
+[slice 10](archive/10-campaign-creation-wired.md) and is now declared in the
+frozen contract. It returns just the Audience Segment names; the full authored
+answers this screen edits still come from `GET /brand-dna`.

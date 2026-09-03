@@ -1,11 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import { StatusPill } from "@/components/ui/status-pill";
 import { StepTab } from "@/components/ui/step-tab";
-import type { CreatedCampaign } from "@/lib/campaigns";
 import {
   AI_ACTIONS,
   AI_NOTES,
@@ -18,33 +18,13 @@ import {
   stageSubtitles,
   STRATEGY_STAGE_INDEX,
 } from "@/lib/mock-data";
+import { statusLabel } from "@/lib/campaigns";
+import type { Campaign } from "@/lib/engine";
 import { statusDotClass, statusPillClasses, type Status } from "@/lib/status";
 import { useDemoStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-/**
- * Returns a created (wizard-built) campaign's stage status.
- *
- * Args:
- *   stage: Stage index 0–7.
- *
- * Returns:
- *   Draft for the Brief stage, Not started for everything after.
- */
-function createdStageStatus(stage: number): Status {
-  return stage === 0 ? "Draft" : "Not started";
-}
-
-const CREATED_SUBTITLES = [
-  "Drafted just now",
-  "Starts after Brief",
-  "Not started",
-  "Not started",
-  "Not started",
-  "Not started",
-  "Not started",
-  "Not started",
-];
+import { loadCampaign } from "../actions";
 
 /** Renders an inline evidence-source reference chip (e.g. S1). */
 function SourceChip({ id }: { id: string }) {
@@ -275,76 +255,6 @@ function GenericStageDocument() {
       <div className="mt-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-[18px] py-3.5 text-[13px] text-muted-foreground">
         <strong className="text-slate-700">After this stage:</strong>{" "}
         {detail.after}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Renders the Brief stage of a wizard-created campaign from its
- * entered inputs.
- *
- * Args:
- *   campaign: The campaign created through the new-campaign wizard.
- */
-function CreatedBriefDocument({ campaign }: { campaign: CreatedCampaign }) {
-  const fields = [
-    { k: "Primary objective", v: campaign.objective },
-    { k: "Success metric", v: campaign.metric },
-    { k: "Desired customer action", v: campaign.action },
-    {
-      k: "Primary audience",
-      v: campaign.funnel
-        ? `${campaign.audience} · ${campaign.funnel}`
-        : campaign.audience,
-    },
-    { k: "Offer", v: campaign.offer },
-    { k: "Call to action", v: campaign.cta },
-    { k: "Budget", v: campaign.budget },
-    { k: "Timeline", v: `${campaign.start} → ${campaign.end}` },
-    { k: "Channels", v: campaign.channels.join(", ") },
-    { k: "Owner & approver", v: campaign.owner },
-  ];
-
-  return (
-    <div className="max-w-[660px]">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <StatusPill status="Draft" />
-        <span>Drafted from your campaign request · just now</span>
-      </div>
-      <h2 className="mt-2.5 mb-1 text-xl font-bold tracking-tight">
-        Campaign brief
-      </h2>
-      <p className="mb-[18px] text-[13px] text-muted-foreground">
-        The goal, budget and constraints this campaign was created from.
-      </p>
-      <div className="flex flex-col gap-[18px] rounded-xl border bg-card px-[22px] py-5">
-        <div>
-          <div className="mb-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
-            Why this campaign
-          </div>
-          <p className="text-sm">{campaign.reason}</p>
-        </div>
-        <div className="border-t border-slate-100 pt-4">
-          <div className="mb-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
-            Brief
-          </div>
-          <div className="flex flex-col">
-            {fields.map((field) => (
-              <div
-                key={field.k}
-                className="flex justify-between gap-2.5 border-b border-slate-100 py-[7px] text-[13px] last:border-b-0"
-              >
-                <span className="text-muted-foreground">{field.k}</span>
-                <span className="text-right font-semibold">{field.v}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-[18px] py-3.5 text-[13px] text-muted-foreground">
-        <strong className="text-slate-700">After this stage:</strong> Research
-        runs against this brief before any strategy is proposed.
       </div>
     </div>
   );
@@ -639,6 +549,88 @@ function EvidencePanel() {
   );
 }
 
+/**
+ * Renders a real campaign's goal — what the business decided before any
+ * stage ran.
+ *
+ * The stage deliverables, their versions and the approval gate arrive with
+ * the Workspace wiring; until then this shows the campaign's own goal rather
+ * than fixture content that belongs to a different campaign.
+ *
+ * Args:
+ *   campaign: The campaign as the engine reports it.
+ */
+function CampaignGoalDocument({ campaign }: { campaign: Campaign }) {
+  const fields: Array<[string, string]> = [
+    ["Primary business objective", campaign.objective],
+    ["Business KPI", campaign.kpis.business],
+    ["Marketing KPI", campaign.kpis.marketing],
+    ["Creative KPI", campaign.kpis.creative],
+    ["Target audience segment", campaign.audience_segment],
+    [
+      "Campaign budget",
+      `${campaign.budget.amount} ${campaign.budget.currency}`,
+    ],
+    [
+      "Timeframe",
+      `${campaign.timeframe.start_date} → ${campaign.timeframe.end_date}`,
+    ],
+  ];
+  if (campaign.offer) fields.push(["Offer / promotion", campaign.offer]);
+
+  return (
+    <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
+      <div className="max-w-[720px]">
+        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+          <Link
+            href="/campaigns"
+            className="text-muted-foreground no-underline hover:text-primary"
+          >
+            Campaigns
+          </Link>
+          <span>/</span>
+          <span className="font-semibold text-foreground">{campaign.name}</span>
+          <StatusPill status={statusLabel(campaign.status)} />
+        </div>
+        <h1 className="mt-2.5 text-[22px] font-bold tracking-tight">
+          Campaign goal
+        </h1>
+        <p className="mt-1 text-[13px] text-muted-foreground">
+          What this campaign is for. Research and strategy run from here, and we
+          choose the channels in the performance plan.
+        </p>
+        <div className="mt-4 flex flex-col rounded-xl border bg-card px-[22px] py-2">
+          {fields.map(([label, value]) => (
+            <div
+              key={label}
+              className="flex justify-between gap-2.5 border-b border-slate-100 py-2.5 text-[13px] last:border-b-0"
+            >
+              <span className="text-muted-foreground">{label}</span>
+              <span className="text-right font-semibold">{value}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex flex-col gap-2 rounded-xl border bg-card px-[22px] py-4">
+          <div className="text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
+            Pipeline
+          </div>
+          {campaign.stages.map((pipelineStage) => (
+            <div
+              key={pipelineStage.key}
+              className="flex items-center justify-between text-[13px]"
+            >
+              <span>{pipelineStage.phase}</span>
+              <span className="text-xs text-muted-foreground">
+                {pipelineStage.state}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </main>
+  );
+}
+
 /** Renders the campaign Workspace: stepper, stage document, decision rail. */
 export default function WorkspacePage() {
   const { slug } = useParams<{ slug: string }>();
@@ -646,12 +638,31 @@ export default function WorkspacePage() {
   const approved = useDemoStore((state) => state.approved);
   const reopened = useDemoStore((state) => state.reopened);
   const staleCleared = useDemoStore((state) => state.staleCleared);
-  const created = useDemoStore((state) =>
-    state.createdCampaigns.find((campaign) => campaign.slug === slug),
+  const [lookup, setLookup] = useState<{ campaign: Campaign | null } | null>(
+    null,
   );
 
   const fixture = campaignRows(approved).find((row) => row.slug === slug);
-  if (!fixture && !created) {
+
+  useEffect(() => {
+    loadCampaign(slug)
+      .then((campaign) => setLookup({ campaign }))
+      .catch(() => setLookup({ campaign: null }));
+  }, [slug]);
+
+  if (!fixture && lookup === null) {
+    return (
+      <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
+        <p className="text-[13px] text-muted-foreground">Loading campaign…</p>
+      </main>
+    );
+  }
+
+  if (!fixture && lookup?.campaign) {
+    return <CampaignGoalDocument campaign={lookup.campaign} />;
+  }
+
+  if (!fixture) {
     return (
       <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
         <h1 className="text-[22px] font-bold tracking-tight">
@@ -664,19 +675,14 @@ export default function WorkspacePage() {
     );
   }
 
-  const name = created ? created.name : fixture!.name;
-  const status: Status = created ? "Draft" : fixture!.status;
-  const statusFor = created
-    ? createdStageStatus
-    : (index: number) => stageStatus(index, approved, reopened, staleCleared);
-  const subtitles = created
-    ? CREATED_SUBTITLES
-    : stageSubtitles(approved, reopened, staleCleared);
+  const name = fixture.name;
+  const status: Status = fixture.status;
+  const statusFor = (index: number) =>
+    stageStatus(index, approved, reopened, staleCleared);
+  const subtitles = stageSubtitles(approved, reopened, staleCleared);
 
   const document =
-    created && stage === 0 ? (
-      <CreatedBriefDocument campaign={created} />
-    ) : stage === STRATEGY_STAGE_INDEX ? (
+    stage === STRATEGY_STAGE_INDEX ? (
       <StrategyDocument />
     ) : (
       <GenericStageDocument />

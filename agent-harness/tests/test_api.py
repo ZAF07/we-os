@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import (
+    COMPLETE_GOAL_BODY,
     FAIL_VERDICT,
     PLACEHOLDER_DNA,
     SLUG,
@@ -97,30 +98,14 @@ def test_health_reports_provider_and_root(client: TestClient, repo: Path) -> Non
     assert body["provider"]
 
 
-def test_create_campaign_scaffolds_goal_from_template(client: TestClient, repo: Path) -> None:
-    response = client.post("/campaigns", json={"slug": "newcamp"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["slug"] == "newcamp"
-    assert body["goal_created_from_template"] is True
-    assert (repo / "tenants" / TENANT / "campaigns" / "newcamp" / "goal.md").is_file()
-    assert body["gate_ok"] is False
-    assert body["gate_issues"]
+def test_create_campaign_writes_a_goal_that_passes_the_gate(client: TestClient, repo: Path) -> None:
+    """Creation covered in depth in test_campaigns_api; this holds the seam here."""
+    response = client.post("/campaigns", json=COMPLETE_GOAL_BODY)
 
-
-def test_create_campaign_is_idempotent_when_goal_exists(client: TestClient) -> None:
-    response = client.post("/campaigns", json={"slug": SLUG})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["goal_created_from_template"] is False
-    assert body["gate_ok"] is True
-
-
-def test_create_campaign_500_when_template_missing(client: TestClient, repo: Path) -> None:
-    (repo / "templates" / "campaign-goal.md").unlink()
-    response = client.post("/campaigns", json={"slug": "notmpl"})
-    assert response.status_code == 500
-    assert "template missing" in response.json()["message"]
+    assert response.status_code == 201
+    slug = response.json()["id"]
+    assert (repo / "tenants" / TENANT / "campaigns" / slug / "goal.md").is_file()
+    assert client.get(f"/campaigns/{slug}/gate").json()["ok"] is True
 
 
 def test_gate_endpoint_reports_pass(client: TestClient) -> None:

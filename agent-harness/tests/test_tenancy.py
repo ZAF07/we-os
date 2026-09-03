@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import (
+    COMPLETE_GOAL_BODY,
     OTHER_TENANT,
     PLACEHOLDER_DNA,
     SLUG,
@@ -104,12 +105,20 @@ def test_a_malformed_authorization_header_is_refused(
 def test_no_request_schema_accepts_a_business_identity(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The OpenAPI schema is the machine-checkable form of ADR-0013's rule."""
+    """The OpenAPI schema is the machine-checkable form of ADR-0013's rule.
+
+    ``KpiTiers.business`` is exempted below: it names the business **KPI tier** —
+    the revenue or bookings target — not whose business the request is for, which
+    is the only thing ADR-0013 forbids a caller from stating. The exemption is
+    named exactly so the guard still fails on a genuine identity field.
+    """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     with _client(repo, TENANT) as client:
         schema = client.get("/openapi.json").json()
 
     forbidden = {"tenant", "tenant_id", "customer", "customer_id", "business", "business_id", "org"}
+
+    exempt = {("KpiTiers", "business")}
 
     for path, operations in schema["paths"].items():
         for method, operation in operations.items():
@@ -118,6 +127,8 @@ def test_no_request_schema_accepts_a_business_identity(
 
     for name, component in schema["components"]["schemas"].items():
         for field in component.get("properties", {}):
+            if (name, field) in exempt:
+                continue
             assert field not in forbidden, f"{name}.{field}"
 
 
@@ -127,8 +138,11 @@ def test_a_caller_supplied_tenant_in_the_body_is_ignored(
     """Even if a client sends one, the tenant comes only from the verified claim."""
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     with _client(repo, TENANT) as client:
-        response = client.post("/campaigns", json={"slug": "smuggled", "tenant": OTHER_TENANT})
-        assert response.status_code == 200
+        response = client.post(
+            "/campaigns",
+            json={**COMPLETE_GOAL_BODY, "name": "Smuggled", "tenant": OTHER_TENANT},
+        )
+        assert response.status_code == 201
 
     assert (repo / "tenants" / TENANT / "campaigns" / "smuggled" / "goal.md").is_file()
     assert not (repo / "tenants" / OTHER_TENANT).exists()
@@ -243,9 +257,14 @@ def test_a_deliverables_content_is_readable_only_by_its_owner(
 def test_a_deliverable_name_cannot_traverse_out_of_the_campaign(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A bare ``..`` is deliberately absent: an HTTP client resolves it away
+    before the request is sent, so ``/deliverables/..`` reaches the server as a
+    plain request for the campaign. The traversal that does arrive is the
+    encoded one, which is what this guards.
+    """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     with _client(repo, TENANT) as client:
-        for name in ["..%2Fdna.md", "..", "dna.md", "goal.txt"]:
+        for name in ["..%2Fdna.md", "%2e%2e%2fdna.md", "dna.md", "goal.txt"]:
             assert client.get(f"/campaigns/{SLUG}/deliverables/{name}").status_code == 404, name
 
 

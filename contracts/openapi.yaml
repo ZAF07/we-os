@@ -320,6 +320,29 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationFailed"
 
+  /brand-dna/segments:
+    get:
+      operationId: listAudienceSegments
+      summary: List the audience segments a campaign may target
+      description: |
+        The Audience Segments named in the tenant's Brand DNA. A campaign targets
+        one of these, never free text, so the interface offers exactly what the
+        business described. Empty until the business answers the segments question.
+      tags: [brand-dna]
+      responses:
+        "200":
+          description: The segment names the Brand DNA defines.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudienceSegments"
+              example:
+                segments:
+                  - Weekday regulars
+                  - Weekend families
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
   /campaigns:
     get:
       operationId: listCampaigns
@@ -337,22 +360,22 @@ paths:
                 campaigns:
                   - id: cmp_spring
                     name: Spring refill push
+                    objective: 120 refill subscriptions in 8 weeks
                     status: awaiting_approval
                     stage_progress:
                       completed: 1
                       total: 6
                       current_stage_key: brand-strategy
                     blocked_reason: Brand strategy is waiting for your approval.
-                    updated_at: "2026-08-19T16:04:00Z"
                   - id: cmp_winter
                     name: Winter warmers
+                    objective: 300 hot-drink orders through winter
                     status: draft
                     stage_progress:
                       completed: 0
                       total: 6
                       current_stage_key: null
                     blocked_reason: null
-                    updated_at: "2026-08-02T09:12:00Z"
         "401":
           $ref: "#/components/responses/Unauthenticated"
     post:
@@ -1199,6 +1222,16 @@ components:
         label:
           type: string
 
+    AudienceSegments:
+      type: object
+      required: [segments]
+      properties:
+        segments:
+          type: array
+          description: The Audience Segment names the Brand DNA defines, in the order the business listed them.
+          items:
+            type: string
+
     Timeframe:
       type: object
       required: [start_date, end_date]
@@ -1320,7 +1353,7 @@ components:
 
     Campaign:
       type: object
-      required: [id, name, objective, timeframe, budget, audience_segment, kpis, status, stages, created_at, updated_at]
+      required: [id, name, objective, timeframe, budget, audience_segment, kpis, status, stages]
       properties:
         id:
           type: string
@@ -1336,6 +1369,12 @@ components:
           type: string
         kpis:
           $ref: "#/components/schemas/KpiTiers"
+        offer:
+          type: string
+          description: The promotion being run, if any.
+        constraints:
+          type: string
+          description: Anything unique to this campaign beyond the Brand DNA constraints.
         status:
           $ref: "#/components/schemas/CampaignStatus"
         stages:
@@ -1343,12 +1382,6 @@ components:
           description: All six engine stages in pipeline order, each with its Phase, state, and approval policy.
           items:
             $ref: "#/components/schemas/Stage"
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
 
     StageProgress:
       type: object
@@ -1363,12 +1396,15 @@ components:
 
     CampaignSummary:
       type: object
-      required: [id, name, status, stage_progress, blocked_reason, updated_at]
+      required: [id, name, objective, status, stage_progress, blocked_reason]
       properties:
         id:
           type: string
         name:
           type: string
+        objective:
+          type: string
+          description: The campaign's measurable business objective, shown under its name.
         status:
           $ref: "#/components/schemas/CampaignStatus"
         stage_progress:
@@ -1377,9 +1413,6 @@ components:
           type: string
           nullable: true
           description: What is blocking the campaign, in operator language, or null.
-        updated_at:
-          type: string
-          format: date-time
 
     CampaignList:
       type: object

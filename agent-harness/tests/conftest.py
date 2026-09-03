@@ -44,6 +44,21 @@ SLUG = "acme"
 
 PLACEHOLDER_DNA = "# Brand DNA — Acme\n\n## Business\n- **Business name:** <name>\n"
 
+COMPLETE_GOAL_BODY: dict[str, object] = {
+    "name": "Spring Refill Push",
+    "objective": "120 refill subscriptions in 8 weeks",
+    "timeframe": {"start_date": "2026-09-01", "end_date": "2026-10-27"},
+    "budget": {"amount": 4000, "currency": "SGD"},
+    "audience_segment": "Urban 22-35 beginners curious about climbing",
+    "kpis": {
+        "business": "120 refill subscriptions",
+        "marketing": "2.5% landing-page conversion",
+        "creative": "30% hook rate on launch video",
+    },
+}
+"""A complete ``POST /campaigns`` body, matching the segment the filled Brand DNA
+fixture names — a campaign may only target a segment the business described."""
+
 
 def identity_for(tenant: str = TENANT, user: str | None = None) -> VerifiedIdentity:
     """Build a verified identity for a person at a tenant, as the auth dependency would.
@@ -331,8 +346,10 @@ _GOAL_TEMPLATE = """\
 
 ## Required
 
-- **Customer:** <name>
 - **Primary business objective:** <outcome>
+- **Timeframe:** <start → end>
+- **Campaign budget:** <spend available>
+- **Target segment for this campaign:** <which DNA segment>
 
 ### Success metrics (define all three tiers)
 - **Business KPI:** <target>
@@ -389,8 +406,10 @@ _GOAL_FILLED = """\
 # Campaign Goal — Acme Spring
 
 ## Required
-- **Customer:** acme
 - **Primary business objective:** +40 new memberships in 8 weeks
+- **Timeframe:** 2026-09-01 → 2026-10-27
+- **Campaign budget:** 4000 AUD
+- **Target segment for this campaign:** Urban 22-35 beginners curious about climbing
 
 ### Success metrics (define all three tiers)
 - **Business KPI:** 40 memberships

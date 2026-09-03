@@ -1,148 +1,133 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useWizard } from "@/components/wizard/use-wizard";
 import { Field, WizardShell } from "@/components/wizard/wizard";
-import { slugify, type CreatedCampaign } from "@/lib/campaigns";
-import { FIXTURE_CAMPAIGN_SLUGS } from "@/lib/mock-data";
-import { audienceSegmentOptions } from "@/lib/onboarding";
-import { useDemoStore } from "@/lib/store";
+import type { CampaignGoalInput } from "@/lib/engine";
 import { cn } from "@/lib/utils";
 
-const STEPS = [
-  "Request",
-  "Objective",
-  "Audience",
-  "Offer & budget",
-  "Channels",
-  "Review",
-];
+import { createCampaignAction, loadAudienceSegments } from "../actions";
 
-const OBJECTIVES = [
-  "Generate qualified leads",
-  "Increase sales",
-  "Launch a product",
-  "Increase trial registrations",
-  "Improve customer retention",
-  "Build category awareness",
-  "Re-engage inactive customers",
-  "Promote an event",
-];
+/**
+ * The wizard collects exactly the campaign goal the DNA Gate requires — no
+ * more. It does not ask which channels to run on: that is the performance
+ * specialist's decision at stage 4, which the pipeline places before creative
+ * precisely so the system makes the call (ADR-0016).
+ */
+const STEPS = ["Campaign", "Objective", "Audience & budget", "Review"];
 
-const ACTIONS = [
-  "Purchase",
-  "Book a consultation",
-  "Request a quotation",
-  "Register",
-  "Download",
-  "Subscribe",
-  "Start a trial",
-  "Visit a location",
-];
+const CURRENCIES = ["SGD", "AUD", "USD", "EUR", "GBP"];
 
-const FUNNEL_STAGES = ["Awareness", "Consideration", "Conversion", "Retention"];
-
-const CHANNELS = [
-  "Instagram",
-  "Email",
-  "Blog / SEO",
-  "YouTube",
-  "Paid social",
-  "Landing page",
-];
-
-type Draft = Omit<CreatedCampaign, "slug">;
+interface Draft {
+  name: string;
+  objective: string;
+  audience_segment: string;
+  amount: string;
+  currency: string;
+  start: string;
+  end: string;
+  business: string;
+  marketing: string;
+  creative: string;
+  offer: string;
+}
 
 const EMPTY: Draft = {
   name: "",
-  reason: "",
-  owner: "",
   objective: "",
-  action: "",
-  metric: "",
-  audience: "",
-  funnel: "",
-  offer: "",
-  cta: "",
-  budget: "",
+  audience_segment: "",
+  amount: "",
+  currency: CURRENCIES[0],
   start: "",
   end: "",
-  channels: [],
+  business: "",
+  marketing: "",
+  creative: "",
+  offer: "",
 };
 
-type DraftText = Exclude<keyof Draft, "channels">;
-
-const REQUIRED_BY_STEP: DraftText[][] = [
-  ["name", "reason", "owner"],
-  ["objective", "action", "metric"],
-  ["audience"],
-  ["offer", "cta", "budget", "start", "end"],
-  [],
+/** The Required draft fields for each step, in the order they are asked. */
+const REQUIRED_BY_STEP: Array<Array<keyof Draft>> = [
+  ["name", "objective"],
+  ["business", "marketing", "creative"],
+  ["audience_segment", "amount", "currency", "start", "end"],
   [],
 ];
 
-/** Renders the multi-step new-campaign wizard. */
+/**
+ * Converts the wizard draft into the goal the engine takes.
+ *
+ * Args:
+ *   draft: The answers entered in the wizard.
+ *
+ * Returns:
+ *   The campaign goal payload.
+ */
+function toGoal(draft: Draft): CampaignGoalInput {
+  return {
+    name: draft.name.trim(),
+    objective: draft.objective.trim(),
+    timeframe: { start_date: draft.start, end_date: draft.end },
+    budget: { amount: Number(draft.amount), currency: draft.currency },
+    audience_segment: draft.audience_segment,
+    kpis: {
+      business: draft.business.trim(),
+      marketing: draft.marketing.trim(),
+      creative: draft.creative.trim(),
+    },
+    offer: draft.offer.trim(),
+  };
+}
+
+/** Renders the new-campaign wizard, which creates a real campaign. */
 export default function NewCampaignPage() {
   const router = useRouter();
-  const onboarding = useDemoStore((state) => state.onboarding);
-  const createdCampaigns = useDemoStore((state) => state.createdCampaigns);
-  const addCampaign = useDemoStore((state) => state.addCampaign);
   const [draft, setDraft] = useState<Draft>(EMPTY);
+  const [segments, setSegments] = useState<string[] | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const segments = audienceSegmentOptions(onboarding);
+  useEffect(() => {
+    loadAudienceSegments()
+      .then(setSegments)
+      .catch(() => {
+        setSegments([]);
+        setFailure(
+          "We could not load your audience segments. Refresh to try again.",
+        );
+      });
+  }, []);
 
-  const setField = (field: DraftText) => (value: string) =>
-    setDraft((prev) => ({ ...prev, [field]: value }));
+  const setField = (field: keyof Draft) => (value: string) =>
+    setDraft((previous) => ({ ...previous, [field]: value }));
 
-  const toggleChannel = (channel: string) =>
-    setDraft((prev) => ({
-      ...prev,
-      channels: prev.channels.includes(channel)
-        ? prev.channels.filter((existing) => existing !== channel)
-        : [...prev.channels, channel],
-    }));
+  const missing = (field: keyof Draft) => !draft[field].trim();
 
-  const missing = (field: DraftText) => !draft[field].trim();
-
-  const stepIncomplete = (step: number) => {
-    if (REQUIRED_BY_STEP[step].some(missing)) return true;
-    if (step === 4 && draft.channels.length === 0) return true;
-    return false;
-  };
+  const stepIncomplete = (step: number) => REQUIRED_BY_STEP[step].some(missing);
 
   const { step, attempted, back, next } = useWizard({
     stepCount: STEPS.length,
     isStepIncomplete: stepIncomplete,
     onFinish: () => {
-      const taken = [
-        ...FIXTURE_CAMPAIGN_SLUGS,
-        ...createdCampaigns.map((campaign) => campaign.slug),
-      ];
-      const campaign: CreatedCampaign = {
-        ...draft,
-        slug: slugify(draft.name, taken),
-      };
-      addCampaign(campaign);
-      router.push(`/campaigns/${campaign.slug}`);
+      setSubmitting(true);
+      void createCampaignAction(toGoal(draft)).then(({ campaign, error }) => {
+        setSubmitting(false);
+        if (campaign) {
+          router.push(`/campaigns/${campaign.id}`);
+          return;
+        }
+        setFailure(error);
+      });
     },
   });
 
-  const showError = (field: DraftText) => attempted && missing(field);
+  const showError = (field: keyof Draft) => attempted && missing(field);
 
-  const text = (field: DraftText) => ({
+  const text = (field: keyof Draft) => ({
     id: field,
     value: draft[field],
     onChange: (
@@ -150,65 +135,31 @@ export default function NewCampaignPage() {
     ) => setField(field)(event.target.value),
   });
 
-  const selectField = (
-    field: DraftText,
-    label: string,
-    options: string[],
-    required: boolean,
-  ) => (
-    <Field
-      label={label}
-      htmlFor={field}
-      required={required}
-      error={required && showError(field)}
-    >
-      <Select value={draft[field]} onValueChange={setField(field)}>
-        <SelectTrigger id={field} className="w-full">
-          <SelectValue placeholder="Select…" />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option} value={option}>
-              {option}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </Field>
-  );
-
   const review: Array<[string, string]> = [
     ["Campaign", draft.name],
-    ["Why now", draft.reason],
-    ["Owner & approver", draft.owner],
-    ["Primary objective", draft.objective],
-    ["Desired action", draft.action],
-    ["Success metric", draft.metric],
-    [
-      "Audience",
-      draft.funnel ? `${draft.audience} · ${draft.funnel}` : draft.audience,
-    ],
-    ["Offer", draft.offer],
-    ["Call to action", draft.cta],
-    ["Budget", draft.budget],
-    ["Timeline", `${draft.start} → ${draft.end}`],
-    ["Channels", draft.channels.join(", ")],
+    ["Business objective", draft.objective],
+    ["Business KPI", draft.business],
+    ["Marketing KPI", draft.marketing],
+    ["Creative KPI", draft.creative],
+    ["Audience segment", draft.audience_segment],
+    ["Budget", `${draft.amount} ${draft.currency}`],
+    ["Timeframe", `${draft.start} → ${draft.end}`],
+    ["Offer", draft.offer || "—"],
   ];
 
   return (
     <WizardShell
       title="New campaign"
-      subtitle="The minimum a campaign needs before strategy work can start."
+      subtitle="The goal a campaign needs before any strategy work can start. We choose the channels later — that is our job, not yours."
       steps={STEPS}
       current={step}
       error={
-        attempted && stepIncomplete(step)
-          ? step === 4
-            ? "Select at least one channel to continue."
-            : "Fill in the required fields to continue."
-          : undefined
+        failure ??
+        (attempted && stepIncomplete(step)
+          ? "Fill in the required fields to continue."
+          : undefined)
       }
-      nextLabel="Create campaign"
+      nextLabel={submitting ? "Creating…" : "Create campaign"}
       onBack={back}
       onNext={next}
     >
@@ -223,45 +174,60 @@ export default function NewCampaignPage() {
             <Input {...text("name")} placeholder="Autumn Referral Push" />
           </Field>
           <Field
-            label="What are we promoting, and why now?"
-            htmlFor="reason"
+            label="Primary business objective"
+            htmlFor="objective"
             required
-            error={showError("reason")}
+            error={showError("objective")}
+            hint="One measurable outcome — the revenue result this campaign is for."
           >
             <Textarea
-              {...text("reason")}
-              placeholder="The product, event or initiative, and the reason this campaign exists."
+              {...text("objective")}
+              placeholder="120 refill subscriptions in 8 weeks"
             />
-          </Field>
-          <Field
-            label="Campaign owner & approver"
-            htmlFor="owner"
-            required
-            error={showError("owner")}
-          >
-            <Input {...text("owner")} placeholder="Maya Chen" />
           </Field>
         </>
       )}
 
       {step === 1 && (
         <>
-          {selectField(
-            "objective",
-            "Primary business objective",
-            OBJECTIVES,
-            true,
-          )}
-          {selectField("action", "Desired customer action", ACTIONS, true)}
+          <div className="text-[12.5px] text-muted-foreground">
+            Every campaign defines all three tiers. Without them there is no
+            definition of success to optimise against.
+          </div>
           <Field
-            label="Primary success metric"
-            htmlFor="metric"
+            label="Business KPI"
+            htmlFor="business"
             required
-            error={showError("metric")}
+            error={showError("business")}
+            hint="Revenue, leads, bookings, sales or retention."
           >
             <Input
-              {...text("metric")}
-              placeholder="1,500 new refill subscriptions in Q3"
+              {...text("business")}
+              placeholder="120 refill subscriptions"
+            />
+          </Field>
+          <Field
+            label="Marketing KPI"
+            htmlFor="marketing"
+            required
+            error={showError("marketing")}
+            hint="CTR, CPC, CPM or conversion rate."
+          >
+            <Input
+              {...text("marketing")}
+              placeholder="2.5% landing-page conversion"
+            />
+          </Field>
+          <Field
+            label="Creative KPI"
+            htmlFor="creative"
+            required
+            error={showError("creative")}
+            hint="Hook rate, watch time or engagement rate."
+          >
+            <Input
+              {...text("creative")}
+              placeholder="30% hook rate on the launch video"
             />
           </Field>
         </>
@@ -270,65 +236,78 @@ export default function NewCampaignPage() {
       {step === 2 && (
         <>
           <Field
-            label="Primary audience segment"
-            htmlFor="audience"
+            label="Target audience segment"
+            htmlFor="audience_segment"
             required
-            error={showError("audience")}
-            hint="Inherited from onboarding — pick a segment instead of retyping it."
+            error={showError("audience_segment")}
+            hint="From the segments you described in your Brand DNA — a campaign targets one group, never everyone."
           >
-            <div className="flex flex-col gap-1.5" role="radiogroup">
-              {segments.map((segment) => (
-                <button
-                  key={segment}
-                  type="button"
-                  role="radio"
-                  aria-checked={draft.audience === segment}
-                  onClick={() => setField("audience")(segment)}
-                  className={cn(
-                    "cursor-pointer rounded-lg border px-3 py-2 text-left text-[13px] font-medium",
-                    draft.audience === segment
-                      ? "border-primary bg-indigo-50 font-semibold text-primary"
-                      : "bg-card hover:border-indigo-200",
-                  )}
-                >
-                  {segment}
-                </button>
-              ))}
-            </div>
+            {segments === null ? (
+              <div className="text-[13px] text-muted-foreground">
+                Loading your segments…
+              </div>
+            ) : segments.length === 0 ? (
+              <div className="text-[13px] text-muted-foreground">
+                Your Brand DNA names no audience segments yet. Complete
+                onboarding first.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5" role="radiogroup">
+                {segments.map((segment) => (
+                  <button
+                    key={segment}
+                    type="button"
+                    role="radio"
+                    aria-checked={draft.audience_segment === segment}
+                    onClick={() => setField("audience_segment")(segment)}
+                    className={cn(
+                      "cursor-pointer rounded-lg border px-3 py-2 text-left text-[13px] font-medium",
+                      draft.audience_segment === segment
+                        ? "border-primary bg-indigo-50 font-semibold text-primary"
+                        : "bg-card hover:border-indigo-200",
+                    )}
+                  >
+                    {segment}
+                  </button>
+                ))}
+              </div>
+            )}
           </Field>
-          {selectField("funnel", "Funnel stage", FUNNEL_STAGES, false)}
-        </>
-      )}
-
-      {step === 3 && (
-        <>
-          <Field
-            label="Offer being promoted"
-            htmlFor="offer"
-            required
-            error={showError("offer")}
-          >
-            <Input
-              {...text("offer")}
-              placeholder="Starter Set at $42 with first refill free"
-            />
-          </Field>
-          <Field
-            label="Primary call to action"
-            htmlFor="cta"
-            required
-            error={showError("cta")}
-          >
-            <Input {...text("cta")} placeholder="Start your refill plan" />
-          </Field>
-          <Field
-            label="Total budget"
-            htmlFor="budget"
-            required
-            error={showError("budget")}
-          >
-            <Input {...text("budget")} placeholder="$48k across paid + owned" />
-          </Field>
+          <div className="grid grid-cols-[2fr_1fr] gap-4">
+            <Field
+              label="Campaign budget"
+              htmlFor="amount"
+              required
+              error={showError("amount")}
+              hint="The media spend available to this campaign."
+            >
+              <Input
+                {...text("amount")}
+                type="number"
+                min="0"
+                placeholder="4000"
+              />
+            </Field>
+            <Field
+              label="Currency"
+              htmlFor="currency"
+              required
+              error={showError("currency")}
+            >
+              <select
+                id="currency"
+                value={draft.currency}
+                onChange={(event) => setField("currency")(event.target.value)}
+                className="h-9 w-full rounded-md border bg-card px-3 text-[13px]"
+              >
+                {CURRENCIES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Field
               label="Start date"
@@ -347,37 +326,16 @@ export default function NewCampaignPage() {
               <Input type="date" {...text("end")} />
             </Field>
           </div>
+          <Field label="Offer or promotion" htmlFor="offer">
+            <Input
+              {...text("offer")}
+              placeholder="Optional — a discount, bundle or launch hook"
+            />
+          </Field>
         </>
       )}
 
-      {step === 4 && (
-        <Field
-          label="Channels"
-          htmlFor="channel-0"
-          required
-          hint="Where this campaign is allowed to run — strategy refines the final mix."
-        >
-          <div className="flex flex-col gap-2">
-            {CHANNELS.map((channel, index) => (
-              <div key={channel} className="flex items-center gap-2.5">
-                <Checkbox
-                  id={`channel-${index}`}
-                  checked={draft.channels.includes(channel)}
-                  onCheckedChange={() => toggleChannel(channel)}
-                />
-                <Label
-                  htmlFor={`channel-${index}`}
-                  className="text-[13px] font-medium"
-                >
-                  {channel}
-                </Label>
-              </div>
-            ))}
-          </div>
-        </Field>
-      )}
-
-      {step === 5 && (
+      {step === 3 && (
         <div>
           <div className="mb-2 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
             Review before creating
@@ -394,8 +352,8 @@ export default function NewCampaignPage() {
             ))}
           </div>
           <div className="mt-3 rounded-[10px] border border-indigo-200 bg-indigo-50 px-3.5 py-2.5 text-[12.5px] text-indigo-900">
-            Creating the campaign opens its Workspace at the Brief stage —
-            research and strategy run from there.
+            Creating the campaign opens its Workspace. Research and strategy run
+            from there, and we choose the channels in the performance plan.
           </div>
         </div>
       )}

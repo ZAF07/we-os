@@ -213,3 +213,109 @@ export function saveBrandDnaAnswers(
     body: JSON.stringify({ answers }),
   });
 }
+
+export interface Timeframe {
+  start_date: string;
+  end_date: string;
+}
+
+export interface Budget {
+  amount: number;
+  currency: string;
+}
+
+export interface KpiTiers {
+  business: string;
+  marketing: string;
+  creative: string;
+}
+
+export interface CampaignGoalInput {
+  name: string;
+  objective: string;
+  timeframe: Timeframe;
+  budget: Budget;
+  audience_segment: string;
+  kpis: KpiTiers;
+  offer?: string;
+  constraints?: string;
+}
+
+export interface CampaignStage {
+  key: string;
+  phase: string;
+  state: string;
+  approval_policy: string;
+  latest_version: number | null;
+  stale: boolean;
+}
+
+export interface Campaign extends CampaignGoalInput {
+  id: string;
+  status: string;
+  stages: CampaignStage[];
+}
+
+export interface StageProgress {
+  completed: number;
+  total: number;
+  current_stage_key: string | null;
+}
+
+export interface CampaignSummary {
+  id: string;
+  name: string;
+  objective: string;
+  status: string;
+  stage_progress: StageProgress;
+  blocked_reason: string | null;
+}
+
+/**
+ * Creates a campaign from its goal.
+ *
+ * Args:
+ *   goal: The campaign goal the business filled in.
+ *
+ * Returns:
+ *   The created campaign, in `draft`.
+ */
+export function createCampaign(goal: CampaignGoalInput): Promise<Campaign> {
+  return engineFetch<Campaign>("/campaigns", {
+    method: "POST",
+    body: JSON.stringify(goal),
+  });
+}
+
+/** Lists the tenant's active campaigns, archived ones excluded. */
+export function listCampaigns(): Promise<{ campaigns: CampaignSummary[] }> {
+  return engineFetch<{ campaigns: CampaignSummary[] }>("/campaigns");
+}
+
+/**
+ * Reads one campaign: its goal, lifecycle status, and per-stage state.
+ *
+ * Args:
+ *   slug: The campaign slug.
+ */
+export function getCampaign(slug: string): Promise<Campaign> {
+  return engineFetch<Campaign>(`/campaigns/${encodeURIComponent(slug)}`);
+}
+
+/**
+ * Archives a campaign, taking it off the active list.
+ *
+ * Args:
+ *   slug: The campaign slug.
+ */
+export function archiveCampaign(slug: string): Promise<Campaign> {
+  return engineFetch<Campaign>(
+    `/campaigns/${encodeURIComponent(slug)}/archive`,
+    { method: "POST" },
+  );
+}
+
+/** Reads the audience segments a campaign may target, from the Brand DNA. */
+export function getAudienceSegments(): Promise<{ segments: string[] }> {
+  return engineFetch<{ segments: string[] }>("/brand-dna/segments");
+}

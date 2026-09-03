@@ -37,3 +37,34 @@ End-to-end behaviour: open a campaign, watch a run progress through research, ar
 ## Blocked by
 
 - [07 — Approval gates: interrupt/resume and versioned revision](07-approval-gates-interrupt-resume-and-versioned-revision.md)
+
+## Comments
+
+**2026-09-03.** Two things this slice inherits from
+[slice 10](archive/10-campaign-creation-wired.md).
+
+**1. There is an interim workspace page to replace, not a blank one.**
+`web/src/app/campaigns/[slug]/page.tsx` now has two branches. A *fixture* slug
+(`fernway-refill-launch` and the other `campaignRows` entries) still renders the
+old mockup workspace — stepper, StrategyDocument, decision rail — driven by the
+`useDemoStore` client state. Any *real* slug renders `CampaignGoalDocument`, a
+deliberately thin page showing the campaign's goal fields and a flat
+phase/state list, loaded through the `loadCampaign` server action.
+
+That second branch exists only because slice 10 had to stop a freshly created
+campaign landing on "Campaign not found"; it is a placeholder, not a design.
+This slice should delete **both** branches — the fixture path and the interim
+goal page — along with the `useDemoStore` stage/approval state they lean on, and
+render the real stages, deliverables and gate for every campaign. The engine
+side it needs is already there: `GET /campaigns/{slug}` returns each stage with
+its `phase`, `state`, `approval_policy`, `latest_version` and `stale` flag, and
+`statusLabel`/`phaseLabel` in `web/src/lib/campaigns.ts` already map engine
+lifecycle and stage keys to operator vocabulary (ADR-0017).
+
+**2. "Verified in the running app" is not currently dischargeable.** The
+Playwright suite cannot run without Clerk credentials and a seeded engine — see
+[13](13-frontend-suite-cannot-run-without-credentials.md). Until that lands,
+this slice's last two criteria can only be met at the engine boundary; do not
+tick them on the strength of specs that were written but never executed. Slice
+10 shows the failure mode: a spec asserting only `toHaveURL(...)` stayed green
+over a workspace route that was broken for every real campaign.

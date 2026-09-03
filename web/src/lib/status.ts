@@ -9,6 +9,7 @@ export const STATUSES = [
   "Needs attention",
   "Not started",
   "Stale",
+  "Archived",
 ] as const;
 
 export type Status = (typeof STATUSES)[number];
@@ -24,6 +25,7 @@ const STATUS_PILL_CLASSES: Record<Status, string> = {
   "Needs attention": "bg-red-100 text-red-700",
   "Not started": "bg-slate-50 text-slate-400",
   Stale: "bg-orange-100 text-orange-800",
+  Archived: "bg-slate-100 text-slate-500",
 };
 
 const STATUS_EDGE_CLASSES: Record<Status, string> = {
@@ -37,6 +39,7 @@ const STATUS_EDGE_CLASSES: Record<Status, string> = {
   "Needs attention": "border-red-700",
   "Not started": "border-slate-400",
   Stale: "border-orange-800",
+  Archived: "border-slate-500",
 };
 
 const STATUS_DOT_CLASSES: Record<Status, string> = {
@@ -50,6 +53,7 @@ const STATUS_DOT_CLASSES: Record<Status, string> = {
   "Needs attention": "bg-red-500",
   "Not started": "bg-slate-300",
   Stale: "bg-orange-500",
+  Archived: "bg-slate-400",
 };
 
 /**
