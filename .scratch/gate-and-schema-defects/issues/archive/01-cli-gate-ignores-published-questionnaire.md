@@ -141,4 +141,4 @@ Tests: `test_cli.py::test_check_enforces_the_seed_question_set_not_the_template`
 ## Completion
 
 - Completed: 2026-09-03
-- Commit: <to be filled in manually>
+- Commit: 6636cfe

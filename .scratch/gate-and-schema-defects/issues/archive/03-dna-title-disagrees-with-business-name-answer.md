@@ -99,4 +99,4 @@ behaviour and now asserts the corrected contract.
 ## Completion
 
 - Completed: 2026-09-03
-- Commit: <to be filled in manually>
+- Commit: 6636cfe
