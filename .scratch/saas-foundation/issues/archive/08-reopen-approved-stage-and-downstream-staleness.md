@@ -44,7 +44,7 @@ End-to-end behaviour: complete a campaign through the creative brief, go back an
 - **Ordering is a campaign-wide `sequence`, not `created_at`.** The first cut
   compared timestamps; code review caught that this silently loses staleness.
   `now_timestamp()` collides ~16% of the time under rapid writes (measured: 1685
-  distinct of 2000), and Postgres `now()` is fixed for a whole *transaction*, so
+  distinct of 2000), and Postgres `now()` is fixed for a whole _transaction_, so
   two versions written together tie and downstream work reads as fresh. Version
   numbers cannot substitute — they count within one stage, so they cannot order
   events across stages. `DeliverableVersion.sequence` (a `bigserial` in Postgres,
@@ -59,11 +59,11 @@ End-to-end behaviour: complete a campaign through the creative brief, go back an
 - **Re-opening releases the caller's own gate-halted run** (`_release_gate_held_by`).
   Not in the issue, but required: without it a re-open is refused with
   `run_conflict` whenever a gate is holding, which is the common case. Re-opening
-  an earlier decision *is* a decision about the pending one. Scoped to the
+  an earlier decision _is_ a decision about the pending one. Scoped to the
   caller's own halted run — an actively-executing run is still refused.
 - **Lifecycle status now reported on `GET /campaigns/{slug}/stages`** as the
   vehicle for "cannot be treated as approved": `approved` requires every stage
-  produced *and* none stale. Derived from the deliverables, not from the rendered
+  produced _and_ none stale. Derived from the deliverables, not from the rendered
   state strings, so lifecycle cannot drift via a presentation change. A full
   `GET /campaigns/{slug}` belongs to issue 10.
 - **Contract extended** with `reopenStage`, plus `stale`/`latest_version` on
@@ -81,4 +81,4 @@ End-to-end behaviour: complete a campaign through the creative brief, go back an
 ## Completion
 
 - Completed: 2026-09-03
-- Commit: <to be filled in manually>
+- Commit: 85141af8e83d04f0ac48d050c992c26b8d4b8d98
