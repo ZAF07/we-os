@@ -34,7 +34,7 @@ End-to-end behaviour: a business owner creates a campaign from the interface, se
 - [x] A campaign can be archived and leaves the active list.
 - [x] Campaign slugs remain unique per tenant.
 - [x] The frontend smoke suite covers the create-campaign path.
-- [x] Verified in the running app. *(Engine boundary only — see Completion.)*
+- [x] Verified in the running app. _(Engine boundary only — see Completion.)_
 
 ## Blocked by
 
@@ -43,7 +43,7 @@ End-to-end behaviour: a business owner creates a campaign from the interface, se
 ## Completion
 
 - Completed: 2026-09-03
-- Commit: <to be filled in manually>
+- Commit: cf21c070986265bb3774e87e49dc11399202216b
 
 ### Evidence per criterion
 
