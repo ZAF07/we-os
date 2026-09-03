@@ -209,3 +209,136 @@ def test_new_campaign_reports_a_run_waiting_on_approval(
     assert code == 0
     assert "waiting for your approval of 'brand-strategy'" in out
     assert "complete" not in out
+
+
+def test_check_enforces_the_seed_question_set_not_the_template(
+    cli: None, repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The gate the CLI applies must be the one the API applies: the published
+    # question set. Rendering a DNA that answers every seed Required question
+    # therefore passes, even though it does not carry the template's fields.
+    from marketing_os.questionnaire import SEED_QUESTIONNAIRE, render_brand_dna
+    from marketing_os.schemas import BrandDnaRecord, DnaAnswer
+
+    record = BrandDnaRecord(
+        questionnaire_version=SEED_QUESTIONNAIRE.version,
+        answers=[
+            DnaAnswer(question_id=question.id, answer=f"Answer to {question.field}")
+            for question in SEED_QUESTIONNAIRE.required_questions
+        ],
+    )
+    (repo / "tenants" / TENANT / "dna.md").write_text(
+        render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Acme"), encoding="utf-8"
+    )
+    code = main(["check", "acme"])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "Stage 0 gate passed" in out
+
+
+def test_check_says_which_question_set_it_gated_against(
+    cli: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A passing gate authorises a pipeline run, so it must not be a bare green
+    # checkmark: it names the question set it enforced and where that came from.
+    from marketing_os.questionnaire import SEED_QUESTIONNAIRE
+
+    code = main(["check", "acme"])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert f"v{SEED_QUESTIONNAIRE.version}" in out
+    assert "no database configured" in out
+
+
+def test_check_gates_against_the_published_set_when_a_dsn_is_configured(
+    cli: None, repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Publishing a question set with a new Required question must tighten the
+    # gate for the CLI exactly as it does for the API — the whole point of the
+    # published set being authoritative.
+    from marketing_os.entrypoints import cli as cli_module
+    from marketing_os.questionnaire import SEED_QUESTIONNAIRE
+    from marketing_os.schemas import Question, Questionnaire
+
+    tightened = Questionnaire(
+        version=SEED_QUESTIONNAIRE.version + 1,
+        published_at="2026-09-03T09:00:00Z",
+        questions=[
+            *SEED_QUESTIONNAIRE.questions,
+            Question(
+                id="q_seasonality",
+                field="Seasonality",
+                section="Reach & constraints",
+                text="When is your busiest season?",
+                why_we_ask="Timing changes the message.",
+                help_text="Name the months.",
+                required=True,
+            ),
+        ],
+    )
+    monkeypatch.setenv("MARKETING_OS_POSTGRES_DSN", "postgresql://stub/stub")
+    monkeypatch.setattr(cli_module, "read_published_questionnaire", lambda dsn: tightened)
+
+    code = main(["check", "acme"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "Seasonality" in out
+
+
+def test_new_campaign_refuses_a_dna_incomplete_against_the_published_set(
+    cli: None, repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The serious half of the defect: the CLI must not *run the pipeline* for a
+    # business the API would block (`.claude/rules/brand-dna.md`).
+    from marketing_os.entrypoints import cli as cli_module
+    from marketing_os.questionnaire import SEED_QUESTIONNAIRE
+    from marketing_os.schemas import Question, Questionnaire
+
+    tightened = Questionnaire(
+        version=SEED_QUESTIONNAIRE.version + 1,
+        published_at="2026-09-03T09:00:00Z",
+        questions=[
+            *SEED_QUESTIONNAIRE.questions,
+            Question(
+                id="q_seasonality",
+                field="Seasonality",
+                section="Reach & constraints",
+                text="When is your busiest season?",
+                why_we_ask="Timing changes the message.",
+                help_text="Name the months.",
+                required=True,
+            ),
+        ],
+    )
+    monkeypatch.setenv("MARKETING_OS_POSTGRES_DSN", "postgresql://stub/stub")
+    monkeypatch.setattr(cli_module, "read_published_questionnaire", lambda dsn: tightened)
+
+    code = main(["new-campaign", "acme"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "Seasonality" in out
+    assert "Stage:" not in out
+
+
+def test_check_refuses_clearly_when_the_configured_database_is_unreachable(
+    cli: None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A DSN that does not answer must be a config error, not a raw traceback.
+
+    The gate resolves the published question set from the database, so an
+    unreachable one has to say so: silently falling back to the seed set would
+    let the CLI pass a business the API blocks, which is the defect this fix
+    exists to close.
+    """
+    from marketing_os.entrypoints import cli as cli_module
+
+    def refuse(dsn: str) -> None:
+        raise OSError("connection refused")
+
+    monkeypatch.setenv("MARKETING_OS_POSTGRES_DSN", "postgresql://stub/stub")
+    monkeypatch.setattr(cli_module, "read_published_questionnaire", refuse)
+
+    code = main(["check", "acme"])
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "MARKETING_OS_POSTGRES_DSN" in err

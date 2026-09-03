@@ -1,6 +1,6 @@
 # The Brand DNA heading and its "Business name" field can disagree
 
-Status: needs-triage
+Status: completed
 Type: bug
 
 ## Parent
@@ -57,3 +57,46 @@ called in the IdP.
 - [render.py:79](../../../agent-harness/src/marketing_os/questionnaire/render.py#L79) — the heading built from `business_name`.
 - [app.py:604](../../../agent-harness/src/marketing_os/entrypoints/api/app.py#L604) — the identity name passed in.
 - [ADR-0018](../../../docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md) — structured answers as source of truth.
+
+## Comments
+
+**2026-09-03.** Fixed. The heading now renders from the business's own answer to
+`q_business_name`, with the identity name used only as the fallback when that
+question is unanswered.
+
+That is the reading the issue proposed and asked to have confirmed: ADR-0018
+holds the structured answers to be the source of truth and the markdown a derived
+projection, and `q_business_name` is Required and is the business's own answer.
+The IdP's organization name stays the fallback, so a business that has not yet
+answered still gets a titled document rather than a bare tenant id.
+
+`_title_for` takes the first line of a multi-line answer and treats a
+whitespace-only answer as unanswered, so the heading is always a single sensible
+name.
+
+### Verification
+
+Through the real `POST /brand-dna/answers` and `GET /brand-dna` endpoints,
+reproducing this report's steps:
+
+```
+--- onboarded, identity organization "Harbour Bikes" ---
+# Brand DNA — Harbour Bikes
+- **Business name:** Harbour Bikes
+
+--- after POST /brand-dna/answers editing q_business_name (200) ---
+# Brand DNA — Harbour Bikes & Cargo
+- **Business name:** Harbour Bikes & Cargo
+```
+
+Heading and field agree, where before the heading stayed stale.
+
+Tests: `test_questionnaire.py::test_rendered_dna_titles_itself_from_the_business_name_answer`
+and `::test_rendered_dna_falls_back_to_the_identity_name_when_unanswered`.
+`test_rendered_dna_carries_every_answer_under_its_section` was asserting the old
+behaviour and now asserts the corrected contract.
+
+## Completion
+
+- Completed: 2026-09-03
+- Commit: 6636cfe

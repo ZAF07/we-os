@@ -105,7 +105,7 @@ Where a campaign sits as a whole — `draft`, `running`, `awaiting_approval`, `a
 _Avoid_: state, stage, phase.
 
 **DNA Gate**:
-The mandatory Stage 0 check: complete Brand DNA + complete Campaign Goal must both exist before any campaign work begins. On failure it lists what is missing and stops.
+The mandatory Stage 0 check: complete Brand DNA + complete Campaign Goal must both exist before any campaign work begins. On failure it lists what is missing and stops. **Complete** means answering every question the *published* Questionnaire marks Required — so publishing a new Required question tightens the gate for every entrypoint at once, and no entrypoint may apply a weaker one.
 _Avoid_: precondition, validation.
 
 **Guardrail** (a.k.a. **Rubric**):

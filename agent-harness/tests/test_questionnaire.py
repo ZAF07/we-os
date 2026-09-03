@@ -171,7 +171,9 @@ def test_answers_to_a_retired_question_are_ignored():
 def test_rendered_dna_carries_every_answer_under_its_section():
     record = answers_for(SEED_QUESTIONNAIRE)
     markdown = render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Acme Climbing Gym")
-    assert markdown.startswith("# Brand DNA — Acme Climbing Gym")
+    # Titled from the answer, not the passed identity name — see
+    # test_rendered_dna_titles_itself_from_the_business_name_answer.
+    assert markdown.startswith("# Brand DNA — Answer to Business name")
     for question in SEED_QUESTIONNAIRE.required_questions:
         assert f"- **{question.field}:** Answer to {question.field}" in markdown
         assert f"## {question.section}" in markdown or f"### {question.section}" in markdown
@@ -229,3 +231,26 @@ def test_answer_store_records_the_version_answers_were_given_against():
     store.upsert(TENANT, version=3, answers=[DnaAnswer(question_id="q_business_name", answer="A")])
     assert store.read(TENANT).questionnaire_version == 3
     assert store.read(TENANT).updated_at is not None
+
+
+def test_rendered_dna_titles_itself_from_the_business_name_answer():
+    # The answers are the source of truth and the markdown a projection of them
+    # (ADR-0018), so editing the Business name answer must move the heading too
+    # rather than leaving it stating a second, stale name for the same business.
+    record = answers_for(SEED_QUESTIONNAIRE)
+    record.answers = [
+        DnaAnswer(question_id="q_business_name", answer="Harbour Bikes & Cargo")
+        if answer.question_id == "q_business_name"
+        else answer
+        for answer in record.answers
+    ]
+    markdown = render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Harbour Bikes")
+    assert markdown.startswith("# Brand DNA — Harbour Bikes & Cargo")
+    assert "- **Business name:** Harbour Bikes & Cargo" in markdown
+
+
+def test_rendered_dna_falls_back_to_the_identity_name_when_unanswered():
+    business = next(q for q in SEED_QUESTIONNAIRE.questions if q.id == "q_business_name")
+    record = answers_for(SEED_QUESTIONNAIRE, skip={business.id})
+    markdown = render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Harbour Bikes")
+    assert markdown.startswith("# Brand DNA — Harbour Bikes")
