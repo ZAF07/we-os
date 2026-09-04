@@ -88,10 +88,8 @@ test("the create-campaign path works end to end", async ({ page }) => {
 
   await page.getByRole("button", { name: "Create campaign" }).click();
   await expect(page).toHaveURL(/\/campaigns\/smoke-campaign/);
-  await expect(
-    page.getByRole("heading", { name: "Campaign goal" }),
-  ).toBeVisible();
-  await expect(page.getByText("40 new memberships in 8 weeks")).toBeVisible();
+  await expect(page.getByText(name)).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Stages" })).toBeVisible();
 
   await page.goto("/campaigns");
   await expect(page.getByText(name)).toBeVisible();

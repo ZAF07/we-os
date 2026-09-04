@@ -88,12 +88,8 @@ test("completing the wizard creates a real campaign that appears in the list", a
   await page.getByRole("button", { name: "Create campaign" }).click();
 
   await expect(page).toHaveURL(/\/campaigns\/autumn-referral-push/);
-  await expect(
-    page.getByRole("heading", { name: "Campaign goal" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("120 refill subscriptions in 8 weeks"),
-  ).toBeVisible();
+  await expect(page.getByText(CAMPAIGN_NAME)).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Stages" })).toBeVisible();
 
   await page.goto("/campaigns");
   await expect(page.getByText(CAMPAIGN_NAME)).toBeVisible();

@@ -319,3 +319,201 @@ export function archiveCampaign(slug: string): Promise<Campaign> {
 export function getAudienceSegments(): Promise<{ segments: string[] }> {
   return engineFetch<{ segments: string[] }>("/brand-dna/segments");
 }
+
+export interface DeliverableSummary {
+  stage_key: string;
+  latest_version: number;
+  stale: boolean;
+  updated_at: string;
+}
+
+export interface StageDeliverable {
+  name: string;
+  path: string;
+  stage_key: string;
+  stale: boolean;
+  content: string;
+}
+
+export interface DeliverableVersionSummary {
+  stage_key: string;
+  version: number;
+  created_at: string;
+  feedback: string | null;
+  feedback_source: string | null;
+  supersedes_version: number | null;
+  sequence: number;
+}
+
+export interface DeliverableVersionDetail extends DeliverableVersionSummary {
+  slug: string;
+  content: string;
+  latest: boolean;
+}
+
+export interface RunHandle {
+  run_id: string;
+  slug: string;
+  stage: string | null;
+  status: string;
+}
+
+export interface ActiveRun {
+  run_id: string;
+  slug: string;
+  stage: string | null;
+}
+
+/**
+ * Lists what a campaign has produced, with each deliverable's staleness.
+ *
+ * Args:
+ *   slug: The campaign slug.
+ */
+export function getDeliverableSummaries(
+  slug: string,
+): Promise<{ slug: string; deliverables: DeliverableSummary[] }> {
+  return engineFetch<{ slug: string; deliverables: DeliverableSummary[] }>(
+    `/campaigns/${encodeURIComponent(slug)}/deliverables`,
+  );
+}
+
+/**
+ * Reads the latest version of one stage's deliverable.
+ *
+ * Args:
+ *   slug: The campaign slug.
+ *   name: The deliverable filename, e.g. `brand-strategy.md`.
+ */
+export function getStageDeliverable(
+  slug: string,
+  name: string,
+): Promise<StageDeliverable> {
+  return engineFetch<StageDeliverable>(
+    `/campaigns/${encodeURIComponent(slug)}/deliverables/${encodeURIComponent(name)}`,
+  );
+}
+
+/**
+ * Lists a deliverable's versions, newest first, with the feedback behind each.
+ *
+ * Args:
+ *   slug: The campaign slug.
+ *   name: The deliverable filename.
+ */
+export function getDeliverableVersions(
+  slug: string,
+  name: string,
+): Promise<{ stage_key: string; versions: DeliverableVersionSummary[] }> {
+  return engineFetch<{
+    stage_key: string;
+    versions: DeliverableVersionSummary[];
+  }>(
+    `/campaigns/${encodeURIComponent(slug)}/deliverables/${encodeURIComponent(name)}/versions`,
+  );
+}
+
+/**
+ * Reads one historical version of a deliverable.
+ *
+ * Args:
+ *   slug: The campaign slug.
+ *   name: The deliverable filename.
+ *   version: The version number to read.
+ */
+export function getDeliverableVersion(
+  slug: string,
+  name: string,
+  version: number,
+): Promise<DeliverableVersionDetail> {
+  return engineFetch<DeliverableVersionDetail>(
+    `/campaigns/${encodeURIComponent(slug)}/deliverables/${encodeURIComponent(name)}/versions/${version}`,
+  );
+}
+
+/**
+ * Starts a detached run of a campaign's pipeline.
+ *
+ * Args:
+ *   slug: The campaign slug.
+ *   stage: A single stage to run, or null for the whole pipeline.
+ */
+export function startRun(
+  slug: string,
+  stage: string | null = null,
+): Promise<RunHandle> {
+  return engineFetch<RunHandle>(`/campaigns/${encodeURIComponent(slug)}/run`, {
+    method: "POST",
+    body: JSON.stringify({ stage }),
+  });
+}
+
+/** Lists the runs the caller currently has in flight. */
+export function listActiveRuns(): Promise<{ runs: ActiveRun[] }> {
+  return engineFetch<{ runs: ActiveRun[] }>("/runs");
+}
+
+/**
+ * Reads a run's lifecycle status.
+ *
+ * Args:
+ *   runId: The run id.
+ */
+export function getRun(runId: string): Promise<RunHandle> {
+  return engineFetch<RunHandle>(`/runs/${encodeURIComponent(runId)}`);
+}
+
+/**
+ * Approves the stage a run is halted at; the run resumes into the next stage.
+ *
+ * Args:
+ *   runId: The halted run.
+ *   stageKey: The stage being approved.
+ */
+export function approveStage(
+  runId: string,
+  stageKey: string,
+): Promise<RunHandle> {
+  return engineFetch<RunHandle>(`/runs/${encodeURIComponent(runId)}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ stage_key: stageKey }),
+  });
+}
+
+/**
+ * Sends the waiting stage back with feedback, producing a new version.
+ *
+ * Args:
+ *   runId: The halted run.
+ *   stageKey: The stage being sent back.
+ *   feedback: What the business owner wants changed.
+ */
+export function reviseStage(
+  runId: string,
+  stageKey: string,
+  feedback: string,
+): Promise<RunHandle> {
+  return engineFetch<RunHandle>(`/runs/${encodeURIComponent(runId)}/revise`, {
+    method: "POST",
+    body: JSON.stringify({ stage_key: stageKey, feedback }),
+  });
+}
+
+/**
+ * Re-opens an approved stage, re-running it alone and marking downstream stale.
+ *
+ * Args:
+ *   slug: The campaign slug.
+ *   stageKey: The stage to re-open.
+ *   feedback: What the owner wants changed, now they have changed their mind.
+ */
+export function reopenStage(
+  slug: string,
+  stageKey: string,
+  feedback: string,
+): Promise<RunHandle> {
+  return engineFetch<RunHandle>(
+    `/campaigns/${encodeURIComponent(slug)}/stages/${encodeURIComponent(stageKey)}/reopen`,
+    { method: "POST", body: JSON.stringify({ feedback }) },
+  );
+}
