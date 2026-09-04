@@ -1,66 +1,53 @@
 import { expect, test } from "@playwright/test";
 
-test("month grid places items on their days and highlights today", async ({
+/**
+ * Calendar shows real campaign timeframes. Publishing arrives in a later PRD,
+ * so it must not fabricate post schedules — these assert both that real
+ * timeframes render and that invented ones do not.
+ */
+
+test("calendar renders planned timeframes", async ({ page }) => {
+  await page.goto("/calendar");
+
+  await expect(page.getByRole("heading", { name: "Calendar" })).toBeVisible();
+  await expect(
+    page.getByText(/When each campaign is planned to run/),
+  ).toBeVisible();
+});
+
+test("it is explicit that per-post scheduling does not exist yet", async ({
   page,
 }) => {
   await page.goto("/calendar");
 
-  await expect(
-    page.getByRole("heading", { name: "Content · July 2026" }),
-  ).toBeVisible();
-
-  await expect(
-    page.getByRole("button", { name: "Refill in 15 seconds" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Cost-per-clean math" }),
-  ).toBeVisible();
-
-  const today = page.getByText("16", { exact: true }).first();
-  await expect(today).toHaveClass(/bg-primary/);
+  const empty = page.getByText("Nothing scheduled");
+  if (await empty.isVisible()) {
+    await expect(page.getByText(/Campaigns appear here/)).toBeVisible();
+  } else {
+    await expect(page.getByText("Planned timeframes")).toBeVisible();
+    await expect(page.getByText(/Not here yet:/)).toBeVisible();
+  }
 });
 
-test("selecting an item shows its full detail", async ({ page }) => {
+test("a created campaign appears with its real timeframe", async ({ page }) => {
+  const name = `Calendar ${Date.now()}`;
+
+  await page.goto("/campaigns/new");
+  await page.getByLabel("Campaign name").fill(name);
+  await page.getByLabel("Primary business objective").fill("An objective");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await page.getByLabel("Business KPI").fill("A business target");
+  await page.getByLabel("Marketing KPI").fill("A marketing target");
+  await page.getByLabel("Creative KPI").fill("A creative target");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await page.getByRole("radio").first().click();
+  await page.getByLabel("Campaign budget").fill("1000");
+  await page.getByLabel("Start date").fill("2026-09-01");
+  await page.getByLabel("End date").fill("2026-10-27");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await page.getByRole("button", { name: "Create campaign" }).click();
+  await expect(page.getByRole("navigation", { name: "Stages" })).toBeVisible();
+
   await page.goto("/calendar");
-
-  await expect(page.getByText("Reel · Refill in 15 seconds")).toBeVisible();
-  await expect(page.getByText("After publishing:")).toBeVisible();
-  await expect(page.getByText("3.1% CTR · 41k reach")).toBeVisible();
-
-  await page.getByRole("button", { name: "Bottle design story" }).click();
-  await expect(page.getByText("Carousel · Bottle design story")).toBeVisible();
-  await expect(page.getByText("Design-led shoppers")).toBeVisible();
-  await expect(page.getByText("Jul 21, 2026")).toBeVisible();
-  await expect(page.getByText("After publishing:")).toBeHidden();
-});
-
-test("the mode toggle switches grid, list, and by-campaign", async ({
-  page,
-}) => {
-  await page.goto("/calendar");
-
-  await page.getByRole("button", { name: "List" }).click();
-  await expect(page.getByRole("button", { name: "List" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(page.getByText("True cost of single-use")).toBeVisible();
-  await expect(page.getByText("52% open · 6.4% click")).toBeVisible();
-
-  await page.getByRole("button", { name: "By campaign" }).click();
-  await expect(page.getByText("3 items").first()).toBeVisible();
-  await expect(
-    page.getByText("Fernway Refill Launch", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Summer Refill Drop", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Loyalty Newsletter", { exact: true }),
-  ).toBeVisible();
-
-  await page.getByRole("button", { name: "Calendar", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Refill in 15 seconds" }),
-  ).toBeVisible();
+  await expect(page.getByText(name)).toBeVisible();
 });

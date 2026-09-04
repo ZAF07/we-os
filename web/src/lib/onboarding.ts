@@ -1,14 +1,4 @@
 import type { DnaAnswer, Question, Questionnaire } from "@/lib/engine";
-import { BRAND_SECTIONS, type BrandSection } from "@/lib/mock-data";
-
-/** The question whose answer lists the audience segments campaigns target. */
-const AUDIENCE_QUESTION_ID = "q_segments";
-
-/** Separates a written entry's name from its detail on one line. */
-const LINE_SEPARATOR = /\s+[—–-]\s+/;
-
-/** Stands in for the business name in section descriptions. */
-const BUSINESS_LABEL = "your business";
 
 export interface QuestionStep {
   name: string;
@@ -90,81 +80,4 @@ export function toAnswerPayload(answers: Record<string, string>): DnaAnswer[] {
   return Object.entries(answers)
     .filter(([, answer]) => answer.trim())
     .map(([question_id, answer]) => ({ question_id, answer: answer.trim() }));
-}
-
-/**
- * Returns the audience segment names campaigns can target.
- *
- * The segments live in the Brand DNA answer to the audience question,
- * one per line. Until the Campaign screens are wired to the engine
- * (tracked separately), the fixture segments stand in when the business
- * has not answered that question.
- *
- * Args:
- *   answers: Answer text keyed by question id, or null before onboarding.
- *
- * Returns:
- *   The segment names to offer.
- */
-export function audienceSegmentOptions(
-  answers: Record<string, string> | null,
-): string[] {
-  const written = (answers?.[AUDIENCE_QUESTION_ID] ?? "")
-    .split("\n")
-    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
-    .map((line) => line.split(LINE_SEPARATOR)[0].trim())
-    .filter(Boolean);
-  if (written.length) return written;
-
-  const fixture = BRAND_SECTIONS.find(
-    (section) => section.name === "Audience segments",
-  );
-  return (fixture?.entries ?? []).map((entry) =>
-    entry.k.replace(/^\d+\s*·\s*/, ""),
-  );
-}
-
-/**
- * Builds the Brand screen sections, overlaying the business's own Brand
- * DNA answers on the fixture sections.
- *
- * Only the sections the questionnaire actually covers are replaced; the
- * rest remain fixtures until the Brand screen is wired to the engine.
- *
- * Args:
- *   questionnaire: The published question set, or null before it loads.
- *   answers: Answer text keyed by question id, or null before onboarding.
- *
- * Returns:
- *   The brand sections to render.
- */
-export function brandSectionsWithOnboarding(
-  questionnaire: Questionnaire | null,
-  answers: Record<string, string> | null,
-): BrandSection[] {
-  if (!questionnaire || !answers) return BRAND_SECTIONS;
-
-  const answered = questionnaire.questions.filter((question) =>
-    (answers[question.id] ?? "").trim(),
-  );
-  if (!answered.length) return BRAND_SECTIONS;
-
-  const fromDna: BrandSection[] = questionSteps({
-    ...questionnaire,
-    questions: answered,
-  }).map((step) => ({
-    name: step.name,
-    verified: "Just now",
-    desc: `What ${BUSINESS_LABEL} told us about ${step.name.toLowerCase()}.`,
-    entries: step.questions.map((question) => ({
-      k: question.field,
-      v: answers[question.id],
-    })),
-  }));
-
-  const covered = new Set(fromDna.map((section) => section.name));
-  return [
-    ...fromDna,
-    ...BRAND_SECTIONS.filter((section) => !covered.has(section.name)),
-  ];
 }

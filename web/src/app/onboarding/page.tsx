@@ -15,7 +15,6 @@ import {
   unansweredRequired,
   type QuestionStep,
 } from "@/lib/onboarding";
-import { useDemoStore } from "@/lib/store";
 
 import { loadOnboarding, saveAnswers } from "./actions";
 
@@ -78,8 +77,6 @@ function QuestionField({
 /** Renders the onboarding wizard from the published question set. */
 export default function OnboardingPage() {
   const router = useRouter();
-  const completeOnboarding = useDemoStore((state) => state.completeOnboarding);
-  const setBrandIdx = useDemoStore((state) => state.setBrandIdx);
 
   const [questionnaire, setQuestionnaire] = useState<Questionnaire | null>(
     null,
@@ -123,12 +120,9 @@ export default function OnboardingPage() {
     stepCount: Math.max(steps.length, 1),
     isStepIncomplete: stepIncomplete,
     onFinish: () => {
-      void persist().then(() => {
-        if (!questionnaire) return;
-        completeOnboarding(questionnaire, answers);
-        setBrandIdx(0);
-        router.push("/brand");
-      });
+      // Brand reads the saved answers back from the engine, so finishing only
+      // has to make sure they are saved before navigating there.
+      void persist().then(() => router.push("/brand"));
     },
   });
 

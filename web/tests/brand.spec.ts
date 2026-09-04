@@ -1,80 +1,59 @@
 import { expect, test } from "@playwright/test";
 
-const SECTION_NAMES = [
-  "Positioning",
-  "Products & services",
-  "Audience segments",
-  "Voice & tone",
-  "Claims & evidence",
-  "Visual identity",
-  "Restricted language",
-  "Competitors",
-  "Approved examples",
-];
+/**
+ * Brand renders the tenant's real Brand DNA — the answers the business gave to
+ * the published questionnaire — and edits them in place. So these assert on the
+ * seeded business's own answers, which the e2e stack fixes deliberately for
+ * exactly this reason.
+ */
 
-test("brand renders the 9-section index and section entries", async ({
+const SEEDED_BUSINESS = "Summit Climbing Collective";
+
+test("brand renders the questionnaire's sections and the business's answers", async ({
   page,
 }) => {
   await page.goto("/brand");
 
   const index = page.getByRole("navigation", { name: "Brand sections" });
-  for (const name of SECTION_NAMES) {
-    await expect(index.getByRole("button", { name })).toBeVisible();
-  }
+  await expect(index.getByRole("button", { name: /Business/ })).toBeVisible();
+  await expect(index.getByRole("button", { name: /Customers/ })).toBeVisible();
 
-  await expect(
-    page.getByRole("heading", { name: "Positioning" }),
-  ).toBeVisible();
-  await expect(page.getByText("Last verified Jul 2")).toBeVisible();
-  await expect(page.getByText("Category frame")).toBeVisible();
-  await expect(
-    page.getByText(
-      "Used by 3 active campaigns. Changing this re-opens their Strategy stages.",
-    ),
-  ).toBeVisible();
-
-  await index.getByRole("button", { name: "Competitors" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Competitors" }),
-  ).toBeVisible();
-  await expect(page.getByText("Grove Collaborative")).toBeVisible();
+  await expect(page.getByText(SEEDED_BUSINESS).first()).toBeVisible();
 });
 
-test("restricted language renders warnings and pending-claim notes show", async ({
-  page,
-}) => {
+test("completeness is stated plainly, not implied", async ({ page }) => {
+  await page.goto("/brand");
+
+  await expect(
+    page.getByText(/Required answers are in|Every Required answer is in/),
+  ).toBeVisible();
+});
+
+test("switching section shows that section's questions", async ({ page }) => {
   await page.goto("/brand");
 
   const index = page.getByRole("navigation", { name: "Brand sections" });
-  await index.getByRole("button", { name: "Restricted language" }).click();
-  await expect(page.getByText('"Non-toxic"')).toBeVisible();
-  await expect(page.getByText("RESTRICTED").first()).toBeVisible();
+  await index.getByRole("button", { name: /Customers/ }).click();
 
-  await index.getByRole("button", { name: "Claims & evidence" }).click();
-  await expect(
-    page.getByText("Currently blocking 1 asset in Summer Refill Drop."),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customers" })).toBeVisible();
 });
 
-test("home flagged-claim CTA deep-links to the Restricted language section", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await page.getByRole("link", { name: "Resolve" }).click();
-  await expect(page).toHaveURL("/brand");
-  await expect(
-    page.getByRole("heading", { name: "Restricted language" }),
-  ).toBeVisible();
-  await expect(page.getByText('"Chemical-free"')).toBeVisible();
-});
+test("an individual answer can be edited and saved", async ({ page }) => {
+  await page.goto("/brand");
 
-test("home attach-evidence CTA deep-links to Claims & evidence", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await page.getByRole("link", { name: "Attach evidence" }).click();
-  await expect(page).toHaveURL("/brand");
-  await expect(
-    page.getByRole("heading", { name: "Claims & evidence" }),
-  ).toBeVisible();
+  // Where the business serves customers is a single-line answer no other spec
+  // asserts on, so editing it cannot disturb the segments the campaign specs
+  // pick from.
+  const index = page.getByRole("navigation", { name: "Brand sections" });
+  await index.getByRole("button", { name: /Reach/ }).click();
+
+  await page
+    .getByRole("button", { name: "Edit: Where do you serve customers?" })
+    .click();
+
+  const updated = `Singapore, edited ${Date.now()}`;
+  await page.getByLabel("Where do you serve customers?").fill(updated);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect(page.getByText(updated)).toBeVisible({ timeout: 30_000 });
 });

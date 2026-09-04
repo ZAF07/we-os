@@ -548,3 +548,21 @@ export function reopenStage(
     { method: "POST", body: JSON.stringify({ feedback }) },
   );
 }
+
+export interface CampaignUsage {
+  slug: string;
+  used: number;
+}
+
+export interface UsageReport {
+  used: number;
+  allowance: number;
+  remaining: number;
+  exhausted: boolean;
+  campaigns: CampaignUsage[];
+}
+
+/** Reports what the tenant has spent against their allowance, and where. */
+export function getUsage(): Promise<UsageReport> {
+  return engineFetch<UsageReport>("/usage");
+}
