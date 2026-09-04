@@ -14,8 +14,12 @@ test("nav rail reaches every primary route and marks it active", async ({
   await page.goto("/");
   await expect(page.locator("aside").getByText("Marketing OS")).toBeVisible();
 
+  // Scoped to the rail: the screens themselves link to each other now that
+  // their empty states point somewhere useful, so a bare name matches more than
+  // the nav item this is about.
+  const rail = page.locator("aside");
   for (const { label, path } of NAV_ROUTES) {
-    const link = page.getByRole("link", { name: label });
+    const link = rail.getByRole("link", { name: label });
     await link.click();
     await expect(page).toHaveURL(path);
     await expect(link).toHaveAttribute("aria-current", "page");
@@ -51,10 +55,15 @@ test("below the mobile breakpoint the nav collapses into a drawer", async ({
 }) => {
   await page.setViewportSize({ width: 375, height: 720 });
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Campaigns" })).toBeHidden();
+  await expect(
+    page.locator("aside").getByRole("link", { name: "Campaigns" }),
+  ).toBeHidden();
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("link", { name: "Campaigns" }).click();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Campaigns" })
+    .click();
   await expect(page).toHaveURL("/campaigns");
 
   const overflowX = await page.evaluate(

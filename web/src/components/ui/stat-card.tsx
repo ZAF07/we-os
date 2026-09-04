@@ -1,4 +1,5 @@
-import type { StatTone } from "@/lib/mock-data";
+/** How much a stat wants to be noticed. */
+export type StatTone = "default" | "primary" | "destructive";
 import { cn } from "@/lib/utils";
 
 const TONE_CLASSES: Record<StatTone, string> = {

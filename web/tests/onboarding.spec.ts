@@ -81,10 +81,9 @@ test("answers save partway and are still there on return", async ({ page }) => {
   await expect(page.getByText(/answered so far/)).toBeVisible();
 });
 
-// Rewrites the whole Brand DNA to "Acme Coffee", which every other spec is
-// reading at the same time — the suite runs fullyParallel against one seeded
-// tenant. Skipped for the same reason as the spec above: it needs a tenant of
-// its own, which is issue 13's remaining work.
+// Skipped for the same reason, plus one of its own: it rewrites the whole Brand
+// DNA, which every other spec is reading at the same time — the suite runs
+// fullyParallel against one seeded tenant.
 test.skip("completing the questionnaire lands on the Brand screen with the answers", async ({
   page,
 }) => {

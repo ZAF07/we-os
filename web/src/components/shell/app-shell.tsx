@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -22,7 +22,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { useDemoStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -80,7 +79,6 @@ function BrandMark() {
  */
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const approved = useDemoStore((state) => state.approved);
 
   return (
     <nav className="flex flex-col gap-0.5 px-2.5 py-1.5">
@@ -101,11 +99,6 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           >
             <item.icon className="size-4 shrink-0" strokeWidth={2} />
             <span className="flex-1">{item.label}</span>
-            {item.href === "/" && !approved && (
-              <span className="rounded-full bg-indigo-50 px-[7px] py-px text-[11px] font-bold text-indigo-600">
-                4
-              </span>
-            )}
           </Link>
         );
       })}
@@ -116,16 +109,13 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 /**
  * Renders the operator card: the signed-in user, their business, and sign-out.
  *
- * The name and business come from Clerk's session rather than the demo store,
- * so the shell reflects who is actually signed in.
+ * The name and business come from Clerk's session, so the shell reflects who is
+ * actually signed in.
  */
 function UserCard() {
   const { user } = useUser();
   const { organization } = useOrganization();
-  const demoCompany = useDemoStore(
-    (state) => state.onboarding?.companyName ?? "Fernway",
-  );
-  const businessName = organization?.name ?? demoCompany;
+  const businessName = organization?.name ?? "Your business";
 
   return (
     <div className="mt-auto flex items-center gap-2.5 border-t px-3.5 py-3">
@@ -153,8 +143,7 @@ function UserCard() {
 
 /**
  * Renders the persistent application shell: desktop nav rail, mobile
- * drawer, and the content area. Also rehydrates the demo store from
- * sessionStorage on mount.
+ * drawer, and the content area.
  *
  * Args:
  *   children: The active route's content.
@@ -162,10 +151,6 @@ function UserCard() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pathname = usePathname();
-
-  useEffect(() => {
-    void useDemoStore.persist.rehydrate();
-  }, []);
 
   if (BARE_ROUTES.some((route) => pathname.startsWith(route))) {
     return <>{children}</>;
