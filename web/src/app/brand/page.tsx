@@ -1,5 +1,5 @@
 import { BrandScreen } from "@/components/brand/brand-screen";
-import { EngineError } from "@/lib/engine";
+import { engineErrorMessage } from "@/lib/engine";
 
 import { loadOnboarding } from "../onboarding/actions";
 
@@ -16,15 +16,11 @@ export default async function BrandPage() {
   try {
     state = await loadOnboarding();
   } catch (error) {
-    const message =
-      error instanceof EngineError
-        ? error.message
-        : "Could not reach the engine. Is it running on ENGINE_BASE_URL?";
     return (
       <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
         <h1 className="text-xl font-bold tracking-tight">Brand</h1>
         <p role="alert" className="mt-2 text-[13px] text-muted-foreground">
-          {message}
+          {engineErrorMessage(error)}
         </p>
       </main>
     );

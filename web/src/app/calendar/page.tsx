@@ -2,8 +2,9 @@ import Link from "next/link";
 
 import { Card, CardHeader } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status-pill";
+import { formatRange } from "@/lib/calendar";
 import { statusLabel } from "@/lib/campaigns";
-import { EngineError } from "@/lib/engine";
+import { engineErrorMessage } from "@/lib/engine";
 
 import { loadCalendar, type ScheduledCampaign } from "./actions";
 
@@ -22,14 +23,10 @@ export default async function CalendarPage() {
   try {
     campaigns = await loadCalendar();
   } catch (error) {
-    const message =
-      error instanceof EngineError
-        ? error.message
-        : "Could not reach the engine. Is it running on ENGINE_BASE_URL?";
     return (
       <Shell>
         <p role="alert" className="text-[13px] text-muted-foreground">
-          {message}
+          {engineErrorMessage(error)}
         </p>
       </Shell>
     );
@@ -90,27 +87,6 @@ export default async function CalendarPage() {
       </p>
     </Shell>
   );
-}
-
-/**
- * Renders a campaign's timeframe as one readable line.
- *
- * Args:
- *   start: The ISO start date.
- *   end: The ISO end date.
- *
- * Returns:
- *   The range, and how long it runs for.
- */
-function formatRange(start: string, end: string): string {
-  const from = new Date(start);
-  const to = new Date(end);
-  if (Number.isNaN(from.valueOf()) || Number.isNaN(to.valueOf())) {
-    return `${start} → ${end}`;
-  }
-  const days = Math.round((to.valueOf() - from.valueOf()) / 86_400_000);
-  const shown: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
-  return `${from.toLocaleDateString(undefined, shown)} → ${to.toLocaleDateString(undefined, shown)} · ${days} days`;
 }
 
 /**

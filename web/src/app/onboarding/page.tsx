@@ -120,8 +120,6 @@ export default function OnboardingPage() {
     stepCount: Math.max(steps.length, 1),
     isStepIncomplete: stepIncomplete,
     onFinish: () => {
-      // Brand reads the saved answers back from the engine, so finishing only
-      // has to make sure they are saved before navigating there.
       void persist().then(() => router.push("/brand"));
     },
   });

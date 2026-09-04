@@ -11,7 +11,7 @@ import { statusLabel } from "@/lib/campaigns";
  * cannot be traced to a campaign the engine reported does not belong on it.
  */
 
-export type QueueTag = "Decision" | "Blocked";
+export type QueueTag = "Decision" | "Stale";
 
 export interface QueueItem {
   slug: string;
@@ -59,7 +59,7 @@ export function toQueue(campaigns: CampaignSummary[]): QueueItem[] {
     if (campaign.blocked_reason === null) continue;
     const item: QueueItem = {
       slug: campaign.id,
-      tag: campaign.status === "awaiting_approval" ? "Decision" : "Blocked",
+      tag: campaign.status === "awaiting_approval" ? "Decision" : "Stale",
       title: campaign.blocked_reason,
       meta: campaign.name,
       cta: campaign.status === "awaiting_approval" ? "Review" : "Open",
@@ -138,7 +138,8 @@ function formatAllowance(usage: UsageReport): string {
  *   campaigns: The tenant's active campaigns.
  *
  * Returns:
- *   One entry per campaign that has started, newest progress first.
+ *   One entry per campaign that has started, in the order the engine listed
+ *   them.
  */
 export function toActiveCampaigns(
   campaigns: CampaignSummary[],

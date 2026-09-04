@@ -56,7 +56,7 @@ describe("toQueue", () => {
 
     expect(queue.map((item) => item.slug)).toEqual(["gate-one", "stale-one"]);
     expect(queue[0].tag).toBe("Decision");
-    expect(queue[1].tag).toBe("Blocked");
+    expect(queue[1].tag).toBe("Stale");
   });
 
   it("shows the engine's own reason rather than inventing one", () => {

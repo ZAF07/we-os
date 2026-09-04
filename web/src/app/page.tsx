@@ -4,7 +4,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
-  EngineError,
+  engineErrorMessage,
   type CampaignSummary,
   type UsageReport,
 } from "@/lib/engine";
@@ -15,6 +15,7 @@ import {
   toStats,
   type QueueTag,
 } from "@/lib/home";
+import { statusLabel } from "@/lib/campaigns";
 import { statusPillClasses } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +25,7 @@ export const dynamic = "force-dynamic";
 
 const TAG_CLASSES: Record<QueueTag, string> = {
   Decision: "bg-indigo-50 text-indigo-700",
-  Blocked: statusPillClasses("Stale"),
+  Stale: statusPillClasses("Stale"),
 };
 
 /**
@@ -108,31 +109,33 @@ function ActionQueue({ queue }: { queue: ReturnType<typeof toQueue> }) {
           appears here.
         </p>
       ) : (
-        queue.map((item) => (
-          <div
-            key={item.slug}
-            className="flex flex-wrap items-center gap-x-3.5 gap-y-2.5 border-b border-slate-100 px-[18px] py-[13px] hover:bg-slate-50"
-          >
-            <span
-              className={cn(
-                "rounded-md px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap",
-                TAG_CLASSES[item.tag],
-              )}
+        <ul aria-label="Decision queue">
+          {queue.map((item) => (
+            <li
+              key={item.slug}
+              className="flex flex-wrap items-center gap-x-3.5 gap-y-2.5 border-b border-slate-100 px-[18px] py-[13px] hover:bg-slate-50"
             >
-              {item.tag}
-            </span>
-            <div className="min-w-[200px] flex-1">
-              <div className="text-[13.5px] font-semibold">{item.title}</div>
-              <div className="text-xs text-muted-foreground">{item.meta}</div>
-            </div>
-            <Link
-              href={item.href}
-              className="ml-auto shrink-0 rounded-lg border bg-card px-3 py-[5px] text-[12.5px] font-semibold whitespace-nowrap hover:border-indigo-200 hover:bg-indigo-50 hover:text-primary"
-            >
-              {item.cta}
-            </Link>
-          </div>
-        ))
+              <span
+                className={cn(
+                  "rounded-md px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap",
+                  TAG_CLASSES[item.tag],
+                )}
+              >
+                {item.tag}
+              </span>
+              <div className="min-w-[200px] flex-1">
+                <div className="text-[13.5px] font-semibold">{item.title}</div>
+                <div className="text-xs text-muted-foreground">{item.meta}</div>
+              </div>
+              <Link
+                href={item.href}
+                className="ml-auto shrink-0 rounded-lg border bg-card px-3 py-[5px] text-[12.5px] font-semibold whitespace-nowrap hover:border-indigo-200 hover:bg-indigo-50 hover:text-primary"
+              >
+                {item.cta}
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
     </Card>
   );
@@ -241,7 +244,7 @@ function AllowanceCard({ usage }: { usage: UsageReport | null }) {
           </div>
           <p className="mt-2 text-[12.5px] text-muted-foreground">
             {usage.exhausted
-              ? "Spent. Work resumes when your allowance renews."
+              ? "Spent. Billable work is refused until it is raised or renewed."
               : `${spent}% used — ${usage.remaining.toFixed(2)} left.`}
           </p>
         </>
@@ -275,9 +278,13 @@ function AllowanceCard({ usage }: { usage: UsageReport | null }) {
  *   campaigns: Every active campaign the tenant owns.
  */
 function Portfolio({ campaigns }: { campaigns: CampaignSummary[] }) {
+  // Counted by the label the interface shows, never the engine's own status
+  // string — two engine statuses can share one operator label, and a raw
+  // `awaiting_approval` has no business on screen (ADR-0017).
   const counts = new Map<string, number>();
   for (const campaign of campaigns) {
-    counts.set(campaign.status, (counts.get(campaign.status) ?? 0) + 1);
+    const label = statusLabel(campaign.status);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
   }
 
   return (
@@ -316,15 +323,11 @@ function Portfolio({ campaigns }: { campaigns: CampaignSummary[] }) {
  *   error: What went wrong.
  */
 function EngineDown({ error }: { error: unknown }) {
-  const message =
-    error instanceof EngineError
-      ? error.message
-      : "Could not reach the engine. Is it running on ENGINE_BASE_URL?";
   return (
     <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
       <h1 className="text-[22px] font-bold tracking-tight">Home</h1>
       <p role="alert" className="mt-2 text-[13px] text-muted-foreground">
-        {message}
+        {engineErrorMessage(error)}
       </p>
     </main>
   );

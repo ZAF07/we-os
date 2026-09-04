@@ -99,6 +99,24 @@ export async function engineStream(
   });
 }
 
+/**
+ * Turns a failed engine call into the sentence a screen shows.
+ *
+ * The engine explains its own refusals in the operator's terms, so its message
+ * is passed through; only an unreachable engine needs wording of ours, and that
+ * wording should be the same on every screen.
+ *
+ * Args:
+ *   error: The failure raised while calling the engine.
+ *
+ * Returns:
+ *   The message to render.
+ */
+export function engineErrorMessage(error: unknown): string {
+  if (error instanceof EngineError) return error.message;
+  return "Could not reach the engine. Is it running on ENGINE_BASE_URL?";
+}
+
 export interface Me {
   user_id: string;
   email: string | null;

@@ -2,7 +2,8 @@ import Link from "next/link";
 
 import { Card, CardHeader } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status-pill";
-import { EngineError } from "@/lib/engine";
+import { isBullet, plainText, toSections } from "@/lib/deliverable";
+import { engineErrorMessage } from "@/lib/engine";
 
 import { loadPerformance, type PerformancePlanView } from "./actions";
 
@@ -21,14 +22,10 @@ export default async function PerformancePage() {
   try {
     data = await loadPerformance();
   } catch (error) {
-    const message =
-      error instanceof EngineError
-        ? error.message
-        : "Could not reach the engine. Is it running on ENGINE_BASE_URL?";
     return (
       <Shell>
         <p role="alert" className="text-[13px] text-muted-foreground">
-          {message}
+          {engineErrorMessage(error)}
         </p>
       </Shell>
     );
@@ -108,9 +105,39 @@ function PlanCard({ plan }: { plan: PerformancePlanView }) {
       )}
       <article
         aria-label={`Performance plan for ${plan.name}`}
-        className="px-[18px] pb-4 text-[13.5px] leading-relaxed whitespace-pre-wrap text-slate-800"
+        className="flex flex-col gap-4 px-[18px] pb-4"
       >
-        {plan.content}
+        {toSections(plan.content).map((section, index) => (
+          <section key={`${section.heading}-${index}`}>
+            {section.heading !== "" && (
+              <h3 className="mb-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
+                {section.heading}
+              </h3>
+            )}
+            {section.lines.every(isBullet) && section.lines.length > 0 ? (
+              <ul className="flex flex-col gap-1">
+                {section.lines.map((line, position) => (
+                  <li
+                    key={position}
+                    className="flex gap-2 text-[13.5px] text-slate-800"
+                  >
+                    <span className="text-primary">·</span>
+                    <span>{plainText(line)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              section.lines.map((line, position) => (
+                <p
+                  key={position}
+                  className="text-[13.5px] leading-relaxed text-slate-800"
+                >
+                  {plainText(line)}
+                </p>
+              ))
+            )}
+          </section>
+        ))}
       </article>
     </Card>
   );
