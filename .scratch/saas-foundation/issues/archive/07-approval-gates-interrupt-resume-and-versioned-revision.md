@@ -48,4 +48,5 @@ End-to-end behaviour: start a run, watch it work through research automatically,
 ## Completion
 
 - Completed: 2026-09-02
+- Commits: `7de21ce` (implementation)
 - Commit: <to be filled in manually>

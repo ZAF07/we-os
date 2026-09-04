@@ -57,7 +57,7 @@ answers this screen edits still come from `GET /brand-dna`.
 ## Completion
 
 - Completed: 2026-09-04
-- Commits: `ebe0399` (implementation), `dac872c` (code review)
+- Commits: `ebe0399` (implementation), `dac872c` (first code review), `3891426` (second code review)
 
 The comment above is **out of date** and was superseded by
 [13](archive/13-frontend-suite-cannot-run-without-credentials.md): the browser

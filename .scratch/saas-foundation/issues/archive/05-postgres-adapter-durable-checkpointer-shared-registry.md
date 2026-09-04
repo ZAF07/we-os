@@ -43,4 +43,5 @@ End-to-end behaviour: start a run, restart the service, and the run is still acc
 ## Completion
 
 - Completed: 2026-09-02
+- Commits: `6a37e9d` (implementation), `bb1e187` (extension)
 - Commit: 6a37e9dea3683961ce93e142a22e9b6c98deebb8 & bb1e18767b453a23e1fa700fc0c7c8836fd2dd7b

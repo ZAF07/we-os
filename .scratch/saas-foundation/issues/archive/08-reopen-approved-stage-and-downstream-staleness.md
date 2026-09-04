@@ -81,4 +81,5 @@ End-to-end behaviour: complete a campaign through the creative brief, go back an
 ## Completion
 
 - Completed: 2026-09-03
+- Commits: `85141af` (implementation)
 - Commit: 85141af8e83d04f0ac48d050c992c26b8d4b8d98

@@ -43,6 +43,7 @@ End-to-end behaviour: a business owner creates a campaign from the interface, se
 ## Completion
 
 - Completed: 2026-09-03
+- Commits: `cf21c07` (implementation), `6636cfe` (gate-and-schema fixes)
 - Commit: cf21c070986265bb3774e87e49dc11399202216b
 
 ### Evidence per criterion

@@ -264,4 +264,5 @@ This slice is ready to close; **slice 05 (Postgres) unblocks.**
 ## Completion
 
 - Completed: 2026-09-02
+- Commits: `1254212` (implementation)
 - Commit: 125421249c1974d4ab13d635d2ff0b61dfba30e8

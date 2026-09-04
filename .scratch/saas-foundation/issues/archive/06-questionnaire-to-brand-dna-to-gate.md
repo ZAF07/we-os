@@ -47,7 +47,7 @@ End-to-end behaviour: a new business signs in, is walked through the questionnai
 
 - Completed: 2026-09-02
 - Branch: `issue-06-questionnaire-brand-dna-gate` (pushed to origin)
-- Commits:
+- Commits: `8ab93b1` (implementation), `9e70601` (code review), `07451f6` (merge)
   - `8ab93b1` — Questionnaire → Brand DNA → DNA Gate
   - `9e70601` — Address code review: version reporting, the publish path, and the prompt
   - `e37b0cd` — updated tasks status

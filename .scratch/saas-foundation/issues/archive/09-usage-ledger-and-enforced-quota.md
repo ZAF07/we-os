@@ -42,6 +42,7 @@ End-to-end behaviour: run campaigns until the allowance is exhausted, see work r
 ## Completion
 
 - Completed: 2026-09-03
+- Commits: `8d43b48` (implementation)
 - Commit: 8d43b48017616ec3292446ba0f9fb895be5135c9
 
 ### Evidence per criterion
