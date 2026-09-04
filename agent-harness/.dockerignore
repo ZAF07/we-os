@@ -1,0 +1,9 @@
+# The image builds its own virtualenv for its own platform.
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Secrets never enter an image.
+.env

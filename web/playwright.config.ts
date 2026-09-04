@@ -13,6 +13,12 @@ for (const file of [".env.local", ".env"]) {
 const PORT = 3100;
 const STORAGE_STATE = path.join(__dirname, ".auth/user.json");
 
+// The e2e compose stack serves the app on the same port, so when it is up
+// Playwright must attach rather than start a second server of its own. Anything
+// else double-binds the port and the suite fails for a reason that has nothing
+// to do with the code.
+const STACK_IS_UP = process.env.E2E_STACK === "compose";
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
@@ -34,10 +40,12 @@ export default defineConfig({
       testIgnore: /auth\.setup\.ts/,
     },
   ],
-  webServer: {
-    command: `pnpm dev --port ${PORT}`,
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: STACK_IS_UP
+    ? undefined
+    : {
+        command: `pnpm dev --port ${PORT}`,
+        url: `http://localhost:${PORT}`,
+        reuseExistingServer: !process.env.CI,
+        timeout: 120_000,
+      },
 });

@@ -1,0 +1,111 @@
+# The end-to-end test stack: Postgres, the engine, and the web app together.
+#
+# One command brings up everything the browser suite needs and seeds a test
+# tenant whose Brand DNA is fixed, so a spec asserts on a *named* Audience
+# Segment rather than whatever the first radio happens to be. Run it with
+# `make test-e2e` from the repository root.
+#
+# Test-only. Postgres keeps its data in a tmpfs, so the stack starts clean every
+# time and leaves nothing behind. Never point this at anything you want to keep.
+#
+# Credentials come from web/.env.local, which is gitignored — see
+# web/.env.local.example for what it must contain and where to get it.
+name: we-os-e2e
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: marketing_os
+      POSTGRES_PASSWORD: marketing_os
+      POSTGRES_DB: marketing_os
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - ./agent-harness/scripts/create-app-role.sql:/docker-entrypoint-initdb.d/10-create-app-role.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketing_os -d marketing_os"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  # Creates the schema and writes the test tenant, then exits. Everything that
+  # needs a database waits for this rather than for Postgres alone, so nothing
+  # ever reads a half-built schema.
+  seed:
+    build:
+      context: ./agent-harness
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMIN_DSN: postgresql://marketing_os:marketing_os@postgres:5432/marketing_os
+      E2E_CLERK_ORG_ID: ${E2E_CLERK_ORG_ID:?set E2E_CLERK_ORG_ID in web/.env.local}
+      MARKETING_OS_ROOT: /repo
+    volumes:
+      # `init-db` runs through the CLI, which resolves the repo root before it
+      # does anything — so the seeder needs the same mount the engine has.
+      - ./:/repo:ro
+    command:
+      - sh
+      - -c
+      - |
+        marketing-os init-db --dsn "$$ADMIN_DSN" --app-role marketing_os_app &&
+        python scripts/seed_test_tenant.py --dsn "$$ADMIN_DSN" --organization-id "$$E2E_CLERK_ORG_ID"
+
+  engine:
+    build:
+      context: ./agent-harness
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      MARKETING_OS_POSTGRES_DSN: postgresql://marketing_os_app:marketing_os_app@postgres:5432/marketing_os
+      MARKETING_OS_AUTH_ISSUER: ${MARKETING_OS_AUTH_ISSUER:?set MARKETING_OS_AUTH_ISSUER in web/.env.local}
+      MARKETING_OS_ROOT: /repo
+      # The suite drives the interface, not the models. Turning gates on is what
+      # makes the Approval Gate specs meaningful; leaving web search off keeps
+      # runs offline and free.
+      MARKETING_OS_WEB: "0"
+      MARKETING_OS_LOG_LEVEL: INFO
+    volumes:
+      # The engine reads code-shipped material — agent specs, guardrails,
+      # templates — from the repo root at runtime (ADR-0003).
+      - ./:/repo:ro
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  web:
+    build:
+      context: ./web
+    depends_on:
+      engine:
+        condition: service_healthy
+    environment:
+      ENGINE_BASE_URL: http://engine:8000
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:?set it in web/.env.local}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?set it in web/.env.local}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+    ports:
+      - "3100:3000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:3000/sign-in').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 45

@@ -1,6 +1,6 @@
 # 13 — The frontend Playwright suite cannot be run locally, so "verified in the running app" is unprovable
 
-Status: needs-info
+Status: ready-for-agent
 Type: task
 
 ## Parent
@@ -117,3 +117,103 @@ Until those are answered, `Verified in the running app` on frontend slices
 [11](11-workspace-wired-stages-deliverables-approval.md) and
 [12](12-remaining-screens-wired.md) should be reported as verified **at the engine
 boundary only**, as this issue's own guidance says.
+
+## Decisions
+
+**2026-09-04.** The four open questions are answered. Recorded here so the
+design does not have to be re-derived.
+
+**1. Clerk — a shared team test instance.** Not per-developer dev instances and
+not Clerk's testing tokens. `E2E_CLERK_USER_EMAIL` becomes a documented shared
+value; `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` come from that
+instance's dashboard into `web/.env.local`, which stays gitignored. No password
+is stored — `auth.setup.ts` already mints a sign-in ticket through Clerk's
+Backend API.
+
+**2. Engine lifecycle — the suite owns it, through Docker Compose.** A test
+compose stack brings up Postgres, the engine and the Next app together, so one
+command runs the suite from a clean checkout. This is stronger than adding a
+second `webServer` entry to `playwright.config.ts`: it pins the Python and Node
+runtimes too, so "works on my machine" stops being a variable.
+
+Rejected: "bring up the engine yourself first, documented in the README". It
+satisfies the first acceptance criterion only on a generous reading, and its
+failure mode is the expensive one — a missing server looks exactly like a code
+bug, which is how slice 10 shipped a broken workspace route.
+
+**3. Brand DNA seeding — direct to Postgres, against a pre-inserted tenant.**
+Not through the API after sign-in. The wrinkle that shapes this: `new_tenant_id`
+mints `ten_<uuid4>`, so a tenant id is **random** and cannot be derived from a
+Clerk organization id. A seed therefore cannot simply write DNA for "the test
+tenant" — that tenant does not exist until someone signs in, and its id is
+unknowable in advance.
+
+So the seed inserts the `tenants` row *itself*, pairing a known `tenant_id` with
+the Clerk organization id, and writes the Brand DNA against it. When the test
+user then signs in, `PostgresTenantDirectory.resolve` finds that row rather than
+minting a fresh one, and the suite has a tenant whose segments a spec can assert
+on by name.
+
+That needs the Clerk organization id as an input, which comes from a new
+`E2E_CLERK_ORG_ID` in `web/.env.local` (documented in `.env.local.example`,
+never committed).
+
+**4. CI does not run this suite.** It needs Clerk secrets and a live engine, and
+the value it would add in CI is already covered: `agent-harness/tests/test_workspace_contract.py`
+pins the frontend's data contract at the engine boundary and *does* run in CI
+with no credentials. This issue records the decision rather than leaving it
+open; revisit if the suite starts catching things the contract test cannot.
+
+## Revised acceptance criteria
+
+- [ ] One documented command brings up Postgres, the engine and the web app, seeds the test tenant, and runs `pnpm test` green from a clean checkout.
+- [ ] `web/.env.local.example` documents `E2E_CLERK_ORG_ID` alongside the existing keys, and `web/README.md` says where a developer obtains the shared test instance's values. No real keys committed.
+- [ ] The seed inserts the tenant row against `E2E_CLERK_ORG_ID` and writes a fixed Brand DNA, so a spec asserts on a *named* Audience Segment rather than "whatever the first radio happens to be".
+- [ ] The slice-10 specs (`new-campaign.spec.ts`, `campaigns.spec.ts`, the create-campaign case in `smoke.spec.ts`) are confirmed passing, not merely written.
+- [ ] The approve and revise specs in `workspace.spec.ts` — currently `test.skip`ped against this issue — are un-skipped and confirmed passing.
+- [ ] CI's position is recorded in this file (decided: it does not run the suite, and why).
+
+## Comments
+
+**2026-09-04.** Built. What exists now:
+
+- `docker-compose.e2e.yml` at the repository root — Postgres, the engine and the
+  web app, with a `seed` service that creates the schema and writes the test
+  tenant before anything that needs a database starts.
+- `agent-harness/Dockerfile`, `web/Dockerfile` and matching `.dockerignore`s.
+- `agent-harness/scripts/seed_test_tenant.py` — the deterministic Brand DNA.
+- `make test-e2e` at the root: up, seed, run, tear down (passing or failing).
+- `playwright.config.ts` skips its own `webServer` when `E2E_STACK=compose`, so
+  the suite attaches to the stack rather than double-binding the port.
+- `web/README.md` documents where the shared instance's values come from.
+
+**Verified against a real running stack** (with a placeholder org id, since the
+shared Clerk instance is not set up yet):
+
+- The schema builds and the seed is idempotent.
+- `tenants` holds `ten_e2e0000000000000000000000000000` paired to the org id.
+- Brand DNA reads **complete, 11/11 Required**.
+- `GET /brand-dna/segments` returns **both named segments**.
+- `POST /campaigns` targeting a named segment answers **201**, and that
+  campaign's gate answers `{"ok": true, "issues": []}`.
+- The engine is healthy against Postgres and answers **401** unauthenticated.
+
+One defect found by verifying rather than assuming: seeding `dna_answers` alone
+left `GET /brand-dna/segments` returning `[]`. The answers are the source of
+truth but the **markdown projection** is what the gate reads and what the
+segment parser parses (ADR-0018), and saving through the API renders it as a
+side effect. A direct-to-Postgres seed has to write `documents/dna.md` itself.
+Fixed, and it is why the segment assertion above is worth having.
+
+**What is left, and it needs a person.** The `web` container starts and serves,
+but Clerk rejects the placeholder publishable key, so no browser flow runs yet.
+Remaining to close this issue:
+
+1. Set up (or nominate) the shared Clerk test instance, its test user, and its
+   organization.
+2. Put the five values from `web/.env.local.example` into `web/.env.local`.
+3. Run `make test-e2e`, confirm the slice-10 specs pass, and un-skip the approve
+   and revise specs in `web/tests/workspace.spec.ts`.
+
+Until step 1 happens, "verified in the running app" on slices 11 and 12 stays
+**engine-boundary only**, exactly as before.
