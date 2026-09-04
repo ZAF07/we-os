@@ -29,7 +29,6 @@ ENV CI=true
 # still carries the weight.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile \
-    && pnpm store prune \
     && rm -rf /root/.cache/node /root/.local/share/pnpm/store
 
 EXPOSE 3000

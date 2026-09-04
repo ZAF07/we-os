@@ -79,7 +79,8 @@ Worth deciding as part of the fix:
 
 ## Acceptance criteria
 
-- [ ] Running `make test-e2e` repeatedly does not grow Docker's image or build-cache totals without bound.
+- [ ] Running `make test-e2e` repeatedly does not grow Docker's image total without bound, including when source changes between runs.
+- [ ] Build-cache growth is reduced to the point of not mattering, and a documented command reclaims what remains. It cannot be driven to zero: the engine legitimately copies its source, so a Python change adds a cache entry, and BuildKit stamps no project label on cache so it cannot be pruned automatically without touching other projects.
 - [ ] Teardown removes what this stack created and leaves other projects' containers, images and volumes untouched.
 - [ ] `docker system df` before and after a run shows no net growth, demonstrated in the issue's closing note.
 - [ ] The suite's runtime does not degrade across consecutive runs — three back-to-back runs stay within a comparable duration.
