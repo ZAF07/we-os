@@ -20,6 +20,7 @@ import { statusLabel } from "@/lib/campaigns";
 import { statusDotClass } from "@/lib/status";
 import {
   defaultStageKey,
+  stageAwaitingApproval,
   stageStatus,
   stageTitle,
   toPhases,
@@ -125,19 +126,23 @@ export function Workspace({
     if (finished) router.refresh();
   }, [finished, router]);
 
-  // While a run exists, the page reconciles by polling as well as by the stream.
-  // The stream is the responsive path but it can miss a wakeup: a fast stage can
-  // reach its terminal event before the browser has re-attached after a resume,
-  // and then nothing would ever tell the page that the version it asked for had
-  // landed. Polling stops as soon as there is no run to follow, so a settled
-  // campaign costs nothing.
-  const settled = runId === null;
+  // While a run is actually working, the page reconciles by polling as well as
+  // by the stream. The stream is the responsive path but it can miss a wakeup: a
+  // fast stage can reach its terminal event before the browser has re-attached
+  // after a resume, and then nothing would ever tell the page that the version
+  // it asked for had landed.
+  //
+  // A run holding an Approval Gate is *not* working — it is waiting on a person,
+  // and nothing will change until they decide. Polling that state would refresh
+  // the page under the reader forever.
+  const waiting = stageAwaitingApproval(campaign.stages) !== null;
+  const working = runId !== null && !waiting;
 
   useEffect(() => {
-    if (settled) return;
+    if (!working) return;
     const timer = setInterval(() => router.refresh(), 1500);
     return () => clearInterval(timer);
-  }, [settled, router]);
+  }, [working, router]);
 
   const submit = useCallback(
     (action: () => Promise<{ error: string | null }>) => {
