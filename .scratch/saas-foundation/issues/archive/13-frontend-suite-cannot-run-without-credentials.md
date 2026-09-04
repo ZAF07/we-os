@@ -1,6 +1,6 @@
 # 13 — The frontend Playwright suite cannot be run locally, so "verified in the running app" is unprovable
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Parent
@@ -58,11 +58,11 @@ ticking it.
 
 ## Acceptance criteria
 
-- [ ] A documented command brings up whatever the suite needs and runs `pnpm test` green from a clean checkout.
-- [ ] The credential path is documented in `web/README.md` (or `USAGE.md`) with no real keys committed.
-- [ ] The test tenant's Brand DNA is seeded deterministically, so specs assert on known segments.
-- [ ] The slice-10 specs (`new-campaign.spec.ts`, `campaigns.spec.ts`, the create-campaign case in `smoke.spec.ts`) are confirmed passing, not merely written.
-- [ ] CI's position is decided and recorded — either the suite runs there, or the issue says why it does not.
+- [x] A documented command brings up whatever the suite needs and runs `pnpm test` green from a clean checkout.
+- [x] The credential path is documented in `web/README.md` (or `USAGE.md`) with no real keys committed.
+- [x] The test tenant's Brand DNA is seeded deterministically, so specs assert on known segments.
+- [x] The slice-10 specs (`new-campaign.spec.ts`, `campaigns.spec.ts`, the create-campaign case in `smoke.spec.ts`) are confirmed passing, not merely written.
+- [x] CI's position is decided and recorded — either the suite runs there, or the issue says why it does not.
 
 ## Comments
 
@@ -166,12 +166,12 @@ open; revisit if the suite starts catching things the contract test cannot.
 
 ## Revised acceptance criteria
 
-- [ ] One documented command brings up Postgres, the engine and the web app, seeds the test tenant, and runs `pnpm test` green from a clean checkout.
-- [ ] `web/.env.local.example` documents `E2E_CLERK_ORG_ID` alongside the existing keys, and `web/README.md` says where a developer obtains the shared test instance's values. No real keys committed.
-- [ ] The seed inserts the tenant row against `E2E_CLERK_ORG_ID` and writes a fixed Brand DNA, so a spec asserts on a *named* Audience Segment rather than "whatever the first radio happens to be".
-- [ ] The slice-10 specs (`new-campaign.spec.ts`, `campaigns.spec.ts`, the create-campaign case in `smoke.spec.ts`) are confirmed passing, not merely written.
-- [ ] The approve and revise specs in `workspace.spec.ts` — currently `test.skip`ped against this issue — are un-skipped and confirmed passing.
-- [ ] CI's position is recorded in this file (decided: it does not run the suite, and why).
+- [x] One documented command brings up Postgres, the engine and the web app, seeds the test tenant, and runs `pnpm test` green from a clean checkout.
+- [x] `web/.env.local.example` documents `E2E_CLERK_ORG_ID` alongside the existing keys, and `web/README.md` says where a developer obtains the shared test instance's values. No real keys committed.
+- [x] The seed inserts the tenant row against `E2E_CLERK_ORG_ID` and writes a fixed Brand DNA, so a spec asserts on a *named* Audience Segment rather than "whatever the first radio happens to be".
+- [x] The slice-10 specs (`new-campaign.spec.ts`, `campaigns.spec.ts`, the create-campaign case in `smoke.spec.ts`) are confirmed passing, not merely written.
+- [x] The approve and revise specs in `workspace.spec.ts` — currently `test.skip`ped against this issue — are un-skipped and confirmed passing.
+- [x] CI's position is recorded in this file (decided: it does not run the suite, and why).
 
 ## Comments
 
@@ -217,3 +217,55 @@ Remaining to close this issue:
 
 Until step 1 happens, "verified in the running app" on slices 11 and 12 stays
 **engine-boundary only**, exactly as before.
+
+## Completion
+
+- Completed: 2026-09-04
+- Commits: `a24ecc4` (the stack), `16cd7a1` (green), `37f4321` (stable)
+
+`make test-e2e` runs green from a clean checkout: **36 passed, 0 failed,
+3 skipped**, three consecutive clean runs at ~35s each.
+
+| Criterion | Evidence |
+| --- | --- |
+| One command brings everything up and runs green | `make test-e2e` — Postgres, engine, web, seed, run, tear down either way |
+| Credentials documented, none committed | `web/.env.local.example` gains `E2E_CLERK_ORG_ID` + `MARKETING_OS_AUTH_ISSUER`; `web/README.md` says where the shared instance's values come from |
+| Deterministic Brand DNA with named segments | `seed_test_tenant.py` — `Summit Climbing Collective`, 11/11 Required, two named segments a spec picks by name |
+| Slice-10 specs confirmed passing | `new-campaign.spec.ts`, `campaigns.spec.ts`, `smoke.spec.ts` all green |
+| Approve/revise specs un-skipped and passing | `workspace.spec.ts:139` and `:165`, green in a real browser |
+| CI's position recorded | Decided: CI does not run it; `test_workspace_contract.py` covers the contract there instead |
+
+### What this cost, and what it bought
+
+The stack took four attempts to get right, each failure teaching something the
+design had assumed:
+
+1. The seeder needed the repo root mounted — `init-db` resolves it before doing
+   anything.
+2. Seeding `dna_answers` alone left `/brand-dna/segments` empty. The answers are
+   the source of truth, but the **markdown projection** is what the gate reads
+   and the segment parser parses (ADR-0018); saving through the API renders it
+   as a side effect, so a direct-to-Postgres seed must write `documents/dna.md`.
+3. Run traces write under the read-only repo mount, so every run died instantly.
+   They now get a writable volume.
+4. The web container ran source baked in at image build time — it silently
+   tested stale code, which is worse than not running. It now bind-mounts the
+   working tree.
+
+What it bought: **four Workspace defects** that no engine-boundary test could
+have found, all in [11](archive/11-workspace-wired-stages-deliverables-approval.md).
+That is the answer to whether this was worth building.
+
+### The scripted provider
+
+Reaching an Approval Gate needs a model. `MARKETING_OS_PROVIDER=scripted` is a
+`BaseChatModel` adapter that writes a fixed deliverable and passes QA, so a run
+walks the pipeline in seconds, offline and free. It is refused unless
+`MARKETING_OS_ALLOW_SCRIPTED_MODEL=1` — a provider that fabricates deliverables
+must never be reachable by accident.
+
+### Still open
+
+Two onboarding specs are skipped: they need their own *unseeded* tenant, because
+the stack seeds a complete Brand DNA that every other spec depends on. Worth a
+follow-up issue if onboarding regressions start slipping through.

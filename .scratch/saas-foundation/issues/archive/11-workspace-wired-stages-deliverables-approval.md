@@ -72,7 +72,7 @@ over a workspace route that was broken for every real campaign.
 ## Completion
 
 - Completed: 2026-09-04
-- Commits: `b0e921f` (implementation), `4fd872b` (code review), `16cd7a1` (browser verification + three defects it caught)
+- Commits: `b0e921f` (implementation), `4fd872b` (code review), `16cd7a1` (browser verification + three defects), `37f4321` (suite stability + a fourth)
 
 Every criterion verified against the running app, not only at the engine
 boundary — the e2e stack landed with issue 13, so "verified in the running app"
@@ -91,7 +91,7 @@ means what it says.
 | Quota and gate failure are specific and actionable | `engineMessage` surfaces the engine's own wording and appends the gate's `missing_fields`; the refusal is pinned to carry them |
 | Loading and error states on every engine call | `Loading…`, `Loading version…`, `role="alert"` on stage-load failure, action failure, and engine-unreachable |
 | Smoke suite covers approve and revise | Both specs green in a real browser, no longer skipped |
-| Verified in the running app | `make test-e2e`: **36 passed, 0 failed, 3 skipped** |
+| Verified in the running app | `make test-e2e`: **36 passed, 0 failed, 3 skipped**, three consecutive clean runs |
 
 ### What browser verification caught that the engine boundary could not
 
@@ -104,6 +104,11 @@ Three defects, all invisible to an API-level test:
 3. **Revising never showed the new version.** A revise resumes the *same* run,
    whose stream had already closed at the first gate, so nothing told the page
    v2 had landed.
+4. **The page refreshed under the reader at the gate.** The reconciling poll ran
+   for as long as a run existed, including while it was halted waiting for a
+   person — so the deliverable someone was reading in order to decide kept being
+   pulled out from under them. A gate is not work in progress; polling now stops
+   there.
 
 This is the case for the suite existing, and the answer to slice 10's failure
 mode.
