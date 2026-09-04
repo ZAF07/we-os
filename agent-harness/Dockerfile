@@ -11,6 +11,11 @@ WORKDIR /app
 
 # Dependencies resolve from the manifest alone, so this layer survives edits to
 # the source underneath it.
+#
+# uv's download cache is a build-time artefact — the virtualenv is what runs —
+# so it is cleared in the same layer that fills it. A later `rm` would only hide
+# it behind an earlier layer that still carries the weight.
+ENV UV_NO_CACHE=1
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project --extra postgres
 
