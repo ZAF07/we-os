@@ -56,34 +56,62 @@ export function Workspace({
 }) {
   const router = useRouter();
   const phases = toPhases(campaign.stages);
-  const [selectedKey, setSelectedKey] = useState(
-    () => defaultStageKey(campaign.stages) ?? "",
-  );
-  const [loaded, setLoaded] = useState<{ key: string; view: StageView } | null>(
-    null,
-  );
+  // Null until a person picks a stage. Their choice wins from then on; before
+  // that the Workspace follows the campaign, so a run reaching a gate puts the
+  // decision in front of them instead of leaving them on whatever stage was
+  // current when the page loaded.
+  const [pickedKey, setPickedKey] = useState<string | null>(null);
+  const followedKey = defaultStageKey(campaign.stages) ?? "";
+  const selectedKey =
+    pickedKey !== null &&
+    campaign.stages.some((stage) => stage.key === pickedKey)
+      ? pickedKey
+      : followedKey;
+  const setSelectedKey = setPickedKey;
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    version: number | null;
+    view: StageView;
+  } | null>(null);
   const [shown, setShown] = useState<{
     key: string;
     version: number;
     content: string | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped whenever an action resumes the run, so the progress stream attaches
+  // again rather than staying closed on the gate the run has already left.
+  const [attempt, setAttempt] = useState(0);
   const [pending, startAction] = useTransition();
 
   const selected =
     campaign.stages.find((stage) => stage.key === selectedKey) ??
     campaign.stages[0];
-  const { events, finished, disconnected } = useRunEvents(runId);
+  const { events, finished, disconnected } = useRunEvents(runId, attempt);
 
-  const view = loaded?.key === selectedKey ? loaded.view : null;
+  // The deliverable is re-read whenever the stage's newest version changes, so
+  // a stage that produced one while the page was open stops reading "nothing
+  // produced yet" the moment the campaign refreshes.
+  const view =
+    loaded?.key === selectedKey && loaded.version === selected.latest_version
+      ? loaded.view
+      : null;
   const shownVersion = shown?.key === selectedKey ? shown.version : null;
   const shownContent = shown?.key === selectedKey ? shown.content : null;
+
+  const latestVersion = selected?.latest_version ?? null;
 
   useEffect(() => {
     let current = true;
     loadStage(campaign.id, selectedKey)
       .then((stageView) => {
-        if (current) setLoaded({ key: selectedKey, view: stageView });
+        if (current) {
+          setLoaded({
+            key: selectedKey,
+            version: latestVersion,
+            view: stageView,
+          });
+        }
       })
       .catch(() => {
         if (current) setError("Could not load this stage. Try again.");
@@ -91,19 +119,37 @@ export function Workspace({
     return () => {
       current = false;
     };
-  }, [campaign.id, selectedKey]);
+  }, [campaign.id, selectedKey, latestVersion]);
 
   useEffect(() => {
     if (finished) router.refresh();
   }, [finished, router]);
+
+  // While a run exists, the page reconciles by polling as well as by the stream.
+  // The stream is the responsive path but it can miss a wakeup: a fast stage can
+  // reach its terminal event before the browser has re-attached after a resume,
+  // and then nothing would ever tell the page that the version it asked for had
+  // landed. Polling stops as soon as there is no run to follow, so a settled
+  // campaign costs nothing.
+  const settled = runId === null;
+
+  useEffect(() => {
+    if (settled) return;
+    const timer = setInterval(() => router.refresh(), 1500);
+    return () => clearInterval(timer);
+  }, [settled, router]);
 
   const submit = useCallback(
     (action: () => Promise<{ error: string | null }>) => {
       setError(null);
       startAction(async () => {
         const result = await action();
-        if (result.error) setError(result.error);
-        else router.refresh();
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+        setAttempt((previous) => previous + 1);
+        router.refresh();
       });
     },
     [router],

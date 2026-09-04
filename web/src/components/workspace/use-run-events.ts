@@ -28,16 +28,27 @@ export interface RunFeed {
  * run completed when the connection merely died would be a lie about their
  * campaign.
  *
+ * A run that halts at a gate ends its stream — the trace has reached its
+ * terminal event. Approving or revising continues that *same* run, so the page
+ * must attach again or it would never hear what happens next: the version it
+ * asked for would land, and the screen would keep showing the one it refused
+ * until someone reloaded. `attempt` is what says "this run has been resumed";
+ * changing it re-attaches.
+ *
  * Args:
  *   runId: The run to follow, or null when nothing is in flight.
+ *   attempt: Bumped each time the run is resumed, to re-attach the stream.
  *
  * Returns:
  *   The events seen so far, whether the run reached its terminal event, and
  *   whether the connection dropped before it did.
  */
-export function useRunEvents(runId: string | null): RunFeed {
-  const [feed, setFeed] = useState<RunFeed & { runId: string | null }>({
+export function useRunEvents(runId: string | null, attempt = 0): RunFeed {
+  const [feed, setFeed] = useState<
+    RunFeed & { runId: string | null; attempt: number }
+  >({
     runId,
+    attempt,
     events: [],
     finished: false,
     disconnected: false,
@@ -51,7 +62,8 @@ export function useRunEvents(runId: string | null): RunFeed {
       const event = JSON.parse(message.data) as RunEvent;
       setFeed((seen) => ({
         runId,
-        events: [...seen.events, event],
+        attempt,
+        events: seen.attempt === attempt ? [...seen.events, event] : [event],
         finished: event.event === "run.summary",
         disconnected: false,
       }));
@@ -62,13 +74,14 @@ export function useRunEvents(runId: string | null): RunFeed {
       setFeed((seen) => ({
         ...seen,
         runId,
+        attempt,
         disconnected: !seen.finished,
       }));
     };
     return () => source.close();
-  }, [runId]);
+  }, [runId, attempt]);
 
-  if (feed.runId !== runId) {
+  if (feed.runId !== runId || feed.attempt !== attempt) {
     return { events: [], finished: false, disconnected: false };
   }
   return {

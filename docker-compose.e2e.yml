@@ -63,15 +63,25 @@ services:
       MARKETING_OS_POSTGRES_DSN: postgresql://marketing_os_app:marketing_os_app@postgres:5432/marketing_os
       MARKETING_OS_AUTH_ISSUER: ${MARKETING_OS_AUTH_ISSUER:?set MARKETING_OS_AUTH_ISSUER in web/.env.local}
       MARKETING_OS_ROOT: /repo
-      # The suite drives the interface, not the models. Turning gates on is what
-      # makes the Approval Gate specs meaningful; leaving web search off keeps
-      # runs offline and free.
+      # The suite drives the interface, not the models: a run must reach an
+      # Approval Gate deterministically, instantly and for free, so the engine
+      # runs on the scripted provider rather than calling anyone. Both settings
+      # are required — selecting the provider alone is refused, because a
+      # provider that fabricates deliverables must never be reachable by
+      # accident.
+      MARKETING_OS_PROVIDER: scripted
+      MARKETING_OS_ALLOW_SCRIPTED_MODEL: "1"
       MARKETING_OS_WEB: "0"
       MARKETING_OS_LOG_LEVEL: INFO
     volumes:
       # The engine reads code-shipped material — agent specs, guardrails,
-      # templates — from the repo root at runtime (ADR-0003).
+      # templates — from the repo root at runtime (ADR-0003). Read-only, so a
+      # run cannot edit the governance it is bound by.
       - ./:/repo:ro
+      # Run traces are written under the same root, so they need a writable
+      # layer of their own. Anonymous, so traces die with the stack rather than
+      # accumulating in the working tree.
+      - /repo/logs
     ports:
       - "8000:8000"
     healthcheck:
@@ -92,6 +102,15 @@ services:
     depends_on:
       engine:
         condition: service_healthy
+    volumes:
+      # The working tree, not the copy baked into the image — otherwise the
+      # suite silently tests whatever the source looked like when the image was
+      # last built, which is worse than not running at all.
+      - ./web:/app
+      # Keep the container's own installed dependencies and build cache: the
+      # host's are built for a different platform.
+      - /app/node_modules
+      - /app/.next
     environment:
       ENGINE_BASE_URL: http://engine:8000
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:?set it in web/.env.local}

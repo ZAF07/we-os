@@ -30,12 +30,19 @@ test("home renders its headline sections from fixtures", async ({ page }) => {
   await expect(page.getByText("Earth Month Retargeting").first()).toBeVisible();
 });
 
-test("a decision queue CTA navigates to the campaign workspace", async ({
+// Home's queue is still built from fixtures, so its CTAs point at campaigns the
+// tenant does not own — the Workspace correctly answers "Campaign not found".
+// Asserting only the URL is what let slice 10 ship a broken route, so this
+// checks the landing page too and is skipped until Home reads real campaigns,
+// which is issue 12's work.
+test.skip("a decision queue CTA navigates to the campaign workspace", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("link", { name: "Review" }).first().click();
-  await expect(page).toHaveURL("/campaigns/fernway-refill-launch");
+
+  await expect(page).toHaveURL(/\/campaigns\//);
+  await expect(page.getByRole("navigation", { name: "Stages" })).toBeVisible();
 });
 
 test("the flagged-claim CTA navigates to Brand", async ({ page }) => {

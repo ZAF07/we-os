@@ -46,9 +46,11 @@ test("a new campaign's Workspace renders its Phases and stages", async ({
 
   await expect(page.getByText(name)).toBeVisible();
 
-  for (const phase of ["Research", "Strategy", "Plan", "Produce"]) {
+  // The stepper numbers each Phase, so its accessible name is "1 Research".
+  const phases = ["Research", "Strategy", "Plan", "Produce"];
+  for (const [index, phase] of phases.entries()) {
     await expect(
-      page.getByRole("button", { name: new RegExp(`^${phase}$`) }),
+      page.getByRole("button", { name: `${index + 1} ${phase}` }),
     ).toBeVisible();
   }
 
@@ -126,23 +128,14 @@ test("an unknown campaign slug renders not found, not a broken page", async ({
 });
 
 /**
- * The approve and revise paths.
+ * The approve and revise paths — the decision the whole product exists for.
  *
- * These drive a campaign to a live Approval Gate, which needs the engine to
- * actually execute a run — several model calls per stage. They are skipped
- * until the suite can bring up an engine with a seeded tenant, which is issue
- * 13's work; the same behaviour is pinned meanwhile at the engine boundary in
- * `agent-harness/tests/test_workspace_contract.py`, which does run.
- *
- * They are written out rather than left as a TODO so that closing issue 13 is
- * a matter of removing the skip, not of writing the specs from scratch.
+ * These drive a campaign to a live Approval Gate. The e2e stack runs the engine
+ * on the scripted provider, so a run reaches that gate in seconds, identically
+ * every time, without calling a model: what is under test is the interface, not
+ * anyone's prose.
  */
 test.describe("approval gate", () => {
-  test.skip(
-    true,
-    "Needs an engine with a seeded tenant and a run that reaches a gate — issue 13.",
-  );
-
   test("approving a stage resumes the run into the next one", async ({
     page,
   }) => {
@@ -150,18 +143,23 @@ test.describe("approval gate", () => {
     await createCampaign(page, name);
 
     await page.getByRole("button", { name: "Start run" }).click();
-    await expect(page.getByRole("button", { name: "Approve" })).toBeVisible({
-      timeout: 120_000,
-    });
+
+    // The run halts at the brand-strategy gate, and the Workspace follows it
+    // there rather than leaving the person on the stage that was current when
+    // the page loaded.
+    const approve = page.getByRole("button", { name: "Approve", exact: true });
+    await expect(approve).toBeVisible({ timeout: 120_000 });
+    await expect(
+      page.getByRole("heading", { name: "Brand strategy" }),
+    ).toBeVisible();
     await expect(page.getByLabel("Deliverable")).not.toBeEmpty();
 
-    await page.getByRole("button", { name: "Approve" }).click();
+    await approve.click();
 
-    await expect(page.getByText(/approved$/)).toBeVisible({ timeout: 120_000 });
     const stageNav = page.getByRole("navigation", { name: "Stages" });
     await expect(
-      stageNav.getByRole("button", { name: "Brand strategy" }),
-    ).toContainText("Approved");
+      stageNav.getByRole("button", { name: /^Brand strategy/ }),
+    ).toContainText("Approved", { timeout: 120_000 });
   });
 
   test("requesting changes produces a second version carrying the feedback", async ({
@@ -171,11 +169,12 @@ test.describe("approval gate", () => {
     await createCampaign(page, name);
 
     await page.getByRole("button", { name: "Start run" }).click();
-    await expect(
-      page.getByRole("button", { name: "Request changes" }),
-    ).toBeVisible({ timeout: 120_000 });
+    const requestChanges = page.getByRole("button", {
+      name: "Request changes",
+    });
+    await expect(requestChanges).toBeVisible({ timeout: 120_000 });
 
-    await page.getByRole("button", { name: "Request changes" }).click();
+    await requestChanges.click();
     await page
       .getByLabel("What do you want changed?")
       .fill("Too premium; we are mid-market.");
