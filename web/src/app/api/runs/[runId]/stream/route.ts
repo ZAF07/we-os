@@ -1,21 +1,15 @@
-import { auth } from "@clerk/nextjs/server";
-
-/**
- * Proxies a run's Server-Sent Events stream from the engine to the browser.
- *
- * The browser never calls the engine directly — the BFF holds the session and
- * forwards the verified token (ADR-0012, ADR-0013) — but a stream cannot be
- * read through a server action, which returns once. So live run progress
- * reaches the page through this route: it attaches to the engine's stream and
- * pipes the frames straight back, adding nothing.
- */
-
-const ENGINE_BASE_URL = process.env.ENGINE_BASE_URL ?? "http://127.0.0.1:8000";
+import { engineStream } from "@/lib/engine";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Attaches to one run's live progress stream.
+ * Attaches to one run's live progress stream, proxying it to the browser.
+ *
+ * The browser never calls the engine directly — the BFF holds the session and
+ * forwards the verified token (ADR-0012, ADR-0013) — but a stream cannot be
+ * read through a server action, which returns once. So live run progress
+ * reaches the page through this route: it attaches through the engine adapter
+ * and pipes the frames straight back, adding nothing.
  *
  * Args:
  *   request: The incoming request, whose abort signal closes the upstream
@@ -30,19 +24,9 @@ export async function GET(
   context: { params: Promise<{ runId: string }> },
 ): Promise<Response> {
   const { runId } = await context.params;
-  const { getToken } = await auth();
-  const token = await getToken();
-
-  const upstream = await fetch(
-    `${ENGINE_BASE_URL}/runs/${encodeURIComponent(runId)}/stream`,
-    {
-      cache: "no-store",
-      signal: request.signal,
-      headers: {
-        Accept: "text/event-stream",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    },
+  const upstream = await engineStream(
+    `/runs/${encodeURIComponent(runId)}/stream`,
+    request.signal,
   );
 
   if (!upstream.ok || upstream.body === null) {

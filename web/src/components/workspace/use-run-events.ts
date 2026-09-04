@@ -12,6 +12,7 @@ export interface RunEvent {
 export interface RunFeed {
   events: RunEvent[];
   finished: boolean;
+  disconnected: boolean;
 }
 
 /**
@@ -22,17 +23,24 @@ export interface RunFeed {
  * than only what happened after it came back. The stream closes itself on the
  * terminal event, which is what marks the feed finished.
  *
+ * A dropped connection is reported as its own state, never as a finished run:
+ * the two look identical from the browser's side, and telling a person their
+ * run completed when the connection merely died would be a lie about their
+ * campaign.
+ *
  * Args:
  *   runId: The run to follow, or null when nothing is in flight.
  *
  * Returns:
- *   The events seen so far and whether the run has reached its terminal event.
+ *   The events seen so far, whether the run reached its terminal event, and
+ *   whether the connection dropped before it did.
  */
 export function useRunEvents(runId: string | null): RunFeed {
   const [feed, setFeed] = useState<RunFeed & { runId: string | null }>({
     runId,
     events: [],
     finished: false,
+    disconnected: false,
   });
 
   useEffect(() => {
@@ -45,18 +53,27 @@ export function useRunEvents(runId: string | null): RunFeed {
         runId,
         events: [...seen.events, event],
         finished: event.event === "run.summary",
+        disconnected: false,
       }));
       if (event.event === "run.summary") source.close();
     };
     source.onerror = () => {
       source.close();
-      setFeed((seen) => ({ ...seen, runId, finished: true }));
+      setFeed((seen) => ({
+        ...seen,
+        runId,
+        disconnected: !seen.finished,
+      }));
     };
     return () => source.close();
   }, [runId]);
 
   if (feed.runId !== runId) {
-    return { events: [], finished: false };
+    return { events: [], finished: false, disconnected: false };
   }
-  return { events: feed.events, finished: feed.finished };
+  return {
+    events: feed.events,
+    finished: feed.finished,
+    disconnected: feed.disconnected,
+  };
 }

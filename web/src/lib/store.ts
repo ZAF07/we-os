@@ -28,6 +28,12 @@ export interface DemoState {
  * staleness come from the engine, which is the only thing that knows them. What
  * remains belongs to Home, Brand and Calendar, and goes when those screens are
  * wired.
+ *
+ * `approved` no longer has a writer — the Workspace was the only thing that set
+ * it — so it is now permanently false. Home and the shell still read it to pick
+ * which fixture to show, and it goes when they stop reading fixtures at all;
+ * removing it here would mean editing screens whose whole content is about to
+ * be replaced.
  */
 export const useDemoStore = create<DemoState>()(
   persist(

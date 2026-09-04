@@ -68,6 +68,37 @@ export async function engineFetch<T>(
   return (await response.json()) as T;
 }
 
+/**
+ * Opens a streaming engine response on behalf of the signed-in user.
+ *
+ * The same adapter as `engineFetch`, for the one case a JSON round trip cannot
+ * serve: Server-Sent Events, whose body must reach the browser unread. The
+ * response is returned whole rather than parsed, so the caller can pipe it.
+ *
+ * Args:
+ *   path: The engine path, e.g. `/runs/abc/stream`.
+ *   signal: Aborts the upstream request when the reader goes away.
+ *
+ * Returns:
+ *   The engine's raw response, successful or not.
+ */
+export async function engineStream(
+  path: string,
+  signal: AbortSignal,
+): Promise<Response> {
+  const { getToken } = await auth();
+  const token = await getToken();
+
+  return fetch(`${ENGINE_BASE_URL}${path}`, {
+    cache: "no-store",
+    signal,
+    headers: {
+      Accept: "text/event-stream",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+}
+
 export interface Me {
   user_id: string;
   email: string | null;

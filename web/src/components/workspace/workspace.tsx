@@ -73,7 +73,7 @@ export function Workspace({
   const selected =
     campaign.stages.find((stage) => stage.key === selectedKey) ??
     campaign.stages[0];
-  const { events, finished } = useRunEvents(runId);
+  const { events, finished, disconnected } = useRunEvents(runId);
 
   const view = loaded?.key === selectedKey ? loaded.view : null;
   const shownVersion = shown?.key === selectedKey ? shown.version : null;
@@ -97,7 +97,7 @@ export function Workspace({
     if (finished) router.refresh();
   }, [finished, router]);
 
-  const run = useCallback(
+  const submit = useCallback(
     (action: () => Promise<{ error: string | null }>) => {
       setError(null);
       startAction(async () => {
@@ -159,7 +159,9 @@ export function Workspace({
             shownVersion={shownVersion}
             shownContent={shownContent}
             pending={pending}
-            onRerun={() => run(() => startRunAction(campaign.id))}
+            onRerun={() =>
+              submit(() => startRunAction(campaign.id, selected.key))
+            }
             onShowVersion={showVersion}
           />
         </div>
@@ -174,25 +176,33 @@ export function Workspace({
             </p>
           )}
 
-          {runId && <RunProgress events={events} finished={finished} />}
+          {runId && (
+            <RunProgress
+              events={events}
+              finished={finished}
+              disconnected={disconnected}
+            />
+          )}
 
           <DecisionRail
             campaign={campaign}
             stage={selected}
             runId={runId}
             pending={pending}
-            onApprove={(stageKey) =>
-              run(() => approveStageAction(campaign.id, runId!, stageKey))
+            onApprove={(activeRunId, stageKey) =>
+              submit(() =>
+                approveStageAction(campaign.id, activeRunId, stageKey),
+              )
             }
-            onRevise={(stageKey, feedback) =>
-              run(() =>
-                reviseStageAction(campaign.id, runId!, stageKey, feedback),
+            onRevise={(activeRunId, stageKey, feedback) =>
+              submit(() =>
+                reviseStageAction(campaign.id, activeRunId, stageKey, feedback),
               )
             }
             onReopen={(stageKey, feedback) =>
-              run(() => reopenStageAction(campaign.id, stageKey, feedback))
+              submit(() => reopenStageAction(campaign.id, stageKey, feedback))
             }
-            onStart={() => run(() => startRunAction(campaign.id))}
+            onStart={() => submit(() => startRunAction(campaign.id))}
           />
         </div>
       </div>
@@ -353,8 +363,8 @@ function StageDocument({
  *   stage: The selected stage.
  *   runId: The live run, or null when none is in flight.
  *   pending: Whether an action is in flight.
- *   onApprove: Approves the waiting stage.
- *   onRevise: Sends the waiting stage back with feedback.
+ *   onApprove: Approves the waiting stage, given the run holding it.
+ *   onRevise: Sends the waiting stage back with feedback, given its run.
  *   onReopen: Re-opens an approved stage.
  *   onStart: Starts a run.
  */
@@ -372,8 +382,8 @@ function DecisionRail({
   stage: CampaignStage;
   runId: string | null;
   pending: boolean;
-  onApprove: (stageKey: string) => void;
-  onRevise: (stageKey: string, feedback: string) => void;
+  onApprove: (runId: string, stageKey: string) => void;
+  onRevise: (runId: string, stageKey: string, feedback: string) => void;
   onReopen: (stageKey: string, feedback: string) => void;
   onStart: () => void;
 }) {
@@ -381,8 +391,8 @@ function DecisionRail({
     return (
       <ApprovalGate
         stageName={stageTitle(stage.key)}
-        onApprove={() => onApprove(stage.key)}
-        onRevise={(feedback) => onRevise(stage.key, feedback)}
+        onApprove={() => onApprove(runId, stage.key)}
+        onRevise={(feedback) => onRevise(runId, stage.key, feedback)}
         pending={pending}
       />
     );

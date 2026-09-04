@@ -124,3 +124,70 @@ test("an unknown campaign slug renders not found, not a broken page", async ({
     page.getByRole("heading", { name: "Campaign not found" }),
   ).toBeVisible();
 });
+
+/**
+ * The approve and revise paths.
+ *
+ * These drive a campaign to a live Approval Gate, which needs the engine to
+ * actually execute a run — several model calls per stage. They are skipped
+ * until the suite can bring up an engine with a seeded tenant, which is issue
+ * 13's work; the same behaviour is pinned meanwhile at the engine boundary in
+ * `agent-harness/tests/test_workspace_contract.py`, which does run.
+ *
+ * They are written out rather than left as a TODO so that closing issue 13 is
+ * a matter of removing the skip, not of writing the specs from scratch.
+ */
+test.describe("approval gate", () => {
+  test.skip(
+    true,
+    "Needs an engine with a seeded tenant and a run that reaches a gate — issue 13.",
+  );
+
+  test("approving a stage resumes the run into the next one", async ({
+    page,
+  }) => {
+    const name = `Approve ${Date.now()}`;
+    await createCampaign(page, name);
+
+    await page.getByRole("button", { name: "Start run" }).click();
+    await expect(page.getByRole("button", { name: "Approve" })).toBeVisible({
+      timeout: 120_000,
+    });
+    await expect(page.getByLabel("Deliverable")).not.toBeEmpty();
+
+    await page.getByRole("button", { name: "Approve" }).click();
+
+    await expect(page.getByText(/approved$/)).toBeVisible({ timeout: 120_000 });
+    const stageNav = page.getByRole("navigation", { name: "Stages" });
+    await expect(
+      stageNav.getByRole("button", { name: "Brand strategy" }),
+    ).toContainText("Approved");
+  });
+
+  test("requesting changes produces a second version carrying the feedback", async ({
+    page,
+  }) => {
+    const name = `Revise ${Date.now()}`;
+    await createCampaign(page, name);
+
+    await page.getByRole("button", { name: "Start run" }).click();
+    await expect(
+      page.getByRole("button", { name: "Request changes" }),
+    ).toBeVisible({ timeout: 120_000 });
+
+    await page.getByRole("button", { name: "Request changes" }).click();
+    await page
+      .getByLabel("What do you want changed?")
+      .fill("Too premium; we are mid-market.");
+    await page.getByRole("button", { name: "Send back" }).click();
+
+    const history = page.getByRole("region", { name: "Version history" });
+    await expect(history.getByText("v2")).toBeVisible({ timeout: 120_000 });
+    await expect(
+      history.getByText("You asked: Too premium; we are mid-market."),
+    ).toBeVisible();
+
+    await history.getByRole("button", { name: /^v1/ }).click();
+    await expect(page.getByText("Showing v1 of 2")).toBeVisible();
+  });
+});

@@ -37,9 +37,11 @@ export interface ActionResult {
 /**
  * Turns an engine failure into the message the Workspace shows.
  *
- * The engine explains a refusal in the operator's terms — which fields are
- * missing, that the allowance is spent, that a cap is reached — so its message
- * is surfaced as-is rather than replaced by a generic one.
+ * The engine explains a refusal in the operator's terms — that the allowance is
+ * spent, that a cap is reached — so its message is surfaced as-is rather than
+ * replaced by a generic one. A failed DNA Gate is the exception: its message
+ * only says the gate failed, and what the person needs is the list of fields it
+ * named, so those are appended rather than dropped.
  *
  * Args:
  *   error: The failure raised while calling the engine.
@@ -51,8 +53,12 @@ export interface ActionResult {
  *   Error: Anything that is not an engine failure, which is a real fault.
  */
 function engineMessage(error: unknown): string {
-  if (error instanceof EngineError) return error.message;
-  throw error;
+  if (!(error instanceof EngineError)) throw error;
+  const missing = error.detail.missing_fields;
+  if (Array.isArray(missing) && missing.length > 0) {
+    return `${error.message} Still needed: ${missing.join("; ")}`;
+  }
+  return error.message;
 }
 
 /**
@@ -143,23 +149,55 @@ export async function loadVersion(
 }
 
 /**
- * Starts a run of the campaign's pipeline.
+ * Runs one engine call that changes a campaign, then refreshes what it touched.
+ *
+ * Every such call shares the same shape: do the thing, invalidate the screens
+ * that show the campaign, and hand back the engine's own words if it refuses.
+ * The Workspace, the campaigns list and Home all read the same state, so a
+ * decision made here must show up on all three.
+ *
+ * Args:
+ *   slug: The campaign the call acts on.
+ *   call: The engine call to make.
+ *
+ * Returns:
+ *   Nothing on success, or the engine's reason for refusing.
+ */
+async function changeCampaign(
+  slug: string,
+  call: () => Promise<unknown>,
+): Promise<ActionResult> {
+  try {
+    await call();
+    revalidatePath(`/campaigns/${slug}`);
+    revalidatePath("/campaigns");
+    revalidatePath("/");
+    return { error: null };
+  } catch (error) {
+    return { error: engineMessage(error) };
+  }
+}
+
+/**
+ * Starts a run of the campaign's pipeline, or of one stage alone.
+ *
+ * Clearing a stale deliverable runs only the stage that is stale: re-running
+ * the whole pipeline would redo work nobody asked to have redone, and charge
+ * for it (ADR-0015).
  *
  * Args:
  *   slug: The campaign slug.
+ *   stageKey: The single stage to run, or null for the whole pipeline.
  *
  * Returns:
  *   Nothing on success, or the engine's reason for refusing — an incomplete
  *   Brand DNA, a spent allowance, a run already in flight.
  */
-export async function startRunAction(slug: string): Promise<ActionResult> {
-  try {
-    await startRun(slug);
-    revalidatePath(`/campaigns/${slug}`);
-    return { error: null };
-  } catch (error) {
-    return { error: engineMessage(error) };
-  }
+export async function startRunAction(
+  slug: string,
+  stageKey: string | null = null,
+): Promise<ActionResult> {
+  return changeCampaign(slug, () => startRun(slug, stageKey));
 }
 
 /**
@@ -178,15 +216,7 @@ export async function approveStageAction(
   runId: string,
   stageKey: string,
 ): Promise<ActionResult> {
-  try {
-    await approveStage(runId, stageKey);
-    revalidatePath(`/campaigns/${slug}`);
-    revalidatePath("/campaigns");
-    revalidatePath("/");
-    return { error: null };
-  } catch (error) {
-    return { error: engineMessage(error) };
-  }
+  return changeCampaign(slug, () => approveStage(runId, stageKey));
 }
 
 /**
@@ -207,15 +237,7 @@ export async function reviseStageAction(
   stageKey: string,
   feedback: string,
 ): Promise<ActionResult> {
-  try {
-    await reviseStage(runId, stageKey, feedback);
-    revalidatePath(`/campaigns/${slug}`);
-    revalidatePath("/campaigns");
-    revalidatePath("/");
-    return { error: null };
-  } catch (error) {
-    return { error: engineMessage(error) };
-  }
+  return changeCampaign(slug, () => reviseStage(runId, stageKey, feedback));
 }
 
 /**
@@ -234,13 +256,5 @@ export async function reopenStageAction(
   stageKey: string,
   feedback: string,
 ): Promise<ActionResult> {
-  try {
-    await reopenStage(slug, stageKey, feedback);
-    revalidatePath(`/campaigns/${slug}`);
-    revalidatePath("/campaigns");
-    revalidatePath("/");
-    return { error: null };
-  } catch (error) {
-    return { error: engineMessage(error) };
-  }
+  return changeCampaign(slug, () => reopenStage(slug, stageKey, feedback));
 }

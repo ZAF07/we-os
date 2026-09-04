@@ -55,16 +55,23 @@ export function describeEvent(event: RunEvent): string | null {
 /**
  * Renders a run's live progress as it happens.
  *
+ * A dropped connection is shown as exactly that, never as a finished run: the
+ * work may well still be going, and the honest thing is to say the page stopped
+ * hearing about it and how to catch up.
+ *
  * Args:
  *   events: The trace events seen so far.
  *   finished: Whether the run has reached its terminal event.
+ *   disconnected: Whether the stream dropped before the run finished.
  */
 export function RunProgress({
   events,
   finished,
+  disconnected,
 }: {
   events: RunEvent[];
   finished: boolean;
+  disconnected: boolean;
 }) {
   const lines = events
     .map((event, index) => ({ index, text: describeEvent(event) }))
@@ -73,6 +80,22 @@ export function RunProgress({
     );
 
   if (lines.length === 0 && finished) return null;
+
+  if (disconnected) {
+    return (
+      <div
+        role="alert"
+        className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5"
+      >
+        <div className="text-[11px] font-bold tracking-wide text-amber-800 uppercase">
+          Lost the live feed
+        </div>
+        <p className="mt-1 text-[12.5px] text-amber-900">
+          The run may still be going. Reload the page to reattach to it.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div

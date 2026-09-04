@@ -23,7 +23,9 @@ from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 from conftest import (
+    PLACEHOLDER_DNA,
     SLUG,
+    TENANT,
     authenticate,
     deliverable_from,
     install_scripted_graph,
@@ -250,3 +252,37 @@ def test_another_tenants_campaign_is_indistinguishable_from_a_missing_one(
 
     authenticate(app, tenant="org_rival")
     assert client.get(f"/campaigns/{SLUG}").status_code == 404
+
+
+def test_a_failed_gate_names_the_fields_so_the_message_can_be_actionable(
+    client: TestClient, repo: Path
+) -> None:
+    """The Workspace shows the refusal; a bare "gate failed" would not help anyone."""
+    (repo / "tenants" / TENANT / "dna.md").write_text(PLACEHOLDER_DNA, encoding="utf-8")
+
+    response = client.post(f"/campaigns/{SLUG}/run", json={})
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["type"] == "gate_failed"
+    assert body["missing_fields"], "the refusal must name what is missing"
+
+
+def test_clearing_a_stale_stage_runs_that_stage_alone(client: TestClient) -> None:
+    """The button says "Re-run this stage", so it must not redo the whole pipeline.
+
+    Re-running everything would spend the tenant's allowance redoing work nobody
+    asked to have redone, which is the thing ADR-0015 refuses to do on its own.
+    What is pinned here is that a stage-scoped start is honoured: the run the
+    interface asks for names one stage, and the engine runs that one.
+    """
+    started = client.post(f"/campaigns/{SLUG}/run", json={"stage": "research"})
+
+    assert started.status_code == 202
+    assert started.json()["stage"] == "research"
+    _wait_for_status(client, started.json()["run_id"], "completed")
+
+    campaign = client.get(f"/campaigns/{SLUG}").json()
+    states = {stage["key"]: stage["state"] for stage in campaign["stages"]}
+    assert states["research"] == "completed"
+    assert states["brand-strategy"] == "pending", "only the named stage ran"
