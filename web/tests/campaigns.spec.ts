@@ -42,9 +42,7 @@ test("a campaign can be archived and leaves the active list", async ({
   await page.getByRole("button", { name: "Next →" }).click();
   await page.getByRole("button", { name: "Create campaign" }).click();
   await expect(page).toHaveURL(/\/campaigns\/archivable/);
-  await expect(
-    page.getByRole("heading", { name: "Campaign goal" }),
-  ).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Stages" })).toBeVisible();
 
   await page.goto("/campaigns");
   await expect(page.getByText(name)).toBeVisible();

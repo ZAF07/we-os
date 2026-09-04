@@ -39,4 +39,20 @@ setup("authenticate", async ({ page }) => {
   await expect(page.locator("aside").getByText("Marketing OS")).toBeVisible();
 
   await page.context().storageState({ path: STORAGE_STATE });
+
+  // Warm every route the specs use. The dev server compiles a route the first
+  // time it is hit, and under parallel load that first hit can outlast an
+  // assertion — a spec then fails on a slow first paint rather than on
+  // anything the product did. Doing it once here, serially, costs a few
+  // seconds and takes the whole class of flake off the table.
+  for (const route of [
+    "/campaigns",
+    "/campaigns/new",
+    "/calendar",
+    "/brand",
+    "/performance",
+    "/onboarding",
+  ]) {
+    await page.goto(route);
+  }
 });

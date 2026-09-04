@@ -13,6 +13,10 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 from langchain_deepseek import ChatDeepSeek
 
+from marketing_os.adapters.scripted_model import (
+    PROVIDER_NAME as SCRIPTED_PROVIDER,
+)
+from marketing_os.adapters.scripted_model import build_scripted_model
 from marketing_os.config import ProviderConfig, Settings
 from marketing_os.errors import ProviderError
 
@@ -43,8 +47,10 @@ def get_model(
     Raises:
         ProviderError: If the provider is unknown or its integration is unavailable.
     """
-    config = settings.provider_config(role=role)
     provider = settings.provider
+    if provider == SCRIPTED_PROVIDER:
+        return build_scripted_model()
+    config = settings.provider_config(role=role)
     if provider == "deepseek":
         return _build_deepseek(config, max_tokens, thinking)
     return _build_via_init_chat_model(provider, config, max_tokens)

@@ -26,8 +26,13 @@ test("the wizard never asks the business owner to pick channels", async ({
 }) => {
   await page.goto("/campaigns/new");
 
+  // What must not exist is a channel *question*. The wizard's own copy says "we
+  // choose the channels later — that is our job, not yours", which is the
+  // product making exactly this promise, so matching the bare word would fail on
+  // the reassurance it should be checking for.
   for (const step of [1, 2, 3]) {
-    await expect(page.getByText(/Channels/i)).toHaveCount(0);
+    await expect(page.getByLabel(/channel/i)).toHaveCount(0);
+    await expect(page.getByRole("group", { name: /channel/i })).toHaveCount(0);
     if (step < 3) await page.getByRole("button", { name: "Next →" }).click();
   }
 });
@@ -88,12 +93,8 @@ test("completing the wizard creates a real campaign that appears in the list", a
   await page.getByRole("button", { name: "Create campaign" }).click();
 
   await expect(page).toHaveURL(/\/campaigns\/autumn-referral-push/);
-  await expect(
-    page.getByRole("heading", { name: "Campaign goal" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("120 refill subscriptions in 8 weeks"),
-  ).toBeVisible();
+  await expect(page.getByText(CAMPAIGN_NAME)).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Stages" })).toBeVisible();
 
   await page.goto("/campaigns");
   await expect(page.getByText(CAMPAIGN_NAME)).toBeVisible();

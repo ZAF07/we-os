@@ -1,36 +1,106 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# we-OS — operator interface
 
-## Getting Started
+The Next.js app and its BFF (ADR-0012). The browser never calls the engine
+directly: this app holds the Clerk session, forwards the verified token, and the
+engine derives the tenant from that claim (ADR-0013).
 
-First, run the development server:
+## Running it locally
+
+You need the engine running as well — the app renders nothing of its own.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# terminal 1 — the engine
+cd agent-harness && make start
+
+# terminal 2 — this app
+cd web && pnpm install && pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Both read configuration from local env files, neither of which is committed:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| File                 | Copy from                   | Holds                                            |
+| -------------------- | --------------------------- | ------------------------------------------------ |
+| `web/.env.local`     | `web/.env.local.example`    | Clerk keys, `ENGINE_BASE_URL`, the e2e values    |
+| `agent-harness/.env` | `agent-harness/example.env` | the LLM provider key, `MARKETING_OS_AUTH_ISSUER` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Tests
 
-## Learn More
+Two suites, and they answer different questions.
 
-To learn more about Next.js, take a look at the following resources:
+**Unit tests** cover the pure logic the screens are built on — the projections
+between engine vocabulary and operator vocabulary. They need nothing: no
+credentials, no server, no database.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm test:unit
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**The end-to-end suite** drives a real browser against the real app and the real
+engine. It needs Clerk credentials and a seeded tenant, so it runs through a
+Docker Compose stack that brings up everything together:
 
-## Deploy on Vercel
+```bash
+make test-e2e          # from the repository root
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+That builds and starts Postgres, the engine and this app, seeds the test
+tenant's Brand DNA, runs the suite, and tears the stack down — passing or
+failing. To keep the stack up between runs:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+make e2e-up
+cd web && E2E_STACK=compose pnpm test
+make e2e-down
+```
+
+`E2E_STACK=compose` tells Playwright the app is already being served, so it
+attaches instead of starting a second one on the same port.
+
+### Getting the test credentials
+
+The suite authenticates against the **shared team Clerk test instance**, not
+your own dev instance. Ask a maintainer for access, then from the Clerk
+dashboard fill these into `web/.env.local`:
+
+| Variable                            | Where it comes from                                   |
+| ----------------------------------- | ----------------------------------------------------- |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | API keys                                              |
+| `CLERK_SECRET_KEY`                  | API keys — server-only, never prefixed `NEXT_PUBLIC_` |
+| `MARKETING_OS_AUTH_ISSUER`          | the instance's Frontend API URL                       |
+| `E2E_CLERK_USER_EMAIL`              | the dedicated test user's email                       |
+| `E2E_CLERK_ORG_ID`                  | Organizations — the org that user belongs to          |
+
+No test password is stored: sign-in mints a ticket through Clerk's Backend API
+using `CLERK_SECRET_KEY`.
+
+`E2E_CLERK_ORG_ID` is the one that needs explaining. A tenant id is minted
+randomly (`ten_<uuid4>`) on a business's first authenticated request, so it
+cannot be known in advance and a seed cannot simply write "the test tenant's"
+Brand DNA. Instead `agent-harness/scripts/seed_test_tenant.py` writes the
+`tenants` row itself, pairing a fixed tenant id with this organization — so when
+the test user signs in, the engine finds that row rather than minting a new one,
+and the seeded DNA is already theirs.
+
+### What the seed guarantees
+
+`Summit Climbing Collective`, with every Required Brand DNA field answered so
+the DNA Gate passes, and two Audience Segments a spec can name:
+
+- `Urban 22-35 beginners curious about climbing`
+- `Weekend boulderers plateauing at V4`
+
+Assert on those rather than on "whatever the first radio happens to be".
+
+### CI
+
+CI does not run the end-to-end suite — it needs Clerk secrets and a live engine.
+The frontend's data contract is covered instead by
+`agent-harness/tests/test_workspace_contract.py`, which runs in CI with no
+credentials and fails if the engine stops returning a field the screens render.
+See `.scratch/saas-foundation/issues/13-frontend-suite-cannot-run-without-credentials.md`.
+
+## Quality gates
+
+```bash
+pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:unit
+```

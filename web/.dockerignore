@@ -1,0 +1,13 @@
+# The image installs its own dependencies for its own platform; copying the
+# host's would mean shipping macOS binaries into a Linux container, and pnpm
+# would purge them on start anyway.
+node_modules
+.next
+.auth
+test-results
+playwright-report
+
+# Secrets never enter an image. The compose stack passes what the app needs as
+# environment instead.
+.env.local
+.env

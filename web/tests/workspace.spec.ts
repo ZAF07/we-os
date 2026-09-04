@@ -1,201 +1,192 @@
 import { expect, test } from "@playwright/test";
 
-const WORKSPACE = "/campaigns/fernway-refill-launch";
+/**
+ * The Workspace renders the tenant's real campaign, so these specs create one
+ * and assert on what the engine actually reports — the operator Phases, the
+ * per-stage list, and the decision the campaign is asking for. There are no
+ * fixture campaigns left to assert against.
+ *
+ * Every assertion here checks rendered content, never only a URL. Slice 10
+ * showed why: a spec asserting `toHaveURL(...)` alone stayed green over a
+ * workspace route that answered "Campaign not found" for every real campaign.
+ */
 
-test("workspace renders the stepper and the strategy document", async ({
+/**
+ * Creates a campaign through the wizard and lands on its Workspace.
+ *
+ * Args:
+ *   page: The Playwright page.
+ *   name: The campaign name, which must be unique per run.
+ */
+async function createCampaign(
+  page: import("@playwright/test").Page,
+  name: string,
+): Promise<void> {
+  await page.goto("/campaigns/new");
+  await page.getByLabel("Campaign name").fill(name);
+  await page.getByLabel("Primary business objective").fill("An objective");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await page.getByLabel("Business KPI").fill("A business target");
+  await page.getByLabel("Marketing KPI").fill("A marketing target");
+  await page.getByLabel("Creative KPI").fill("A creative target");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await page.getByRole("radio").first().click();
+  await page.getByLabel("Campaign budget").fill("1000");
+  await page.getByLabel("Start date").fill("2026-09-01");
+  await page.getByLabel("End date").fill("2026-10-27");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await page.getByRole("button", { name: "Create campaign" }).click();
+}
+
+test("a new campaign's Workspace renders its Phases and stages", async ({
   page,
 }) => {
-  await page.goto(WORKSPACE);
+  const name = `Workspace ${Date.now()}`;
+  await createCampaign(page, name);
 
-  const stageNav = page.getByRole("navigation", { name: "Stages" });
-  for (const name of [
-    "Brief",
-    "Research",
-    "Strategy",
-    "Plan",
-    "Produce",
-    "Approve",
-    "Publish",
-    "Measure",
-  ]) {
+  await expect(page.getByText(name)).toBeVisible();
+
+  // The stepper numbers each Phase, so its accessible name is "1 Research".
+  const phases = ["Research", "Strategy", "Plan", "Produce"];
+  for (const [index, phase] of phases.entries()) {
     await expect(
-      stageNav.getByRole("button", { name: new RegExp(`^${name}`) }),
+      page.getByRole("button", { name: `${index + 1} ${phase}` }),
     ).toBeVisible();
   }
 
-  await expect(
-    page.getByRole("heading", { name: "Audience & positioning strategy" }),
-  ).toBeVisible();
-  await expect(page.getByText("Awaiting your decision")).toBeVisible();
-});
-
-test("selecting a stage shows its detail (done / inputs / after)", async ({
-  page,
-}) => {
-  await page.goto(WORKSPACE);
-
   const stageNav = page.getByRole("navigation", { name: "Stages" });
-  await stageNav.getByRole("button", { name: /^Brief/ }).click();
-  await expect(
-    page.getByRole("heading", { name: "Campaign brief" }),
-  ).toBeVisible();
-  await expect(page.getByText("Work completed")).toBeVisible();
-  await expect(
-    page.getByText("Objective: 1,500 new refill subscriptions in Q3"),
-  ).toBeVisible();
-  await expect(page.getByText("Inputs needed from you")).toBeVisible();
-  await expect(page.getByText("None — brief approved Jul 2")).toBeVisible();
-  await expect(page.getByText("After this stage:")).toBeVisible();
-
-  await stageNav.getByRole("button", { name: /^Plan/ }).click();
-  await expect(
-    page.getByRole("heading", { name: "Channel & content plan" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Nothing yet — waiting on Strategy approval"),
-  ).toBeVisible();
-});
-
-test("evidence and comments tabs work; request changes switches to comments", async ({
-  page,
-}) => {
-  await page.goto(WORKSPACE);
-
-  for (const id of ["S1", "S2", "S3", "S4"]) {
-    await expect(page.getByText(id, { exact: true }).last()).toBeVisible();
+  for (const stage of [
+    "Research findings",
+    "Brand strategy",
+    "Campaign strategy",
+    "Performance plan",
+    "Creative brief",
+    "Asset prompts",
+  ]) {
+    await expect(stageNav.getByRole("button", { name: stage })).toBeVisible();
   }
-  await expect(
-    page.getByText("Purchase-driver survey, May 2026"),
-  ).toBeVisible();
-
-  await page.getByRole("button", { name: "Request changes" }).click();
-  await expect(page.getByText("Dana")).toBeVisible();
-  await expect(page.getByPlaceholder("Add a comment…")).toBeVisible();
-
-  await page.getByRole("button", { name: "Evidence", exact: true }).click();
-  await expect(page.getByText("Competitor messaging audit")).toBeVisible();
 });
 
-test("the AI action rail toggles notes and the brand scorecard", async ({
-  page,
-}) => {
-  await page.goto(WORKSPACE);
+test("the stepper shows no raw engine stage keys", async ({ page }) => {
+  const name = `No keys ${Date.now()}`;
+  await createCampaign(page, name);
 
-  await page.getByRole("button", { name: "Challenge this assumption" }).click();
-  await expect(page.getByText(/Weakest assumption/)).toBeVisible();
-
-  await page.getByRole("button", { name: "Check brand alignment" }).click();
-  await expect(
-    page.getByText("Brand alignment", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("Voice & tone")).toBeVisible();
-  await expect(page.getByText("96%")).toBeVisible();
-
-  await page.getByRole("button", { name: "Check brand alignment" }).click();
-  await expect(page.getByText("Brand alignment", { exact: true })).toBeHidden();
+  for (const key of [
+    "brand-strategy",
+    "campaign-strategy",
+    "performance-plan",
+    "creative-brief",
+    "asset-prompts",
+  ]) {
+    await expect(page.getByText(key, { exact: true })).toHaveCount(0);
+  }
 });
 
-test("approving Strategy fans out to Home and Campaigns, and undo reverses it", async ({
+test("lifecycle status renders separately from stage progress", async ({
   page,
 }) => {
-  await page.goto("/");
-  await expect(
-    page
-      .locator("div")
-      .filter({ hasText: /^Pending approvals4$/ })
-      .first(),
-  ).toBeVisible();
-  await expect(page.getByText("Approve audience & positioning")).toBeVisible();
+  const name = `Lifecycle ${Date.now()}`;
+  await createCampaign(page, name);
 
-  await page.goto(WORKSPACE);
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
-  await expect(page.getByText("✓ Positioning approved")).toBeVisible();
-  await expect(page.getByText("Approved just now")).toBeVisible();
-
-  await page.reload();
-  await expect(page.getByText("✓ Positioning approved")).toBeVisible();
-
-  await page.goto("/campaigns");
-  const fernwayRow = page
-    .locator("div")
-    .filter({ hasText: /^Fernway Refill Launch/ })
-    .filter({ hasText: "4/8" })
-    .first();
-  await expect(fernwayRow).toBeVisible();
-  await expect(page.getByText("In progress").first()).toBeVisible();
-
-  await page.goto("/");
-  await expect(
-    page
-      .locator("div")
-      .filter({ hasText: /^Pending approvals3$/ })
-      .first(),
-  ).toBeVisible();
-  await expect(page.getByText("Approve audience & positioning")).toBeHidden();
-
-  await page.goto(WORKSPACE);
-  await page.getByRole("button", { name: "Return to review" }).click();
-  await expect(
-    page.getByRole("button", { name: "Approve", exact: true }),
-  ).toBeVisible();
-
-  await page.goto("/");
-  await expect(
-    page
-      .locator("div")
-      .filter({ hasText: /^Pending approvals4$/ })
-      .first(),
-  ).toBeVisible();
-  await expect(page.getByText("Approve audience & positioning")).toBeVisible();
-});
-
-test("re-opening an approved decision marks the downstream stage stale", async ({
-  page,
-}) => {
-  await page.goto(WORKSPACE);
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
-  await expect(page.getByText("✓ Positioning approved")).toBeVisible();
-
-  await page.getByRole("button", { name: "Re-open this decision" }).click();
-
-  await expect(page.getByText("Revise audience & positioning")).toBeVisible();
-  await expect(page.getByText("Plan is now stale.")).toBeVisible();
+  await expect(page.getByText("Draft", { exact: true })).toBeVisible();
 
   const stageNav = page.getByRole("navigation", { name: "Stages" });
-  await expect(page.getByText("Stale — re-run when ready")).toBeVisible();
-
-  await stageNav.getByRole("button", { name: /^Plan/ }).click();
-  await expect(page.getByRole("status")).toContainText(
-    "Re-run this stage to bring it up to date",
-  );
-  await expect(page.getByText("Stale", { exact: true }).first()).toBeVisible();
+  await expect(
+    stageNav.getByRole("button", { name: "Research findings" }),
+  ).toContainText("Not started");
 });
 
-test("re-approving a re-opened decision clears the stale flag", async ({
-  page,
-}) => {
-  await page.goto(WORKSPACE);
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
-  await page.getByRole("button", { name: "Re-open this decision" }).click();
-  await expect(page.getByText("Plan is now stale.")).toBeVisible();
-
-  await page.getByRole("button", { name: "Approve revision" }).click();
-
-  await expect(page.getByText("✓ Positioning approved")).toBeVisible();
-  await expect(page.getByText("Stale — re-run when ready")).toBeHidden();
-});
-
-test("re-running a stale stage clears its flag", async ({ page }) => {
-  await page.goto(WORKSPACE);
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
-  await page.getByRole("button", { name: "Re-open this decision" }).click();
+test("a stage that has produced nothing says so honestly", async ({ page }) => {
+  const name = `Empty ${Date.now()}`;
+  await createCampaign(page, name);
 
   const stageNav = page.getByRole("navigation", { name: "Stages" });
-  await stageNav.getByRole("button", { name: /^Plan/ }).click();
-  await expect(page.getByRole("status")).toBeVisible();
+  await stageNav.getByRole("button", { name: "Asset prompts" }).click();
 
-  await page.getByRole("button", { name: "Re-run this stage" }).click();
+  await expect(page.getByText("Nothing produced yet")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Asset prompts" }),
+  ).toBeVisible();
+});
 
-  await expect(page.getByRole("status")).toBeHidden();
-  await expect(page.getByText("Stale — re-run when ready")).toBeHidden();
+test("a draft campaign offers to start a run", async ({ page }) => {
+  const name = `Runnable ${Date.now()}`;
+  await createCampaign(page, name);
+
+  await expect(page.getByText("Nothing running")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start run" })).toBeVisible();
+});
+
+test("an unknown campaign slug renders not found, not a broken page", async ({
+  page,
+}) => {
+  await page.goto("/campaigns/no-such-campaign-anywhere");
+
+  await expect(
+    page.getByRole("heading", { name: "Campaign not found" }),
+  ).toBeVisible();
+});
+
+/**
+ * The approve and revise paths — the decision the whole product exists for.
+ *
+ * These drive a campaign to a live Approval Gate. The e2e stack runs the engine
+ * on the scripted provider, so a run reaches that gate in seconds, identically
+ * every time, without calling a model: what is under test is the interface, not
+ * anyone's prose.
+ */
+test.describe("approval gate", () => {
+  test("approving a stage resumes the run into the next one", async ({
+    page,
+  }) => {
+    const name = `Approve ${Date.now()}`;
+    await createCampaign(page, name);
+
+    await page.getByRole("button", { name: "Start run" }).click();
+
+    // The run halts at the brand-strategy gate, and the Workspace follows it
+    // there rather than leaving the person on the stage that was current when
+    // the page loaded.
+    const approve = page.getByRole("button", { name: "Approve", exact: true });
+    await expect(approve).toBeVisible({ timeout: 120_000 });
+    await expect(
+      page.getByRole("heading", { name: "Brand strategy" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Deliverable")).not.toBeEmpty();
+
+    await approve.click();
+
+    const stageNav = page.getByRole("navigation", { name: "Stages" });
+    await expect(
+      stageNav.getByRole("button", { name: /^Brand strategy/ }),
+    ).toContainText("Approved", { timeout: 120_000 });
+  });
+
+  test("requesting changes produces a second version carrying the feedback", async ({
+    page,
+  }) => {
+    const name = `Revise ${Date.now()}`;
+    await createCampaign(page, name);
+
+    await page.getByRole("button", { name: "Start run" }).click();
+    const requestChanges = page.getByRole("button", {
+      name: "Request changes",
+    });
+    await expect(requestChanges).toBeVisible({ timeout: 120_000 });
+
+    await requestChanges.click();
+    await page
+      .getByLabel("What do you want changed?")
+      .fill("Too premium; we are mid-market.");
+    await page.getByRole("button", { name: "Send back" }).click();
+
+    const history = page.getByRole("region", { name: "Version history" });
+    await expect(history.getByText("v2")).toBeVisible({ timeout: 120_000 });
+    await expect(
+      history.getByText("You asked: Too premium; we are mid-market."),
+    ).toBeVisible();
+
+    await history.getByRole("button", { name: /^v1/ }).click();
+    await expect(page.getByText("Showing v1 of 2")).toBeVisible();
+  });
 });
