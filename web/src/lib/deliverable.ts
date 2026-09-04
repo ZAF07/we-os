@@ -27,24 +27,33 @@ export interface DeliverableSection {
 export function toSections(markdown: string): DeliverableSection[] {
   const sections: DeliverableSection[] = [];
   let current: DeliverableSection = { heading: "", lines: [] };
+  let insideFence = false;
+
+  const keep = (section: DeliverableSection): void => {
+    if (section.heading !== "" || section.lines.length > 0) {
+      sections.push(section);
+    }
+  };
 
   for (const raw of markdown.split("\n")) {
-    const heading = raw.match(/^\s{0,3}#{1,6}\s+(.*)$/);
+    if (/^\s{0,3}(```|~~~)/.test(raw)) {
+      insideFence = !insideFence;
+      current.lines.push(raw.trimEnd());
+      continue;
+    }
+
+    const heading = insideFence ? null : raw.match(/^\s{0,3}#{1,6}\s+(.*)$/);
     if (heading) {
-      if (current.heading !== "" || current.lines.length > 0) {
-        sections.push(current);
-      }
+      keep(current);
       current = { heading: heading[1].trim(), lines: [] };
       continue;
     }
+
     if (raw.trim() !== "") current.lines.push(raw.trimEnd());
   }
 
-  if (current.heading !== "" || current.lines.length > 0)
-    sections.push(current);
-  return sections.filter(
-    (section) => section.heading !== "" || section.lines.length > 0,
-  );
+  keep(current);
+  return sections;
 }
 
 /**

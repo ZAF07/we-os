@@ -255,6 +255,9 @@ def test_an_exhausted_tenant_is_refused_a_run_with_the_typed_402(client: TestCli
     assert body["type"] == "quota_exhausted"
     assert body["allowance"] == pytest.approx(1000.0)
     assert "allowance" in body["message"]
+    # The interface says how far past the line the business is, so both numbers
+    # have to be on the refusal — not only the ceiling they hit.
+    assert body["used"] >= body["allowance"]
 
 
 def test_an_exhausted_tenant_makes_no_model_call_at_all(

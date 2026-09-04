@@ -67,15 +67,15 @@ deferred to the engine boundary.
 | Criterion | Evidence |
 | --- | --- |
 | No screen reads fixtures; the store seeds no demo data | `mock-data.ts` and `store.ts` deleted; zero references remain; `zustand` removed from `package.json` |
-| Home's queue, counts and blocked list derive from real state | `lib/home.ts` projects `GET /campaigns`; `home.spec.ts` creates a campaign, runs it to a gate, and finds it on the queue |
+| Home's queue, counts and blocked list derive from real state | `lib/home.ts` projects `GET /campaigns`; `home.spec.ts` creates a campaign, runs it to a gate, and finds it on the queue. **Deviation:** the queue and the blocked list are one list, tagged `Decision` or `Stale` — both are the owner's to act on and separating them would have split one decision across two panels. The distinction survives in the tag |
 | Brand renders the DNA and edits individual answers | `brand-screen.tsx` over the published questionnaire; `brand.spec.ts` edits "Where do you serve customers?" and sees it saved |
-| Performance renders the plan and is explicit it is planned, not measured | Laid out by the plan's own headings via `lib/deliverable.ts`; a spec asserts the old invented metrics stay gone |
+| Performance renders the plan and is explicit it is planned, not measured | **Partial.** The "not measured" half is done and asserted — a spec checks the old invented metrics stay gone. The other half is weaker than the criterion reads: `lib/deliverable.ts` lays the plan out by whatever headings the specialist wrote, so channels, spend, placements and KPI tiers render *as sections* but are not identified individually. See [16](../16-performance-screen-does-not-identify-the-plans-parts.md) |
 | Calendar renders timeframes and milestones, honest empty state | `calendar.spec.ts` creates a campaign and finds its timeframe; names per-post scheduling as what will fill it later |
 | Approving is reflected on Home without a manual refresh | `changeCampaign` revalidates `/`, `/campaigns` and the workspace; `home.spec.ts` drives the whole loop in a browser |
 | Loading and error states; no other tenant's data | `role="alert"` on all four; tenant isolation is structural — `engineFetch` sends only the Clerk token and the engine derives the tenant (ADR-0013), so no screen *can* ask for another's |
 | Usable below desktop width | `smoke.spec.ts` asserts no horizontal overflow at 375px |
-| Smoke suite covers each screen against the real API | Home 6, Brand 4, Performance 3, Calendar 3 — all green |
-| Verified in the running app | `make test-e2e`: **40 passed, 0 failed, 2 skipped** |
+| Smoke suite covers each screen against the real API | Home 5, Brand 4, Performance 3, Calendar 3 — all green |
+| Verified in the running app | `make test-e2e`: **40 passed, 0 failed, 2 skipped** — 42 specs in total, of which 2 are skipped |
 
 ### What code review caught
 
@@ -98,6 +98,22 @@ queue. It does not, and should not: approving brand-strategy advances to
 campaign-strategy, which is *also* a human gate, so the campaign is still
 waiting and belongs on the queue. Confirmed at the engine before changing
 anything — the test was rewritten, not the behaviour.
+
+### Corrected after a second review
+
+The evidence table above was rewritten once. As first written it claimed the
+Performance criterion outright, said Home had 6 specs when it has 5, and did not
+record that the blocked list had been folded into the queue. A completion note
+that overstates is its own defect — it is the thing a future reader trusts
+instead of re-deriving — so the corrections are recorded here rather than made
+silently.
+
+A second review pass also found and fixed: two screens still carrying the
+duplicated engine-unreachable string the first pass was supposed to have
+removed; a dead `/workspace` route still in the nav, pointing at a hardcoded
+`acme` slug no tenant owns; and an ordering bug where a 402 carrying
+`missing_fields` would have rendered the gate message instead of the quota one.
+`refusalMessage` now has six unit tests, including that ordering.
 
 ### Still open
 

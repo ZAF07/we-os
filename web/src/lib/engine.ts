@@ -2,6 +2,8 @@ import "server-only";
 
 import { auth } from "@clerk/nextjs/server";
 
+import { EngineError } from "@/lib/engine-error";
+
 /**
  * Server-side client for the we-OS engine.
  *
@@ -12,21 +14,6 @@ import { auth } from "@clerk/nextjs/server";
  */
 
 const ENGINE_BASE_URL = process.env.ENGINE_BASE_URL ?? "http://127.0.0.1:8000";
-
-/** A typed error mirroring the engine's `Error` schema from the frozen contract. */
-export class EngineError extends Error {
-  readonly status: number;
-  readonly type: string;
-  readonly detail: Record<string, unknown>;
-
-  constructor(status: number, detail: Record<string, unknown>) {
-    super(String(detail.message ?? `Engine request failed (${status})`));
-    this.name = "EngineError";
-    this.status = status;
-    this.type = String(detail.type ?? "internal");
-    this.detail = detail;
-  }
-}
 
 /**
  * Calls the engine on behalf of the signed-in user.
@@ -98,6 +85,21 @@ export async function engineStream(
     },
   });
 }
+
+/**
+ * Turns a failed engine call into the sentence a screen shows.
+ *
+ * The engine explains its own refusals in the operator's terms, so its message
+ * is passed through; only an unreachable engine needs wording of ours, and that
+ * wording should be the same on every screen.
+ *
+ * Args:
+ *   error: The failure raised while calling the engine.
+ *
+ * Returns:
+ *   The message to render.
+ */
+export { EngineError };
 
 /**
  * Turns a failed engine call into the sentence a screen shows.

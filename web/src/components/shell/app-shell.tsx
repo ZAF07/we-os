@@ -9,7 +9,6 @@ import {
   Home,
   Megaphone,
   Menu,
-  ShieldCheck,
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
@@ -35,7 +34,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/brand", label: "Brand", icon: BookOpen },
-  { href: "/workspace", label: "Workspace", icon: ShieldCheck },
   { href: "/performance", label: "Performance", icon: TrendingUp },
 ];
 

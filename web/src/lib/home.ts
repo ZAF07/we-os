@@ -53,7 +53,7 @@ export interface ActiveCampaignView {
  */
 export function toQueue(campaigns: CampaignSummary[]): QueueItem[] {
   const waiting: QueueItem[] = [];
-  const blocked: QueueItem[] = [];
+  const stale: QueueItem[] = [];
 
   for (const campaign of campaigns) {
     if (campaign.blocked_reason === null) continue;
@@ -66,10 +66,10 @@ export function toQueue(campaigns: CampaignSummary[]): QueueItem[] {
       href: `/campaigns/${campaign.id}`,
     };
     if (campaign.status === "awaiting_approval") waiting.push(item);
-    else blocked.push(item);
+    else stale.push(item);
   }
 
-  return [...waiting, ...blocked];
+  return [...waiting, ...stale];
 }
 
 /**

@@ -41,6 +41,33 @@ describe("toSections", () => {
     expect(sections[0].heading).toBe("Placements");
   });
 
+  it("does not mistake a # inside a code fence for a heading", () => {
+    const sections = toSections(
+      [
+        "## Channel mix",
+        "- Meta: 60%",
+        "```",
+        "# this is sample copy, not a section",
+        "```",
+        "## KPI targets",
+        "Business: 40 memberships",
+      ].join("\n"),
+    );
+
+    expect(sections.map((section) => section.heading)).toEqual([
+      "Channel mix",
+      "KPI targets",
+    ]);
+    expect(sections[0].lines).toContain("# this is sample copy, not a section");
+  });
+
+  it("handles a fence left unclosed rather than swallowing the rest", () => {
+    const sections = toSections("## Channels\n```\nunclosed");
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0].heading).toBe("Channels");
+  });
+
   it("has nothing to show for an empty deliverable", () => {
     expect(toSections("")).toEqual([]);
     expect(toSections("\n\n  \n")).toEqual([]);

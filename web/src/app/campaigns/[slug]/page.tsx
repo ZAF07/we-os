@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { Workspace } from "@/components/workspace/workspace";
-import { EngineError } from "@/lib/engine";
+import { engineErrorMessage } from "@/lib/engine";
 
 import { loadWorkspace } from "./actions";
 
@@ -55,17 +55,13 @@ function NotFound() {
  *   error: What went wrong reaching the engine.
  */
 function EngineDown({ error }: { error: unknown }) {
-  const message =
-    error instanceof EngineError
-      ? error.message
-      : "Could not reach the engine. Is it running on ENGINE_BASE_URL?";
   return (
     <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
       <h1 className="text-[22px] font-bold tracking-tight">
         Cannot load this campaign
       </h1>
       <p role="alert" className="mt-1 text-[13px] text-muted-foreground">
-        {message}
+        {engineErrorMessage(error)}
       </p>
       <p className="mt-3 text-[13px]">
         <Link href="/campaigns">← Back to campaigns</Link>
