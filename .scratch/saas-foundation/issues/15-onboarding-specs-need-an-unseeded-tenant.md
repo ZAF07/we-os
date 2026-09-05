@@ -1,6 +1,6 @@
 # 15 — Two onboarding specs are permanently skipped, so the wizard's gating is untested
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 
 ## Parent
@@ -57,34 +57,74 @@ beside it.
 
 ## What's needed
 
-A tenant the onboarding specs can start from empty, without disturbing the one
-every other spec depends on. Worth deciding rather than assuming:
+**Decided** in the 2026-09-05 grilling session. Six decisions, in dependency
+order; the reasoning for each is under Comments.
 
-- **A second Clerk organization**, seeded with *no* Brand DNA, that
-  `auth.setup.ts` can also sign into — the honest option, since it exercises the
-  real onboarding path end to end. Needs a second organization on the shared
-  test instance and a second storage state, and `seed_test_tenant.py` currently
-  hardcodes one `TEST_TENANT_ID`.
-- **Reset-and-restore around the specs**, running them serially in their own
-  project so they can blank the DNA and put it back. Cheaper, but a crashed run
-  leaves the shared tenant empty and every other spec then fails at the gate —
-  the failure mode is bad enough to weigh carefully.
-- **Cover it below the browser instead** — a unit test over the wizard's
-  step-completeness logic, plus the engine-side completeness report, which is
-  already covered. Cheapest, and honest about what it does *not* prove: that the
-  button is actually disabled in a real browser.
+1. **A second Clerk test user, in a second Clerk organization.** The engine
+   derives the tenant from the `org_id` claim on the session token
+   (`PostgresTenantDirectory.resolve`), so the organization is the axis. A
+   second dedicated user keeps that claim a fixed property of a saved storage
+   state rather than something a fixture has to switch and re-verify.
+2. **Seed the blank tenant explicitly**, with a fixed `BLANK_TENANT_ID`, rather
+   than letting `resolve()` auto-provision it on first sign-in. Auto-provisioning
+   does produce a blank tenant, but with a random id that nothing can name.
+3. **One seed invocation writes both tenants.** No `--tenant-id`/`--blank`
+   arguments and no second compose call: the two tenants are a matched pair and
+   a half-seeded stack should be unrepresentable.
+4. **The two onboarding specs run serially, in their own Playwright project**,
+   against the blank tenant's storage state. Blankness is re-established by the
+   seed on every stack start, not by the specs themselves.
+5. **The blank tenant is seeded under a name the wizard then overwrites.** Spec 2
+   answers `q_business_name` as "Acme Coffee" and asserts Brand shows it, which
+   proves the answer won over the organization name (`render.py`) — an
+   uncovered rule today.
+6. **The campaign-accumulation problem gets its own issue**, not folded in here.
 
-The first is the only one that tests what the specs claim to test. The third is
-the one that could land today. That trade is the decision this issue needs.
+### Concretely
+
+- `agent-harness/scripts/seed_test_tenant.py` — add `BLANK_TENANT_ID` and
+  `BLANK_BUSINESS_NAME` constants and a `seed_blank(dsn, organization_id)` that
+  writes the `tenants` row and **deletes** any `dna_answers` rows and the
+  `dna.md` document for it. The delete is the point: blankness must be
+  re-established on every start. `main()` calls both; rename the module to
+  `seed_test_tenants.py` since it is no longer singular.
+- `docker-compose.e2e.yml` — a second organization id env var
+  (`E2E_CLERK_BLANK_ORG_ID`), passed to the same single invocation.
+- `web/tests/auth.setup.ts` — loop over two `{email, storageState}` pairs,
+  writing `.auth/user.json` and `.auth/blank-user.json`. Keep the route warm-up
+  for the seeded session; the blank session needs only `/onboarding`.
+- `web/playwright.config.ts` — a second project (`chromium-onboarding`) with
+  `workers: 1`, the blank storage state, and `testMatch` for
+  `onboarding.spec.ts`; the existing `chromium` project gains a matching
+  `testIgnore` so the file runs once, not twice.
+- `web/tests/onboarding.spec.ts` — un-skip both specs. Spec 1 declared before
+  spec 2, since spec 2 dirties the tenant. The two specs that assert on the
+  *published question set* keep working against either tenant, but they now run
+  under the blank identity too — check nothing in them depends on the seeded DNA.
+- `web/.env.local.example` — document `E2E_CLERK_BLANK_USER_EMAIL` and
+  `E2E_CLERK_BLANK_ORG_ID`.
+
+### Known limitation, accepted
+
+Re-running `make test-e2e` without restarting the stack fails spec 1, because
+spec 2 left the tenant filled in. Accepted rather than solved: the alternative
+is a Playwright `globalSetup` that shells out to the seed, which drags a
+database dependency into the web suite that it has so far stayed clean of.
+Spec 1 should fail with a message naming `make e2e-up`, not a bare assertion
+failure, so the cause is obvious.
 
 ## Acceptance criteria
 
 - [ ] Required-field gating in onboarding is covered by a test that actually runs.
 - [ ] The wizard's full happy path — answering through to the Brand screen — is covered by a test that actually runs.
-- [ ] Neither test destabilises the campaign specs sharing the tenant, under `fullyParallel`.
+- [ ] Neither test destabilises the campaign specs sharing the seeded tenant, under `fullyParallel`.
 - [ ] `web/tests/onboarding.spec.ts` contains no `test.skip`, or each remaining one names a reason that is still true.
-- [ ] `make test-e2e` passes with the skip count reduced.
+- [ ] The seed establishes the blank tenant's blankness on every stack start, including after a run that filled it in.
+- [ ] Spec 2 proves a `q_business_name` answer overrides the organization name on the Brand screen.
+- [ ] Spec 1 fails with a message naming `make e2e-up` when the tenant is not blank, rather than a bare assertion failure.
+- [ ] `make test-e2e` passes with the skip count reduced to zero.
 - [ ] Web gates pass — `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test:unit`.
+- [ ] Harness gates pass — `uv run ruff check .`, `uv run mypy src`, `uv run pytest`.
 
 ## Suspected location
 
@@ -130,3 +170,46 @@ recommendation, none of them yet a decision:
 
 **Open question, unanswered:** should `seed_test_tenant.py` seed both tenants in
 one invocation, or take `--blank`/`--tenant-id` and be called twice from compose?
+
+**2026-09-05 (grilling, complete — issue is now `ready-for-agent`).** Six
+decisions, with the reasoning worth keeping:
+
+- **Correction to the 2026-09-04 note.** It said a second identity needs a
+  second org *and* either a second user or org-switching. Reading
+  `adapters/auth.py` and `web/src/lib/engine.ts`: the tenant comes from the
+  `org_id` claim on the session token, which carries the session's *active*
+  organization. So the org is the only real axis, and a second user is one way
+  to fix that claim — the cheapest, but a choice rather than a requirement.
+  Rejected same-user-two-orgs on the original grounds: org-switching becomes
+  permanent machinery in the most flake-sensitive part of the suite, and a
+  session token that has not refreshed its `org_id` writes to the *wrong*
+  tenant — a failure that reads as a data bug, not an auth bug.
+- **Auto-provisioning was considered and rejected** (decision 2). It works —
+  `PostgresTenantDirectory.resolve` mints a fresh row with zero `dna_answers`
+  for an unknown org — and it would even exercise the true first-sign-in path.
+  Rejected because the tenant id would be random, discoverable only by joining
+  through the Clerk org id, which is exactly the problem the seed script's
+  docstring says it exists to avoid. Second reason: with auto-provisioning the
+  blank tenant does not exist until someone signs in, so there is no reliable
+  moment to blank it.
+- **Blanking must delete two things, not one** (decision 3). The wizard's resume
+  point is computed from `dna_answers`, but the DNA Gate and the segment parser
+  read the rendered `dna.md` document (ADR-0018). A `seed_blank` that clears
+  only the answers leaves a tenant whose wizard looks empty and whose gate
+  passes.
+- **Serial execution is honest, not a workaround** (decision 4). The two specs
+  share a mutable fixture: spec 1 reads a blank tenant, spec 2 fills it in.
+  Saying so in the config beats a `beforeEach` that would need either a
+  test-only DNA-wipe endpoint shipped in the product or a database client in the
+  web suite.
+- **Spec 2's business name is load-bearing** (decision 5). If the blank tenant
+  were seeded as "Acme Coffee" too, the Brand assertion would pass whether or
+  not the wizard wrote anything — a test that cannot fail for the reason it
+  exists. Seeding a different name makes it a real test of the
+  answer-wins-over-org-name rule in `questionnaire/render.py`.
+- **No ADR, no `CONTEXT.md` change.** The decision is reversible, local to the
+  test suite, and introduces test-fixture vocabulary rather than domain
+  vocabulary. `CONTEXT.md` is a glossary of the domain and should stay one.
+
+**Open question from 2026-09-04, now answered:** the seed takes no `--blank` or
+`--tenant-id` arguments and is called once — see decision 3.
