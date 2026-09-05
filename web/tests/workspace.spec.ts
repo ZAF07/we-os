@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { uniqueName } from "./fixtures";
+
 /**
  * The Workspace renders the tenant's real campaign, so these specs create one
  * and assert on what the engine actually reports — the operator Phases, the
@@ -41,7 +43,7 @@ async function createCampaign(
 test("a new campaign's Workspace renders its Phases and stages", async ({
   page,
 }) => {
-  const name = `Workspace ${Date.now()}`;
+  const name = uniqueName("Workspace");
   await createCampaign(page, name);
 
   await expect(page.getByText(name)).toBeVisible();
@@ -68,7 +70,7 @@ test("a new campaign's Workspace renders its Phases and stages", async ({
 });
 
 test("the stepper shows no raw engine stage keys", async ({ page }) => {
-  const name = `No keys ${Date.now()}`;
+  const name = uniqueName("No keys");
   await createCampaign(page, name);
 
   for (const key of [
@@ -85,7 +87,7 @@ test("the stepper shows no raw engine stage keys", async ({ page }) => {
 test("lifecycle status renders separately from stage progress", async ({
   page,
 }) => {
-  const name = `Lifecycle ${Date.now()}`;
+  const name = uniqueName("Lifecycle");
   await createCampaign(page, name);
 
   await expect(page.getByText("Draft", { exact: true })).toBeVisible();
@@ -97,7 +99,7 @@ test("lifecycle status renders separately from stage progress", async ({
 });
 
 test("a stage that has produced nothing says so honestly", async ({ page }) => {
-  const name = `Empty ${Date.now()}`;
+  const name = uniqueName("Empty");
   await createCampaign(page, name);
 
   const stageNav = page.getByRole("navigation", { name: "Stages" });
@@ -110,7 +112,7 @@ test("a stage that has produced nothing says so honestly", async ({ page }) => {
 });
 
 test("a draft campaign offers to start a run", async ({ page }) => {
-  const name = `Runnable ${Date.now()}`;
+  const name = uniqueName("Runnable");
   await createCampaign(page, name);
 
   await expect(page.getByText("Nothing running")).toBeVisible();
@@ -139,7 +141,7 @@ test.describe("approval gate", () => {
   test("approving a stage resumes the run into the next one", async ({
     page,
   }) => {
-    const name = `Approve ${Date.now()}`;
+    const name = uniqueName("Approve");
     await createCampaign(page, name);
 
     await page.getByRole("button", { name: "Start run" }).click();
@@ -165,7 +167,7 @@ test.describe("approval gate", () => {
   test("requesting changes produces a second version carrying the feedback", async ({
     page,
   }) => {
-    const name = `Revise ${Date.now()}`;
+    const name = uniqueName("Revise");
     await createCampaign(page, name);
 
     await page.getByRole("button", { name: "Start run" }).click();

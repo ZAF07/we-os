@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 
+import { uniqueName } from "./fixtures";
+
 /**
  * The wizard creates a real campaign through the engine, so these assert on
  * what the engine actually requires: all three KPI tiers, a segment chosen
  * from the Brand DNA, and no channel question — channels are the performance
  * specialist's call at stage 4 (ADR-0016).
  */
-const CAMPAIGN_NAME = `Autumn Referral Push ${Date.now()}`;
+const CAMPAIGN_NAME = uniqueName("Autumn Referral Push");
 
 test("validation blocks the wizard until required inputs are filled", async ({
   page,

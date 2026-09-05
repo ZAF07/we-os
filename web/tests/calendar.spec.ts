@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { uniqueName } from "./fixtures";
+
 /**
  * Calendar shows real campaign timeframes. Publishing arrives in a later PRD,
  * so it must not fabricate post schedules — these assert both that real
@@ -30,7 +32,7 @@ test("it is explicit that per-post scheduling does not exist yet", async ({
 });
 
 test("a created campaign appears with its real timeframe", async ({ page }) => {
-  const name = `Calendar ${Date.now()}`;
+  const name = uniqueName("Calendar");
 
   await page.goto("/campaigns/new");
   await page.getByLabel("Campaign name").fill(name);

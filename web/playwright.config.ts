@@ -12,6 +12,7 @@ for (const file of [".env.local", ".env"]) {
 
 const PORT = 3100;
 const STORAGE_STATE = path.join(__dirname, ".auth/user.json");
+const BLANK_STORAGE_STATE = path.join(__dirname, ".auth/blank-user.json");
 
 // The e2e compose stack serves the app on the same port, so when it is up
 // Playwright must attach rather than start a second server of its own. Anything
@@ -39,15 +40,32 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     trace: "on-first-retry",
   },
-  // The `setup` project signs in once; `chromium` reuses the saved session,
-  // since clerkMiddleware protects every application route.
+  // The `setup` project signs both test users in; the two feature projects
+  // reuse the saved sessions, since clerkMiddleware protects every application
+  // route.
+  //
+  // Two projects because the suite needs two tenants. `chromium` runs against
+  // the seeded business, whose Brand DNA is complete so campaigns can be
+  // created. `chromium-onboarding` runs the wizard's specs against the blank
+  // business, which has answered nothing — and runs them with one worker,
+  // because they share a mutable fixture: the first reads a blank tenant and
+  // the second fills it in. `testIgnore` on `chromium` keeps the onboarding
+  // file from running twice.
   projects: [
     { name: "setup", testMatch: /auth\.setup\.ts/ },
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
       dependencies: ["setup"],
-      testIgnore: /auth\.setup\.ts/,
+      testIgnore: [/auth\.setup\.ts/, /onboarding\.spec\.ts/],
+    },
+    {
+      name: "chromium-onboarding",
+      use: { ...devices["Desktop Chrome"], storageState: BLANK_STORAGE_STATE },
+      dependencies: ["setup"],
+      testMatch: /onboarding\.spec\.ts/,
+      fullyParallel: false,
+      workers: 1,
     },
   ],
   webServer: STACK_IS_UP

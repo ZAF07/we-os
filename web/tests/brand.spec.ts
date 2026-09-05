@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { uniqueName } from "./fixtures";
+
 /**
  * Brand renders the tenant's real Brand DNA — the answers the business gave to
  * the published questionnaire — and edits them in place. So these assert on the
@@ -51,7 +53,7 @@ test("an individual answer can be edited and saved", async ({ page }) => {
     .getByRole("button", { name: "Edit: Where do you serve customers?" })
     .click();
 
-  const updated = `Singapore, edited ${Date.now()}`;
+  const updated = uniqueName("Singapore, edited");
   await page.getByLabel("Where do you serve customers?").fill(updated);
   await page.getByRole("button", { name: "Save", exact: true }).click();
 

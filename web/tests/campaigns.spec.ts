@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { uniqueName } from "./fixtures";
+
 /**
  * The table renders the tenant's real campaigns, so these assert on structure
  * and on the lifecycle behaviour — an archived campaign leaving the list —
@@ -25,7 +27,7 @@ test("the New campaign button navigates to the wizard route", async ({
 test("a campaign can be archived and leaves the active list", async ({
   page,
 }) => {
-  const name = `Archivable ${Date.now()}`;
+  const name = uniqueName("Archivable");
 
   await page.goto("/campaigns/new");
   await page.getByLabel("Campaign name").fill(name);
