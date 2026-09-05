@@ -1,11 +1,11 @@
 # 15 — Two onboarding specs are permanently skipped, so the wizard's gating is untested
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Parent
 
-[PRD: we-OS SaaS foundation](../PRD.md) · follows [13 — the e2e stack](archive/13-frontend-suite-cannot-run-without-credentials.md)
+[PRD: we-OS SaaS foundation](../PRD.md) · follows [13 — the e2e stack](13-frontend-suite-cannot-run-without-credentials.md)
 
 ## Symptom
 
@@ -20,7 +20,7 @@ un-skipped as the suite is built:
 
 Neither is failing for a defect in the wizard. They are skipped because the e2e
 stack **deliberately seeds a complete Brand DNA**
-([13](archive/13-frontend-suite-cannot-run-without-credentials.md)), and both
+([13](13-frontend-suite-cannot-run-without-credentials.md)), and both
 specs need a tenant with **none**:
 
 - The first has nothing incomplete left to block on. The wizard correctly
@@ -115,31 +115,33 @@ failure, so the cause is obvious.
 
 ## Acceptance criteria
 
-- [ ] Required-field gating in onboarding is covered by a test that actually runs.
-- [ ] The wizard's full happy path — answering through to the Brand screen — is covered by a test that actually runs.
-- [ ] Neither test destabilises the campaign specs sharing the seeded tenant, under `fullyParallel`.
-- [ ] `web/tests/onboarding.spec.ts` contains no `test.skip`, or each remaining one names a reason that is still true.
-- [ ] The seed establishes the blank tenant's blankness on every stack start, including after a run that filled it in.
-- [ ] Spec 2 proves a `q_business_name` answer overrides the organization name on the Brand screen.
-- [ ] Spec 1 fails with a message naming `make e2e-up` when the tenant is not blank, rather than a bare assertion failure.
-- [ ] `make test-e2e` passes with the skip count reduced to zero.
-- [ ] Web gates pass — `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test:unit`.
-- [ ] Harness gates pass — `uv run ruff check .`, `uv run mypy src`, `uv run pytest`.
+- [x] Required-field gating in onboarding is covered by a test that actually runs. — `onboarding.spec.ts:60`, passing in the `chromium-onboarding` project.
+- [x] The wizard's full happy path — answering through to the Brand screen — is covered by a test that actually runs. — `onboarding.spec.ts:106`, passing.
+- [x] Neither test destabilises the campaign specs sharing the seeded tenant, under `fullyParallel`. — they run against a *different* tenant in their own project; the 38 `chromium` specs pass alongside them.
+- [x] `web/tests/onboarding.spec.ts` contains no `test.skip`. — `grep -c "test.skip"` returns 0.
+- [x] The seed establishes the blank tenant's blankness on every stack start, including after a run that filled it in. — `test_reseeding_blanks_a_tenant_the_wizard_filled_in`, and observed live: after a run that completed the wizard, re-running the seed left 0 `dna_answers` and no `dna.md`.
+- [x] Spec 2 proves a `q_business_name` answer overrides the organization name on the Brand screen. — the spec answers `Peakline Roasters`; the tenant row is named `e2e-blank-tenant-<n>`. Confirmed in the database after a run.
+- [x] Spec 1 fails with a message naming `make e2e-up` when the tenant is not blank, rather than a bare assertion failure. — fired verbatim during verification, printing `Received: "Acme Coffee"` alongside it.
+- [x] `make test-e2e` passes with the skip count reduced to zero. — **43 passed, 0 failed, 0 skipped** in 46.1s.
+- [x] Web gates pass — `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test:unit` (43 unit tests).
+- [x] Harness gates pass — `uv run ruff check .`, `uv run mypy src`, `uv run pytest` (**586 passed**).
+
+**Landed in `63992a7`.**
 
 ## Suspected location
 
-- [`web/tests/onboarding.spec.ts`](../../../web/tests/onboarding.spec.ts) — the two skips and the comments explaining them.
-- [`agent-harness/scripts/seed_test_tenant.py`](../../../agent-harness/scripts/seed_test_tenant.py) — `TEST_TENANT_ID` is a single hardcoded constant, so a second tenant is a change here.
-- [`web/tests/auth.setup.ts`](../../../web/tests/auth.setup.ts) — signs into one organization and writes one storage state.
-- [`web/playwright.config.ts`](../../../web/playwright.config.ts) — one `setup` project feeding one `chromium` project; a second identity means a second pair.
+- [`web/tests/onboarding.spec.ts`](../../../../web/tests/onboarding.spec.ts) — the two skips and the comments explaining them.
+- [`agent-harness/scripts/seed_test_tenant.py`](../../../../agent-harness/scripts/seed_test_tenants.py) — `TEST_TENANT_ID` is a single hardcoded constant, so a second tenant is a change here.
+- [`web/tests/auth.setup.ts`](../../../../web/tests/auth.setup.ts) — signs into one organization and writes one storage state.
+- [`web/playwright.config.ts`](../../../../web/playwright.config.ts) — one `setup` project feeding one `chromium` project; a second identity means a second pair.
 
 ## Comments
 
-**2026-09-04.** Filed while closing [12](archive/12-remaining-screens-wired.md).
+**2026-09-04.** Filed while closing [12](12-remaining-screens-wired.md).
 Both specs predate the seed: they were written in
-[web-mockup](../../web-mockup/issues/archive/08-onboarding-wizard.md) against a
+[web-mockup](../../../web-mockup/issues/archive/08-onboarding-wizard.md) against a
 tenant that had no Brand DNA at all, and only became unrunnable when
-[13](archive/13-frontend-suite-cannot-run-without-credentials.md) gave the suite
+[13](13-frontend-suite-cannot-run-without-credentials.md) gave the suite
 a real tenant to work against. Worth remembering that the seed did not break
 them — it revealed that they had never shared a fixture with anything else.
 
@@ -213,3 +215,41 @@ decisions, with the reasoning worth keeping:
 
 **Open question from 2026-09-04, now answered:** the seed takes no `--blank` or
 `--tenant-id` arguments and is called once — see decision 3.
+
+**2026-09-05 (implementation, `63992a7`).** Four corrections to what this issue
+assumed, all found by running the thing:
+
+- **The wizard does not resume on the first unanswered step.** Both the Symptom
+  and decision 4 say it does. `useWizard` (`web/src/components/wizard/use-wizard.ts`)
+  always starts at step 0. The *effect* the issue describes is real — a complete
+  DNA pre-fills step 1, so *Next →* succeeds and the refusal never fires — but
+  the cause is pre-filled fields, not a resume point. Spec 1's guard therefore
+  checks that the first field is empty, not that the wizard is on step 1: `Step
+  1 of 5` renders for a filled tenant too, so a guard on it would never fire.
+- **`workers: 1` does not guarantee declaration order.** Decision 4 asks for the
+  specs to "run serially", and the config's `fullyParallel: false` plus one
+  worker looked like enough. It is not — Playwright still reordered them, and
+  the spec that fills the tenant in ran *first*, so spec 1 found "Acme Coffee"
+  waiting for it. `test.describe.configure({ mode: "serial" })` in the spec file
+  is the actual guarantee. The same bug hit `auth.setup.ts`, where the two
+  sign-ins raced and corrupted each other's storage state.
+- **Decision 5 was defeated by a spec neither decision mentions.** The spec
+  between the two un-skipped ones (`answers save partway and are still there on
+  return`) writes `q_business_name = "Acme Coffee"` and it persists. Under
+  serial declaration order, spec 2's Brand assertion would then pass whether or
+  not its own answers landed — exactly the tautology decision 5 exists to
+  prevent. Spec 2 now answers `Peakline Roasters`, a name only it writes. Caught
+  in code review, not by the suite, which was green and meaningless.
+- **One assertion had rotted while skipped.** Spec 2 asserted on `Last verified
+  Just now`, text that exists nowhere in `web/src/` — it was written against the
+  web-mockup Brand screen and never updated. It now asserts `Every Required
+  answer is in`, which `brand-screen.tsx` renders only when the DNA Gate passes.
+  This is the clearest argument for the issue's own premise: a skipped spec
+  stops being a test and nobody finds out.
+
+**Known limitation, still accepted and now observed.** Re-running the suite
+against a live stack without re-seeding fails spec 1, as predicted. The guard
+message names `make e2e-up` and prints the offending value, which made the cause
+obvious on sight. A faster path than a full restart, if it becomes annoying:
+`docker compose --env-file web/.env.local -f docker-compose.e2e.yml up -d
+--force-recreate seed` re-establishes both tenants in about five seconds.
