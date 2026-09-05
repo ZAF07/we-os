@@ -73,7 +73,7 @@ Agents only ever **read** `knowledge/`. Letting agents write frameworks back was
 - **Verify, don't assume.** Run the relevant command and report the real result.
 - **Ask when genuinely blocked** on a decision only I can make; otherwise pick the
   sensible default, state it, and proceed.
-- **Always be concise and clear in your responses**. Speak in plain simple english with no jargon or fancy words. Be clear. No need say many words when few can do trick.
+- **Always be concise and clear in your responses**. Speak in plain simple english with no jargon or fancy words. No need say many words when few can do trick.
 - **Don't stage, commit or push** unless I ask.
 
 ---
