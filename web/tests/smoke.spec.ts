@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { uniqueName } from "./fixtures";
+
 const NAV_ROUTES: Array<{ label: string; path: string }> = [
   { label: "Campaigns", path: "/campaigns" },
   { label: "Calendar", path: "/calendar" },
@@ -73,7 +75,7 @@ test("below the mobile breakpoint the nav collapses into a drawer", async ({
 });
 
 test("the create-campaign path works end to end", async ({ page }) => {
-  const name = `Smoke Campaign ${Date.now()}`;
+  const name = uniqueName("Smoke Campaign");
 
   await page.goto("/campaigns");
   await page.getByRole("link", { name: "New campaign" }).click();

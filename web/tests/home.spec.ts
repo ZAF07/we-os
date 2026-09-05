@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { uniqueName } from "./fixtures";
+
 /**
  * Home renders the tenant's real campaigns, so these assert on structure and on
  * behaviour that follows from real state — a campaign appearing in the queue
@@ -27,7 +29,7 @@ test("the stat tiles report real counts", async ({ page }) => {
 test("a campaign at an approval gate appears in the queue and links to it", async ({
   page,
 }) => {
-  const name = `Home Queue ${Date.now()}`;
+  const name = uniqueName("Home Queue");
 
   await page.goto("/campaigns/new");
   await page.getByLabel("Campaign name").fill(name);
@@ -73,7 +75,7 @@ test("an empty queue says so rather than showing nothing", async ({ page }) => {
 test("a decision made in the Workspace is reflected on Home without a refresh", async ({
   page,
 }) => {
-  const name = `Coherence ${Date.now()}`;
+  const name = uniqueName("Coherence");
 
   await page.goto("/campaigns/new");
   await page.getByLabel("Campaign name").fill(name);

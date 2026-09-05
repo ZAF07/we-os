@@ -67,29 +67,55 @@ dashboard fill these into `web/.env.local`:
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | API keys                                              |
 | `CLERK_SECRET_KEY`                  | API keys — server-only, never prefixed `NEXT_PUBLIC_` |
 | `MARKETING_OS_AUTH_ISSUER`          | the instance's Frontend API URL                       |
-| `E2E_CLERK_USER_EMAIL`              | the dedicated test user's email                       |
+| `E2E_CLERK_USER_EMAIL`              | the seeded test user's email                          |
 | `E2E_CLERK_ORG_ID`                  | Organizations — the org that user belongs to          |
+| `E2E_CLERK_BLANK_USER_EMAIL`        | the blank test user's email                           |
+| `E2E_CLERK_BLANK_ORG_ID`            | Organizations — a _second_ org, for the blank tenant  |
 
 No test password is stored: sign-in mints a ticket through Clerk's Backend API
 using `CLERK_SECRET_KEY`.
 
-`E2E_CLERK_ORG_ID` is the one that needs explaining. A tenant id is minted
+The organization ids are the ones that need explaining. A tenant id is minted
 randomly (`ten_<uuid4>`) on a business's first authenticated request, so it
 cannot be known in advance and a seed cannot simply write "the test tenant's"
-Brand DNA. Instead `agent-harness/scripts/seed_test_tenant.py` writes the
-`tenants` row itself, pairing a fixed tenant id with this organization — so when
-the test user signs in, the engine finds that row rather than minting a new one,
-and the seeded DNA is already theirs.
+Brand DNA. Instead `agent-harness/scripts/seed_test_tenants.py` writes the
+`tenants` rows itself, pairing a fixed tenant id with each organization — so when
+a test user signs in, the engine finds that row rather than minting a new one,
+and the seeded state is already theirs.
+
+There are two users because there are two tenants, and the engine derives the
+tenant from the organization claim on the session token — so a second tenant
+means a second organization, and a second dedicated user keeps that claim a
+fixed property of a saved storage state rather than something a fixture has to
+switch mid-run.
 
 ### What the seed guarantees
 
-`Summit Climbing Collective`, with every Required Brand DNA field answered so
-the DNA Gate passes, and two Audience Segments a spec can name:
+**The seeded tenant** — `Summit Climbing Collective`, with every Required Brand
+DNA field answered so the DNA Gate passes, and two Audience Segments a spec can
+name:
 
 - `Urban 22-35 beginners curious about climbing`
 - `Weekend boulderers plateauing at V4`
 
 Assert on those rather than on "whatever the first radio happens to be".
+
+Its **campaigns are purged** on every stack start. Specs create campaigns and
+leave them behind, so without the purge the list grows on every `make test-e2e`
+and a spec asserting on a campaign name matches two rows the second time it
+runs. Everything a campaign owns goes with it: its documents, runs, deliverable
+versions, usage rows and checkpoint threads. Mint any text a spec asserts on
+with `uniqueName` from `tests/fixtures.ts` — ESLint refuses an inline
+`Date.now()` in `tests/`, so that convention is enforced rather than remembered.
+
+**The blank tenant** — `Blank Slate Testing`, with no Brand DNA at all: no
+`dna_answers` rows and no `dna.md`. The onboarding specs run against it in their
+own Playwright project (`chromium-onboarding`, one worker), because a complete
+Brand DNA pre-fills the wizard and leaves its required-field gating nothing to
+refuse. The last of those specs completes the wizard and fills the tenant in, so
+blankness is re-established by the seed on every stack start — which means
+re-running `pnpm test` against a stack that is already up fails that project.
+Bring the stack up again (`make e2e-up`) first; the spec says so when it fails.
 
 ### CI
 
