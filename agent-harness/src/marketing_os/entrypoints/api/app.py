@@ -47,17 +47,11 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
 
 from marketing_os.adapters.auth import JwksTokenVerifier
-from marketing_os.adapters.deliverables import (
-    FilesystemDeliverableStore,
-    human_revisions_used,
-)
-from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.observability import (
     configure_logging,
     configure_tracing,
@@ -67,10 +61,7 @@ from marketing_os.adapters.observability import (
     read_events,
     tail_trace,
 )
-from marketing_os.adapters.questionnaire import InMemoryAnswerStore, InMemoryQuestionnaireStore
-from marketing_os.adapters.runs import AWAITING_APPROVAL, CANCELLED, RUNNING, InMemoryRunStore
-from marketing_os.adapters.tenants import PassthroughTenantDirectory
-from marketing_os.adapters.usage import InMemoryUsageLedger
+from marketing_os.adapters.runs import AWAITING_APPROVAL, CANCELLED, RUNNING
 from marketing_os.campaign import (
     Budget,
     CampaignGoal,
@@ -113,6 +104,7 @@ from marketing_os.ports import (
     DocumentStore,
     QuestionnaireStore,
     RunStore,
+    StorageBackend,
     TenantDirectory,
     TokenVerifier,
     UsageLedger,
@@ -128,10 +120,11 @@ from marketing_os.schemas import (
     DnaCompleteness,
     Questionnaire,
     VerifiedIdentity,
+    human_revisions_used,
 )
 
 if TYPE_CHECKING:
-    from marketing_os.adapters.postgres import PostgresBackend
+    pass
 
 _LOGGER = get_logger("marketing_os.api")
 
@@ -158,19 +151,17 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_tracing(settings)
 
     backend = get_backend()
-    if backend is not None:
-        await backend.open()
+    await backend.open()
 
     registry = get_registry()
-    _LOGGER.info("service.started postgres=%s", backend is not None)
+    _LOGGER.info("service.started")
     reclaimed = await registry.reclaim_abandoned()
     if reclaimed:
         _LOGGER.info("service.reclaimed runs=%d", len(reclaimed))
     try:
         yield
     finally:
-        if backend is not None:
-            await backend.close()
+        await backend.close()
         reset_providers()
 
 
@@ -234,20 +225,39 @@ def get_settings() -> Settings:
     return load_settings()
 
 
-@lru_cache(maxsize=1)
-def get_backend() -> PostgresBackend | None:
-    """Return the Postgres backend, or ``None`` when no DSN is configured.
+_backend_override: StorageBackend | None = None
+"""A backend a test installed through :func:`use_backend`, or ``None``.
 
-    The single place the storage choice is made. Every other provider asks this
-    one what it got, so "are we on Postgres?" is answered once rather than read
-    from a mutable module global. The lifespan opens and closes it.
+``None`` in every deployment. Storage is one durability decision (ADR-0014), so
+this is a single seam rather than eight: a test swaps the whole backend, and no
+getter below can be seeded independently into a state no deployment has.
+"""
+
+
+@lru_cache(maxsize=1)
+def get_backend() -> StorageBackend:
+    """Return the Postgres backend every store resolves through.
+
+    The single place the storage choice is made, and therefore the single place
+    it is enforced. Postgres is the only production backend: a deploy with no
+    DSN fails here rather than booting healthy on local disk with a checkpointer
+    that does not survive a restart. The prototype filesystem and in-memory
+    adapters still exist for tests, but nothing selects them implicitly.
 
     Returns:
-        The backend, or ``None`` to run on the filesystem and in memory.
+        The backend. The lifespan opens and closes it, whichever it is.
+
+    Raises:
+        ConfigError: If no connection string is configured.
     """
+    if _backend_override is not None:
+        return _backend_override
     dsn = get_settings().postgres_dsn
     if not dsn:
-        return None
+        raise ConfigError(
+            "No database configured. Set MARKETING_OS_POSTGRES_DSN (or DATABASE_URL) "
+            "to the Postgres the service stores campaigns, runs and checkpoints in."
+        )
     from marketing_os.adapters.postgres import PostgresBackend
 
     return PostgresBackend(dsn)
@@ -258,14 +268,9 @@ def get_document_store() -> DocumentStore:
     """Return the process-wide document store tenant documents resolve through.
 
     Returns:
-        The Postgres adapter when a DSN is configured, otherwise the filesystem
-        adapter rooted at the repo root (tests reset it with
-        ``get_document_store.cache_clear()``, mirroring settings).
+        The configured backend's document store.
     """
-    backend = get_backend()
-    if backend is not None:
-        return backend.documents
-    return FilesystemDocumentStore(get_settings().root)
+    return get_backend().documents
 
 
 @lru_cache(maxsize=1)
@@ -273,14 +278,9 @@ def get_deliverable_store() -> DeliverableStore:
     """Return the process-wide store holding each deliverable's version history.
 
     Returns:
-        The Postgres adapter when a DSN is configured — where a halted run's
-        history survives a restart — otherwise the filesystem adapter rooted at
-        the repo root.
+        The Postgres adapter, where a halted run's history survives a restart.
     """
-    backend = get_backend()
-    if backend is not None:
-        return backend.deliverables
-    return FilesystemDeliverableStore(get_settings().root)
+    return get_backend().deliverables
 
 
 @lru_cache(maxsize=1)
@@ -288,16 +288,10 @@ def get_tenant_directory() -> TenantDirectory:
     """Return the process-wide directory mapping IdP organizations to tenants.
 
     Returns:
-        The Postgres directory when a DSN is configured — which mints a platform
-        ``tenant_id`` and keeps the IdP's organization id in its own column —
-        otherwise the passthrough directory, which reports the organization id
-        as the tenant id because a filesystem tenant *is* a directory name
-        (ADR-0014).
+        The Postgres directory, which mints a platform ``tenant_id`` and keeps
+        the IdP's organization id in its own column (ADR-0014).
     """
-    backend = get_backend()
-    if backend is not None:
-        return backend.tenants
-    return PassthroughTenantDirectory()
+    return get_backend().tenants
 
 
 @lru_cache(maxsize=1)
@@ -309,13 +303,10 @@ def get_checkpointer() -> BaseCheckpointSaver:
     abandoning a cancelled run's threads a real operation rather than a no-op.
 
     Returns:
-        The Postgres saver when a DSN is configured, otherwise a process-wide
-        :class:`MemorySaver`, which survives runs but not a restart.
+        The Postgres saver, whose checkpoints survive a restart — which is what
+        makes a run halted at an Approval Gate resumable at all.
     """
-    backend = get_backend()
-    if backend is not None:
-        return backend.checkpointer
-    return MemorySaver()
+    return get_backend().checkpointer
 
 
 @lru_cache(maxsize=1)
@@ -323,13 +314,9 @@ def get_run_store() -> RunStore:
     """Return the process-wide store holding run claims and statuses.
 
     Returns:
-        The Postgres store when a DSN is configured — shared by every worker —
-        otherwise an in-process store, which limits the service to one worker.
+        The Postgres store, shared by every worker.
     """
-    backend = get_backend()
-    if backend is not None:
-        return backend.runs
-    return InMemoryRunStore()
+    return get_backend().runs
 
 
 @lru_cache(maxsize=1)
@@ -337,14 +324,10 @@ def get_questionnaire_store() -> QuestionnaireStore:
     """Return the process-wide store holding the published question set.
 
     Returns:
-        The Postgres store when a DSN is configured — where an admin publishes a
-        new version without a deploy — otherwise an in-process store, which
-        serves the code-shipped seed set.
+        The Postgres store, where an admin publishes a new version without a
+        deploy.
     """
-    backend = get_backend()
-    if backend is not None:
-        return backend.questionnaires
-    return InMemoryQuestionnaireStore()
+    return get_backend().questionnaires
 
 
 @lru_cache(maxsize=1)
@@ -352,13 +335,9 @@ def get_answer_store() -> AnswerStore:
     """Return the process-wide store holding each business's Brand DNA answers.
 
     Returns:
-        The Postgres store when a DSN is configured, otherwise an in-process
-        store, which loses answers on restart and is for local work only.
+        The Postgres store holding each business's answers.
     """
-    backend = get_backend()
-    if backend is not None:
-        return backend.answers
-    return InMemoryAnswerStore()
+    return get_backend().answers
 
 
 @lru_cache(maxsize=1)
@@ -366,15 +345,10 @@ def get_usage_ledger() -> UsageLedger:
     """Return the process-wide Usage Ledger every billable call is charged to.
 
     Returns:
-        The Postgres ledger when a DSN is configured — where what a tenant spent
-        survives a restart, which is the whole point of enforcing a quota —
-        otherwise an in-process ledger, which loses the record on restart and is
-        for local work only.
+        The Postgres ledger, where what a tenant spent survives a restart —
+        which is the whole point of enforcing a quota.
     """
-    backend = get_backend()
-    if backend is not None:
-        return backend.usage
-    return InMemoryUsageLedger(get_settings())
+    return get_backend().usage
 
 
 @lru_cache(maxsize=1)
@@ -485,6 +459,28 @@ def reset_providers() -> None:
     """
     for provider in _BACKED_PROVIDERS:
         provider.cache_clear()
+
+
+def use_backend(backend: StorageBackend | None) -> None:
+    """Install a storage backend in place of the one the DSN would select.
+
+    The single seam for tests. Postgres is the only backend production selects,
+    so :func:`get_backend` raises without a DSN rather than falling back to local
+    disk; a test wanting the prototype filesystem and in-memory adapters hands
+    one in here, out loud. Swapping the whole backend rather than seeding the
+    getters one by one is what keeps storage a single durability decision
+    (ADR-0014) — no test can produce a half-Postgres state that no deployment has.
+
+    Nothing in the service calls this: it is import-visible so the test suite can
+    reach it, and passing ``None`` restores the configured backend.
+
+    Args:
+        backend: The backend every store resolves through, or ``None`` to go
+            back to the one the DSN selects.
+    """
+    global _backend_override
+    _backend_override = backend
+    reset_providers()
 
 
 class DnaAnswersUpsert(BaseModel):

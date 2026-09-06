@@ -25,9 +25,6 @@ from marketing_os.schemas import DeliverableVersion
 
 VERSIONS_DIR = ".versions"
 
-HUMAN_FEEDBACK = "human"
-REVIEWER_FEEDBACK = "reviewer"
-
 _STAGE_ORDER = {stage.key: index for index, stage in enumerate(PIPELINE)}
 
 
@@ -384,21 +381,3 @@ class FilesystemDeliverableStore(VersionHistoryReader):
             for version in self._load(tenant, slug, path.stem)
         ]
         return max(written, default=0) + 1
-
-
-def human_revisions_used(versions: list[DeliverableVersion]) -> int:
-    """Count how many times a person has sent a deliverable back.
-
-    The revision cap counts a *person's* refusals, not every version: the QA
-    reviewer's own revision rounds are already bounded by its own budget, and
-    charging them against the owner's allowance would refuse their first real
-    revision (ADR-0015). Counting here rather than at each call site is what
-    keeps the number the gate reports and the number the cap enforces identical.
-
-    Args:
-        versions: The deliverable's versions, in any order.
-
-    Returns:
-        How many versions a person's feedback prompted.
-    """
-    return sum(1 for version in versions if version.feedback_source == HUMAN_FEEDBACK)

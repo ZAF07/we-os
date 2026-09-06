@@ -17,6 +17,7 @@ from conftest import (
     FakeReviewer,
     ProgrammableChatModel,
     read_call,
+    with_prototype_defaults,
     write_call,
 )
 from marketing_os.adapters.deliverables import InMemoryDeliverableStore
@@ -37,7 +38,7 @@ _FAIL = ReviewVerdict(
 
 
 def build_single_stage_graph(settings: Settings, stage_key: str, **kwargs: Any) -> Any:
-    """Build a single-stage graph gated against the code-shipped seed question set.
+    """Build a single-stage graph against the seed question set and the hermetic repo.
 
     Args:
         settings: The harness settings.
@@ -48,11 +49,12 @@ def build_single_stage_graph(settings: Settings, stage_key: str, **kwargs: Any) 
         The compiled single-stage graph.
     """
     kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
+    with_prototype_defaults(settings, kwargs)
     return _build_single_stage_graph(settings, stage_key, **kwargs)
 
 
 def build_campaign_graph(settings: Settings, **kwargs: Any) -> Any:
-    """Build the full campaign graph gated against the code-shipped seed question set.
+    """Build the full campaign graph against the seed question set and the hermetic repo.
 
     Args:
         settings: The harness settings.
@@ -62,6 +64,7 @@ def build_campaign_graph(settings: Settings, **kwargs: Any) -> Any:
         The compiled campaign graph.
     """
     kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
+    with_prototype_defaults(settings, kwargs)
     return _build_campaign_graph(settings, **kwargs)
 
 

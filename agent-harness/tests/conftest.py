@@ -97,6 +97,122 @@ def authenticate(app: Any, tenant: str = TENANT, user: str | None = None) -> Non
     app.dependency_overrides[get_identity] = lambda: identity_for(tenant, user)
 
 
+class PrototypeBackend:
+    """The filesystem and in-memory adapters, as one storage backend.
+
+    Production runs on Postgres only: with no DSN configured the real backend
+    raises rather than falling back to local disk, so a test wanting the
+    prototype adapters installs this one out loud. It holds no connection, so
+    ``open`` and ``close`` are no-ops.
+
+    Every adapter is built once and held, because a test that writes through one
+    getter and reads through another must see the same store.
+    """
+
+    def __init__(self, root: Path) -> None:
+        """Build the full set of adapters over a hermetic repo.
+
+        Args:
+            root: The repository root the filesystem adapters are rooted at.
+        """
+        from langgraph.checkpoint.memory import MemorySaver
+
+        from marketing_os.adapters.deliverables import FilesystemDeliverableStore
+        from marketing_os.adapters.documents import FilesystemDocumentStore
+        from marketing_os.adapters.questionnaire import (
+            InMemoryAnswerStore,
+            InMemoryQuestionnaireStore,
+        )
+        from marketing_os.adapters.runs import InMemoryRunStore
+        from marketing_os.adapters.tenants import PassthroughTenantDirectory
+        from marketing_os.adapters.usage import InMemoryUsageLedger
+
+        self.documents = FilesystemDocumentStore(root)
+        self.deliverables = FilesystemDeliverableStore(root)
+        self.tenants = PassthroughTenantDirectory()
+        self.runs = InMemoryRunStore()
+        self.questionnaires = InMemoryQuestionnaireStore()
+        self.answers = InMemoryAnswerStore()
+        self.usage = InMemoryUsageLedger(Settings(root=root))
+        self.checkpointer = MemorySaver()
+
+    async def open(self) -> None:
+        """Do nothing: these adapters hold no connection."""
+
+    async def close(self) -> None:
+        """Do nothing: these adapters hold no connection."""
+
+
+def install_prototype_adapters(root: Path) -> None:
+    """Point the API at the filesystem and in-memory adapters for a hermetic test.
+
+    Nothing selects them implicitly, which is the point — a misconfigured deploy
+    fails loudly instead of writing a business's campaigns to a container's
+    filesystem — so a test that wants them says so.
+
+    Args:
+        root: The hermetic repository root the filesystem adapters are rooted at.
+    """
+    from marketing_os.entrypoints.api.app import use_backend
+
+    use_backend(PrototypeBackend(root))
+
+
+def prototype_adapters(root: Path) -> dict[str, Any]:
+    """Return the storage arguments a graph builder or the runner now requires.
+
+    The builders and ``arun_campaign`` take their stores as required keyword
+    arguments, so nothing picks a storage backend on a caller's behalf. A test
+    driving them against the hermetic repo therefore names the filesystem
+    adapters here rather than repeating them at every call site.
+
+    ``usage_ledger`` and ``checkpointer`` are supplied as ``None``, which stays a
+    legal value with a stated meaning: uncharged (ADR-0020), and in-memory and
+    non-resumable respectively.
+
+    Args:
+        root: The hermetic repository root the filesystem adapters are rooted at.
+
+    Returns:
+        The keyword arguments to splat into the builder or runner call.
+    """
+    from marketing_os.adapters.deliverables import FilesystemDeliverableStore
+    from marketing_os.adapters.documents import FilesystemDocumentStore
+
+    return {
+        "document_store": FilesystemDocumentStore(root),
+        "deliverable_store": FilesystemDeliverableStore(root),
+        "usage_ledger": None,
+        "checkpointer": None,
+    }
+
+
+def with_prototype_defaults(settings: Settings, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Fill in the storage arguments a builder requires, leaving any given ones alone.
+
+    Args:
+        settings: The harness settings naming the hermetic repo root.
+        kwargs: The builder's keyword arguments, modified in place.
+
+    Returns:
+        The same mapping, with every unset storage argument defaulted.
+    """
+    for keyword, adapter in prototype_adapters(settings.root).items():
+        kwargs.setdefault(keyword, adapter)
+    return kwargs
+
+
+def clear_prototype_adapters() -> None:
+    """Put the API back on the backend its configuration selects.
+
+    Called on teardown so a hermetic filesystem store cannot leak into the next
+    test and hide a case that should have failed for want of a database.
+    """
+    from marketing_os.entrypoints.api.app import use_backend
+
+    use_backend(None)
+
+
 def run_without_approval_gates(monkeypatch: pytest.MonkeyPatch) -> None:
     """Set every stage's approval policy to ``auto`` for this test.
 
@@ -580,8 +696,10 @@ def install_scripted_graph(
     never exposes a model seam. This wraps :func:`build_campaign_graph` and
     :func:`build_single_stage_graph` as the runner imports them, defaulting the
     ``model`` and ``reviewer`` arguments to hermetic fakes so no network is used,
-    and the ``questionnaire`` argument to the code-shipped seed set, which is what
-    an unconfigured deployment serves.
+    the ``questionnaire`` argument to the code-shipped seed set, which is what an
+    unconfigured deployment serves, and the storage arguments to the hermetic
+    repo's filesystem adapters — the builders require those (nothing picks a
+    storage backend implicitly), and a caller that supplies its own still wins.
 
     Args:
         monkeypatch: The pytest monkeypatch fixture.
@@ -600,17 +718,17 @@ def install_scripted_graph(
     real_campaign = graph_mod.build_campaign_graph
     real_single = graph_mod.build_single_stage_graph
 
-    def campaign(settings: Settings, **kwargs: Any) -> Any:
+    def defaults(settings: Settings, kwargs: dict[str, Any]) -> dict[str, Any]:
         kwargs.setdefault("model", build_model())
         kwargs.setdefault("reviewer", FakeReviewer(list(script)))
         kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
-        return real_campaign(settings, **kwargs)
+        return with_prototype_defaults(settings, kwargs)
+
+    def campaign(settings: Settings, **kwargs: Any) -> Any:
+        return real_campaign(settings, **defaults(settings, kwargs))
 
     def single(settings: Settings, stage_key: str, **kwargs: Any) -> Any:
-        kwargs.setdefault("model", build_model())
-        kwargs.setdefault("reviewer", FakeReviewer(list(script)))
-        kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
-        return real_single(settings, stage_key, **kwargs)
+        return real_single(settings, stage_key, **defaults(settings, kwargs))
 
     monkeypatch.setattr(runner_mod, "build_campaign_graph", campaign)
     monkeypatch.setattr(runner_mod, "build_single_stage_graph", single)

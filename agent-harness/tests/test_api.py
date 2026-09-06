@@ -25,8 +25,11 @@ from conftest import (
     TENANT,
     BlockingChatModel,
     authenticate,
+    clear_prototype_adapters,
+    install_prototype_adapters,
     install_scripted_graph,
 )
+from marketing_os.errors import ConfigError
 
 
 def _make_client(repo: Path) -> TestClient:
@@ -38,10 +41,10 @@ def _make_client(repo: Path) -> TestClient:
     Returns:
         A configured (not yet entered) FastAPI test client.
     """
-    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import app, get_settings
 
     get_settings.cache_clear()
-    reset_providers()
+    install_prototype_adapters(repo)
     authenticate(app)
     return TestClient(app)
 
@@ -81,12 +84,12 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     install_scripted_graph(monkeypatch)
-    from marketing_os.entrypoints.api.app import get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import get_settings
 
     with _make_client(repo) as entered:
         yield entered
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
 
 
 def test_health_reports_provider_and_root(client: TestClient, repo: Path) -> None:
@@ -163,7 +166,7 @@ def test_run_background_job_fails_on_guardrail_failure(
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     monkeypatch.setenv("MARKETING_OS_MAX_QA", "1")
     install_scripted_graph(monkeypatch, verdicts=[FAIL_VERDICT])
-    from marketing_os.entrypoints.api.app import get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import get_settings
 
     with _make_client(repo) as client:
         started = client.post("/campaigns/acme/run", json={"stage": "research"})
@@ -175,7 +178,7 @@ def test_run_background_job_fails_on_guardrail_failure(
         trace = client.get(f"/campaigns/acme/runs/{run_id}").json()["events"]
 
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
     summary = [event for event in trace if event.get("event") == "run.summary"][-1]
     assert summary["outcome"] == "error"
     assert summary["error"]["type"] == "guardrail"
@@ -307,7 +310,7 @@ def test_second_run_same_slug_conflicts_while_cross_slug_is_concurrent(
         (repo / "tenants" / TENANT / "campaigns" / SLUG / "goal.md").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    from marketing_os.entrypoints.api.app import get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import get_settings
 
     with _install_blocking_client(repo, monkeypatch) as client:
         first = client.post("/campaigns/acme/run", json={"stage": "research"})
@@ -331,13 +334,13 @@ def test_second_run_same_slug_conflicts_while_cross_slug_is_concurrent(
             assert client.post(f"/runs/{run_id}/cancel").status_code == 200
 
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
 
 
 def test_cancel_endpoint_stops_run_and_marks_it_cancelled(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from marketing_os.entrypoints.api.app import get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import get_settings
 
     with _install_blocking_client(repo, monkeypatch) as client:
         started = client.post("/campaigns/acme/run", json={"stage": "research"})
@@ -353,7 +356,7 @@ def test_cancel_endpoint_stops_run_and_marks_it_cancelled(
         assert client.get(f"/runs/{run_id}").json()["status"] == "cancelled"
 
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
 
 
 def test_get_run_status_404_for_unknown_run(client: TestClient) -> None:
@@ -378,3 +381,29 @@ def test_get_run_status_infers_interrupted_from_orphaned_trace(
     body = response.json()
     assert body["status"] == "interrupted"
     assert body["slug"] == "acme"
+
+
+def test_starting_with_no_database_configured_fails_naming_the_variable(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Postgres is the only production backend, and a missing DSN must be loud.
+
+    The defect this guards against is silent: with a filesystem fallback the
+    service booted healthy on a mistyped DSN, wrote a business's campaigns to
+    local disk, and ran a checkpointer that did not survive a restart. Failing
+    at startup — naming the variable to set — is what makes that impossible.
+    """
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    monkeypatch.delenv("MARKETING_OS_POSTGRES_DSN", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    from marketing_os.entrypoints.api.app import app, get_settings
+
+    get_settings.cache_clear()
+    clear_prototype_adapters()
+
+    with pytest.raises(ConfigError) as raised:
+        with TestClient(app):
+            pass
+
+    assert "MARKETING_OS_POSTGRES_DSN" in str(raised.value)
+    get_settings.cache_clear()

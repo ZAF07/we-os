@@ -51,9 +51,9 @@ def _select_graph(
     *,
     web_backend: WebSearchTool | None,
     checkpointer: BaseCheckpointSaver | None,
-    document_store: DocumentStore | None,
-    deliverable_store: DeliverableStore | None = None,
-    usage_ledger: UsageLedger | None = None,
+    document_store: DocumentStore,
+    deliverable_store: DeliverableStore,
+    usage_ledger: UsageLedger | None,
     questionnaire: Questionnaire,
 ) -> Any:
     """Build the campaign or single-stage graph for a run.
@@ -62,11 +62,10 @@ def _select_graph(
         settings: The harness settings.
         stage: The single stage to run, or ``None`` for the full pipeline.
         web_backend: The web backend for agents that declare web tools.
-        checkpointer: An optional checkpointer.
-        document_store: The store tenant documents resolve through, or ``None``
-            for the filesystem default.
-        deliverable_store: The store deliverable versions are appended to, or
-            ``None`` for the filesystem default.
+        checkpointer: The checkpointer the run is resumable through, or ``None``
+            for a non-resumable in-memory saver.
+        document_store: The store tenant documents resolve through.
+        deliverable_store: The store deliverable versions are appended to.
         usage_ledger: The Usage Ledger every model call is checked against and
             charged to, or ``None`` to run uncharged.
         questionnaire: The published question set the Stage 0 gate enforces.
@@ -509,10 +508,10 @@ async def arun_campaign(
     run_id: str | None = None,
     on_event: Callable[[dict[str, Any]], None] | None = None,
     web_backend: WebSearchTool | None = None,
-    checkpointer: BaseCheckpointSaver | None = None,
-    document_store: DocumentStore | None = None,
-    deliverable_store: DeliverableStore | None = None,
-    usage_ledger: UsageLedger | None = None,
+    checkpointer: BaseCheckpointSaver | None,
+    document_store: DocumentStore,
+    deliverable_store: DeliverableStore,
+    usage_ledger: UsageLedger | None,
     questionnaire: Questionnaire | None = None,
     resume: Command | None = None,
     feedback: str | None = None,
@@ -537,11 +536,13 @@ async def arun_campaign(
             the run before the pipeline starts.
         on_event: An optional callback invoked with each progress event.
         web_backend: The web backend for agents that declare web tools.
-        checkpointer: An optional checkpointer.
-        document_store: The store tenant documents resolve through, or ``None``
-            for the filesystem default.
-        deliverable_store: The store deliverable versions are appended to, or
-            ``None`` for the filesystem default.
+        checkpointer: The checkpointer the run is resumable through, or ``None``
+            to run non-resumably in memory. Required rather than defaulted: a
+            run that cannot survive a restart is a choice the caller states.
+        document_store: The store tenant documents resolve through. Required —
+            no default picks a storage backend on the caller's behalf.
+        deliverable_store: The store deliverable versions are appended to.
+            Required, for the reason given on ``document_store``.
         usage_ledger: The Usage Ledger every model call is checked against and
             charged to, or ``None`` to run uncharged. Checking inside the graph
             is what stops a run already in flight from spending past an

@@ -309,6 +309,35 @@ class DeliverableVersion(BaseModel):
     sequence: int = 0
 
 
+HUMAN_FEEDBACK = "human"
+"""The ``feedback_source`` marking a version a person sent the stage back for."""
+
+REVIEWER_FEEDBACK = "reviewer"
+"""The ``feedback_source`` marking a version the QA reviewer asked for."""
+
+
+def human_revisions_used(versions: list[DeliverableVersion]) -> int:
+    """Count how many times a person has sent a deliverable back.
+
+    The revision cap counts a *person's* refusals, not every version: the QA
+    reviewer's own revision rounds are already bounded by its own budget, and
+    charging them against the owner's allowance would refuse their first real
+    revision (ADR-0015). Counting here rather than at each call site is what
+    keeps the number the gate reports and the number the cap enforces identical.
+
+    Lives beside :class:`DeliverableVersion` rather than in a store, because it
+    is a rule about the versions themselves: every ``DeliverableStore`` must
+    agree on it, so it cannot belong to any one adapter.
+
+    Args:
+        versions: The deliverable's versions, in any order.
+
+    Returns:
+        How many versions a person's feedback prompted.
+    """
+    return sum(1 for version in versions if version.feedback_source == HUMAN_FEEDBACK)
+
+
 class ApprovalDecision(BaseModel):
     """What a person decided at an Approval Gate.
 

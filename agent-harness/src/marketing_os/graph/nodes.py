@@ -31,35 +31,31 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import BaseMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import Runnable
 from langgraph.config import get_stream_writer
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.types import interrupt
 
-from marketing_os.adapters.deliverables import (
-    HUMAN_FEEDBACK,
-    REVIEWER_FEEDBACK,
-    human_revisions_used,
-)
 from marketing_os.adapters.observability import get_logger
+from marketing_os.billing import USAGE_KEYS, billed_call
 from marketing_os.config import Settings
 from marketing_os.errors import QuotaExhaustedError
 from marketing_os.governance.gate import check_gate
 from marketing_os.governance.pipeline import HUMAN, Stage, prerequisite_met, stage_document
 from marketing_os.graph.state import CampaignState
 from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer, UsageLedger
-from marketing_os.schemas import ApprovalDecision, Questionnaire, StageResult, Usage
+from marketing_os.schemas import (
+    HUMAN_FEEDBACK,
+    REVIEWER_FEEDBACK,
+    ApprovalDecision,
+    Questionnaire,
+    ReviewVerdict,
+    StageResult,
+    human_revisions_used,
+)
 
 _LOGGER = get_logger("marketing_os.graph")
-
-_USAGE_KEYS = (
-    "input_tokens",
-    "output_tokens",
-    "cache_read_input_tokens",
-    "cache_creation_input_tokens",
-)
 
 
 class CampaignNode(Protocol):
@@ -139,70 +135,6 @@ def _format_event(data: dict[str, Any]) -> str:
         else:
             parts.append(f"{key}={value}")
     return " ".join(parts)
-
-
-def _usage_delta(callback: Any) -> dict[str, int]:
-    """Reduce a usage-metadata callback into the harness's four-key usage map.
-
-    Args:
-        callback: A usage-metadata callback whose ``usage_metadata`` maps model
-            names to per-call token counts.
-
-    Returns:
-        A map summing input, output, and cache token counts across every model.
-    """
-    total = dict.fromkeys(_USAGE_KEYS, 0)
-    for meta in (getattr(callback, "usage_metadata", None) or {}).values():
-        total["input_tokens"] += meta.get("input_tokens", 0)
-        total["output_tokens"] += meta.get("output_tokens", 0)
-        details = meta.get("input_token_details") or {}
-        total["cache_read_input_tokens"] += details.get("cache_read", 0)
-        total["cache_creation_input_tokens"] += details.get("cache_creation", 0)
-    return total
-
-
-def _billed_model(callback: Any) -> str:
-    """Return the model a call was billed against, for the ledger entry.
-
-    Args:
-        callback: A usage-metadata callback whose ``usage_metadata`` maps model
-            names to per-call token counts.
-
-    Returns:
-        The model name the provider reported, or the empty string when it
-        reported none — an unnamed model is still charged, at the default rate.
-    """
-    reported = getattr(callback, "usage_metadata", None) or {}
-    return next(iter(reported), "")
-
-
-def _charge(
-    ledger: UsageLedger | None,
-    state: CampaignState,
-    stage: Stage,
-    callback: Any,
-    delta: dict[str, int],
-) -> None:
-    """Record what one model call cost, against the tenant that caused it.
-
-    Args:
-        ledger: The Usage Ledger to charge, or ``None`` when the deployment runs
-            without one — a run then proceeds uncharged rather than failing,
-            which is what keeps the graph tests usable.
-        state: The campaign state naming the tenant and campaign.
-        stage: The stage the call was made on behalf of.
-        callback: The usage-metadata callback the call ran under.
-        delta: The token counts the call consumed.
-    """
-    if ledger is None:
-        return
-    ledger.record(
-        state["tenant"],
-        slug=state["slug"],
-        stage_key=stage.key,
-        model=_billed_model(callback),
-        usage=Usage(**delta),
-    )
 
 
 def _quota_halt(exc: QuotaExhaustedError, stage: Stage, slug: str) -> dict[str, Any]:
@@ -383,7 +315,7 @@ def make_gate_node(
             "dna_text": dna_text,
             "halt": False,
             "error": None,
-            "usage": dict.fromkeys(_USAGE_KEYS, 0),
+            "usage": dict.fromkeys(USAGE_KEYS, 0),
         }
 
     return gate_node
@@ -517,25 +449,24 @@ def make_specialist_node(
             A state update with the specialist's new messages and token usage, or
             a halt when the tenant's allowance is spent.
         """
-        if ledger is not None:
-            try:
-                ledger.check(state["tenant"])
-            except QuotaExhaustedError as exc:
-                return _quota_halt(exc, stage, state["slug"])
         inbound = list(state["messages"])
-        with get_usage_metadata_callback() as callback:
-            try:
-                result = await agent.ainvoke(
-                    {"messages": inbound, "slug": state["slug"], "tenant": state["tenant"]},
-                    config={
-                        "recursion_limit": recursion_limit,
-                        "run_name": f"specialist:{stage.key}",
-                    },
-                )
-            finally:
-                _charge(ledger, state, stage, callback, _usage_delta(callback))
+
+        async def invoke_specialist() -> Any:
+            """Run the specialist's tool-use loop over the stage conversation."""
+            return await agent.ainvoke(
+                {"messages": inbound, "slug": state["slug"], "tenant": state["tenant"]},
+                config={
+                    "recursion_limit": recursion_limit,
+                    "run_name": f"specialist:{stage.key}",
+                },
+            )
+
+        try:
+            result, usage = await billed_call(ledger, state, stage, invoke_specialist)
+        except QuotaExhaustedError as exc:
+            return _quota_halt(exc, stage, state["slug"])
         produced = result["messages"][len(inbound) :]
-        return {"messages": produced, "usage": _usage_delta(callback)}
+        return {"messages": produced, "usage": usage}
 
     return specialist_node
 
@@ -587,18 +518,16 @@ def make_review_node(
         if not store.exists(tenant, rel):
             return _handle_missing_deliverable(state, stage, rel, budget)
 
-        if ledger is not None:
-            try:
-                ledger.check(tenant)
-            except QuotaExhaustedError as exc:
-                return _quota_halt(exc, stage, slug)
-
         text = store.read(tenant, rel)
-        with get_usage_metadata_callback() as callback:
-            try:
-                verdict = await reviewer.areview(stage.key, text)
-            finally:
-                _charge(ledger, state, stage, callback, _usage_delta(callback))
+
+        async def review_deliverable() -> ReviewVerdict:
+            """Score the saved deliverable against the stage's rubric."""
+            return await reviewer.areview(stage.key, text)
+
+        try:
+            verdict, usage = await billed_call(ledger, state, stage, review_deliverable)
+        except QuotaExhaustedError as exc:
+            return _quota_halt(exc, stage, slug)
         qa_iterations = state.get("qa_iterations", 0)
         discrepancies = [d.model_dump() for d in verdict.discrepancies]
         _emit(
@@ -610,7 +539,6 @@ def make_review_node(
             summary=verdict.summary,
             discrepancies=discrepancies,
         )
-        usage = _usage_delta(callback)
 
         if verdict.passed:
             result = StageResult(

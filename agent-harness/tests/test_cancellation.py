@@ -15,14 +15,21 @@ from typing import Any
 
 import pytest
 
-from conftest import PASS_VERDICT, SLUG, TENANT, BlockingChatModel, FakeReviewer
+from conftest import (
+    PASS_VERDICT,
+    SLUG,
+    TENANT,
+    BlockingChatModel,
+    FakeReviewer,
+    with_prototype_defaults,
+)
 from marketing_os.config import Settings
 from marketing_os.graph.graph import build_single_stage_graph as _build_single_stage_graph
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 
 
 def build_single_stage_graph(settings: Settings, stage_key: str, **kwargs: Any) -> Any:
-    """Build a single-stage graph gated against the code-shipped seed question set.
+    """Build a single-stage graph against the seed question set and the hermetic repo.
 
     Args:
         settings: The harness settings.
@@ -33,6 +40,7 @@ def build_single_stage_graph(settings: Settings, stage_key: str, **kwargs: Any) 
         The compiled single-stage graph.
     """
     kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
+    with_prototype_defaults(settings, kwargs)
     return _build_single_stage_graph(settings, stage_key, **kwargs)
 
 

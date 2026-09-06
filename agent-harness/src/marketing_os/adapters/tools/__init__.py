@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from langchain_core.tools import BaseTool
 
-from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.tools.filesystem import filesystem_tools
 from marketing_os.adapters.tools.sandbox import FilesystemSandbox
 from marketing_os.adapters.tools.websearch import NoopWebSearch, WebSearchTool, web_tools
@@ -37,7 +36,7 @@ def build_tools(
     *,
     sandbox: FilesystemSandbox,
     web_backend: WebSearchTool | None = None,
-    document_store: DocumentStore | None = None,
+    document_store: DocumentStore,
 ) -> list[BaseTool]:
     """Assemble the concrete tools an agent is granted from its declared capabilities.
 
@@ -47,17 +46,18 @@ def build_tools(
         sandbox: The filesystem sandbox the read tools operate through.
         web_backend: The web backend to use when the agent declares web tools;
             defaults to :class:`NoopWebSearch`.
-        document_store: The store deliverable writes resolve through; defaults to
-            the filesystem adapter rooted at the sandbox root.
+        document_store: The store deliverable writes resolve through. Required:
+            nothing selects a storage backend implicitly, so a deliverable
+            cannot be written to local disk by a path that meant to use the
+            database.
 
     Returns:
         The list of LangChain tools the agent may call.
     """
     declared = set(declared_tools)
-    store = document_store or FilesystemDocumentStore(sandbox.root)
     available: dict[str, BaseTool] = {}
     available.update(
-        filesystem_tools(sandbox, document_store=store, include_write="Write" in declared)
+        filesystem_tools(sandbox, document_store=document_store, include_write="Write" in declared)
     )
     if declared & {"WebSearch", "WebFetch"}:
         available.update(web_tools(web_backend or NoopWebSearch()))

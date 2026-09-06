@@ -15,8 +15,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from marketing_os.adapters.deliverables import FilesystemDeliverableStore
-from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.models import get_model
 from marketing_os.adapters.review import LLMReviewer
 from marketing_os.adapters.tools import FilesystemSandbox, WebSearchTool, build_tools
@@ -178,10 +176,10 @@ def build_campaign_graph(
     model: BaseChatModel | None = None,
     reviewer: Reviewer | None = None,
     web_backend: WebSearchTool | None = None,
-    checkpointer: BaseCheckpointSaver | None = None,
-    document_store: DocumentStore | None = None,
-    deliverable_store: DeliverableStore | None = None,
-    usage_ledger: UsageLedger | None = None,
+    checkpointer: BaseCheckpointSaver | None,
+    document_store: DocumentStore,
+    deliverable_store: DeliverableStore,
+    usage_ledger: UsageLedger | None,
     questionnaire: Questionnaire,
 ) -> CompiledStateGraph:
     """Build and compile the full campaign graph from the mandatory pipeline.
@@ -195,11 +193,16 @@ def build_campaign_graph(
         model: The specialist chat model; built from ``settings`` when ``None``.
         reviewer: The QA reviewer; built from ``settings`` when ``None``.
         web_backend: The web backend for agents that declare web tools.
-        checkpointer: An optional checkpointer; defaults to :class:`MemorySaver`.
-        document_store: The store tenant documents resolve through; defaults to
-            the filesystem adapter rooted at the repo root.
-        deliverable_store: The store deliverable versions are appended to;
-            defaults to the filesystem adapter rooted at the repo root.
+        checkpointer: The checkpointer runs are resumable through, or ``None``
+            for an in-memory saver whose checkpoints do not survive a restart.
+            Required rather than defaulted: a non-resumable run is a choice a
+            caller makes, not one it falls into.
+        document_store: The store tenant documents resolve through. Required:
+            no builder picks a storage backend on a caller's behalf, because a
+            silently-chosen filesystem store is how production came to write
+            campaigns to local disk.
+        deliverable_store: The store deliverable versions are appended to.
+            Required, for the reason given on ``document_store``.
         usage_ledger: The Usage Ledger every model call is checked against and
             charged to, or ``None`` to run uncharged — which is what the graph
             tests do (ADR-0020).
@@ -215,11 +218,9 @@ def build_campaign_graph(
     reviewer = reviewer or LLMReviewer(
         get_model(settings, role=Role.REVIEWER, thinking=settings.reviewer_thinking), settings
     )
-    store = document_store or FilesystemDocumentStore(settings.root)
-    versions = deliverable_store or FilesystemDeliverableStore(settings.root)
     spec_source = SpecSource(settings)
     builder = StateGraph(CampaignState)
-    builder.add_node("gate", make_gate_node(settings, store, questionnaire))
+    builder.add_node("gate", make_gate_node(settings, document_store, questionnaire))
     builder.add_edge(START, "gate")
 
     stages = apply_approval_policies(PIPELINE, settings.human_gate_stages)
@@ -227,7 +228,7 @@ def build_campaign_graph(
     for index, stage in enumerate(stages):
         advance_target = f"{stages[index + 1].key}__enter" if index + 1 < len(stages) else END
         agent = _build_stage_agent(
-            settings, stage, model, governance, web_backend, spec_source, store
+            settings, stage, model, governance, web_backend, spec_source, document_store
         )
         entries.append(
             _add_stage(
@@ -236,8 +237,8 @@ def build_campaign_graph(
                 stage,
                 agent,
                 reviewer,
-                store,
-                versions,
+                document_store,
+                deliverable_store,
                 usage_ledger,
                 advance_target,
             )
@@ -254,10 +255,10 @@ def build_single_stage_graph(
     model: BaseChatModel | None = None,
     reviewer: Reviewer | None = None,
     web_backend: WebSearchTool | None = None,
-    checkpointer: BaseCheckpointSaver | None = None,
-    document_store: DocumentStore | None = None,
-    deliverable_store: DeliverableStore | None = None,
-    usage_ledger: UsageLedger | None = None,
+    checkpointer: BaseCheckpointSaver | None,
+    document_store: DocumentStore,
+    deliverable_store: DeliverableStore,
+    usage_ledger: UsageLedger | None,
     questionnaire: Questionnaire,
 ) -> CompiledStateGraph:
     """Build and compile a gate-then-one-stage graph for a single-stage run.
@@ -268,16 +269,15 @@ def build_single_stage_graph(
         model: The specialist chat model; built from ``settings`` when ``None``.
         reviewer: The QA reviewer; built from ``settings`` when ``None``.
         web_backend: The web backend for agents that declare web tools.
-        checkpointer: An optional checkpointer; defaults to :class:`MemorySaver`.
-        document_store: The store tenant documents resolve through; defaults to
-            the filesystem adapter rooted at the repo root.
-        deliverable_store: The store deliverable versions are appended to;
-            defaults to the filesystem adapter rooted at the repo root.
+        checkpointer: The checkpointer the run is resumable through, or ``None``
+            for a non-resumable in-memory saver.
+        document_store: The store tenant documents resolve through.
+        deliverable_store: The store deliverable versions are appended to.
         usage_ledger: The Usage Ledger every model call is checked against and
             charged to, or ``None`` to run uncharged.
         questionnaire: The published question set the Stage 0 gate enforces.
-            Required rather than defaulted, for the reason given on
-            :func:`build_campaign_graph`.
+            These five are required rather than defaulted, for the reasons
+            given on :func:`build_campaign_graph`.
 
     Returns:
         The compiled single-stage graph.
@@ -291,15 +291,23 @@ def build_single_stage_graph(
     reviewer = reviewer or LLMReviewer(
         get_model(settings, role=Role.REVIEWER, thinking=settings.reviewer_thinking), settings
     )
-    store = document_store or FilesystemDocumentStore(settings.root)
-    versions = deliverable_store or FilesystemDeliverableStore(settings.root)
     spec_source = SpecSource(settings)
     builder = StateGraph(CampaignState)
-    builder.add_node("gate", make_gate_node(settings, store, questionnaire))
+    builder.add_node("gate", make_gate_node(settings, document_store, questionnaire))
     builder.add_edge(START, "gate")
-    agent = _build_stage_agent(settings, stage, model, governance, web_backend, spec_source, store)
+    agent = _build_stage_agent(
+        settings, stage, model, governance, web_backend, spec_source, document_store
+    )
     entry = _add_stage(
-        builder, settings, stage, agent, reviewer, store, versions, usage_ledger, END
+        builder,
+        settings,
+        stage,
+        agent,
+        reviewer,
+        document_store,
+        deliverable_store,
+        usage_ledger,
+        END,
     )
     builder.add_conditional_edges("gate", _route_after_gate, {"continue": entry, "end": END})
     return _compile(builder, checkpointer)

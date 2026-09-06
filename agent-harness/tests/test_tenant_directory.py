@@ -19,7 +19,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import COMPLETE_GOAL_BODY
+from conftest import (
+    COMPLETE_GOAL_BODY,
+    clear_prototype_adapters,
+    install_prototype_adapters,
+)
 from marketing_os.adapters.tenants import (
     InMemoryTenantDirectory,
     PassthroughTenantDirectory,
@@ -156,7 +160,7 @@ def test_a_request_stores_its_documents_under_the_platform_tenant_not_the_org_id
     import marketing_os.entrypoints.api.app as api
 
     api.get_settings.cache_clear()
-    api.reset_providers()
+    install_prototype_adapters(repo)
     api.app.dependency_overrides.clear()
     directory = InMemoryTenantDirectory()
     monkeypatch.setattr(api, "get_token_verifier", lambda: _FakeVerifier())
@@ -181,4 +185,4 @@ def test_a_request_stores_its_documents_under_the_platform_tenant_not_the_org_id
     assert not (repo / "tenants" / CLERK_ORG).exists()
 
     api.get_settings.cache_clear()
-    api.reset_providers()
+    clear_prototype_adapters()

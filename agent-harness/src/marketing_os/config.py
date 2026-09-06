@@ -266,7 +266,7 @@ class Settings:
         token_rates: The price per token per model the Usage Ledger costs calls
             with, from ``MARKETING_OS_TOKEN_RATES`` as ``model=price`` pairs. A
             model with no configured rate is costed at the default rate.
-        stream: Whether the CLI streams progress events.
+        stream: Whether progress events are streamed as a run proceeds.
         enable_web: Whether web-search tools are wired for agents that declare them.
         web_backends: The ordered web-search backends to try when web is enabled
             (``tavily`` / ``google`` / ``duckduckgo`` / ``noop``); the resolver
@@ -287,15 +287,17 @@ class Settings:
             disable tenancy.
         auth_audience: The expected ``aud`` claim, or ``None`` to skip the
             audience check when the IdP does not set one.
-        tenant_id: The tenant the **CLI** operates as. The CLI is a local
-            operator tool with no request to carry a token, so its tenant comes
-            from configuration — never from a command-line argument, which would
-            be a caller-supplied business identity (ADR-0013).
-        postgres_dsn: The Postgres connection string, or ``None`` to keep
-            documents on the filesystem and run state in memory. Setting it
-            makes Postgres the system of record (ADR-0014): documents, the
-            tenant directory, the run registry and the LangGraph checkpointer
-            all move there together, because they are one durability decision.
+        tenant_id: The tenant an operator tool acts as, for the admin commands
+            that carry no request and therefore no token. Never a caller-supplied
+            business identity, which is why it comes from configuration rather
+            than from an argument (ADR-0013).
+        postgres_dsn: The Postgres connection string, or ``None`` when none is
+            configured — which the API refuses to start on. Postgres is the
+            system of record (ADR-0014): documents, the tenant directory, the
+            run registry and the LangGraph checkpointer all live there together,
+            because they are one durability decision. There is no filesystem
+            fallback; a deploy with no DSN fails rather than writing a
+            business's campaigns to local disk.
     """
 
     provider: str = field(

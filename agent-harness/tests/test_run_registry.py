@@ -17,7 +17,13 @@ from typing import Any
 
 import pytest
 
-from conftest import SLUG, TENANT, BlockingChatModel, install_scripted_graph
+from conftest import (
+    SLUG,
+    TENANT,
+    BlockingChatModel,
+    install_scripted_graph,
+    prototype_adapters,
+)
 from marketing_os.adapters.observability import new_run_id
 from marketing_os.config import Settings
 from marketing_os.errors import RunConflictError
@@ -179,7 +185,14 @@ async def test_cancel_aborts_in_flight_call_writes_cancelled_summary_and_deregis
         Returns:
             The structured campaign result (never reached; the run is cancelled).
         """
-        return await arun_campaign(settings, TENANT, SLUG, stage="research", run_id=run_id)
+        return await arun_campaign(
+            settings,
+            TENANT,
+            SLUG,
+            stage="research",
+            run_id=run_id,
+            **prototype_adapters(settings.root),
+        )
 
     registry.start(run_id=run_id, slug="acme", stage="research", tenant=TENANT, launch=launch)
     await asyncio.wait_for(model.entered.wait(), timeout=5)
@@ -225,7 +238,14 @@ async def test_build_time_failure_writes_error_summary_and_resolves_failed(
         Returns:
             The structured campaign result (never reached; the build fails).
         """
-        return await arun_campaign(settings, TENANT, SLUG, stage="research", run_id=run_id)
+        return await arun_campaign(
+            settings,
+            TENANT,
+            SLUG,
+            stage="research",
+            run_id=run_id,
+            **prototype_adapters(settings.root),
+        )
 
     run = registry.start(run_id=run_id, slug="acme", stage="research", tenant=TENANT, launch=launch)
     task = registry.task_for(run.run_id)

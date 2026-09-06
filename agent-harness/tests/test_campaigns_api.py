@@ -22,6 +22,8 @@ from conftest import (
     SLUG,
     TENANT,
     authenticate,
+    clear_prototype_adapters,
+    install_prototype_adapters,
     install_scripted_graph,
 )
 
@@ -39,15 +41,15 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     install_scripted_graph(monkeypatch)
-    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import app, get_settings
 
     get_settings.cache_clear()
-    reset_providers()
+    install_prototype_adapters(repo)
     authenticate(app)
     with TestClient(app) as entered:
         yield entered
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
 
 
 def _without(field: str) -> dict[str, object]:

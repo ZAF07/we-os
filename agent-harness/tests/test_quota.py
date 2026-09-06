@@ -31,8 +31,11 @@ from conftest import (
     SLUG,
     TENANT,
     authenticate,
+    clear_prototype_adapters,
     deliverable_from,
+    install_prototype_adapters,
     install_scripted_graph,
+    prototype_adapters,
     write_all_agent_specs,
     write_call,
 )
@@ -79,10 +82,10 @@ def _make_client(repo: Path) -> TestClient:
     Returns:
         A configured (not yet entered) FastAPI test client.
     """
-    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import app, get_settings
 
     get_settings.cache_clear()
-    reset_providers()
+    install_prototype_adapters(repo)
     authenticate(app)
     return TestClient(app)
 
@@ -126,12 +129,12 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("MARKETING_OS_ALLOWANCE", "1000")
     write_all_agent_specs(Settings(root=repo))
     install_scripted_graph(monkeypatch, handler=_counting_handler)
-    from marketing_os.entrypoints.api.app import get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import get_settings
 
     with _make_client(repo) as entered:
         yield entered
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
 
 
 def _exhaust(client: TestClient, tenant: str = TENANT) -> None:
@@ -456,7 +459,12 @@ async def test_a_run_in_flight_halts_when_the_allowance_runs_out(
     ledger = InMemoryUsageLedger(settings)
 
     with pytest.raises(QuotaExhaustedError) as raised:
-        await arun_campaign(settings, TENANT, SLUG, usage_ledger=ledger)
+        await arun_campaign(
+            settings,
+            TENANT,
+            SLUG,
+            **{**prototype_adapters(settings.root), "usage_ledger": ledger},
+        )
 
     assert raised.value.http_status == 402
     assert ledger.consumption(TENANT).exhausted
@@ -479,7 +487,12 @@ async def test_work_already_done_is_still_charged_when_a_run_halts(
     ledger = InMemoryUsageLedger(settings)
 
     with pytest.raises(QuotaExhaustedError):
-        await arun_campaign(settings, TENANT, SLUG, usage_ledger=ledger)
+        await arun_campaign(
+            settings,
+            TENANT,
+            SLUG,
+            **{**prototype_adapters(settings.root), "usage_ledger": ledger},
+        )
 
     charged = [entry for entry in ledger.entries(TENANT) if entry.units > 0]
     assert charged, "the halted run recorded nothing for the work it did"
@@ -499,7 +512,13 @@ async def test_a_run_within_its_allowance_completes_uninterrupted(
     install_scripted_graph(monkeypatch, handler=_counting_handler)
     ledger = InMemoryUsageLedger(settings)
 
-    result = await arun_campaign(settings, TENANT, SLUG, stage="research", usage_ledger=ledger)
+    result = await arun_campaign(
+        settings,
+        TENANT,
+        SLUG,
+        stage="research",
+        **{**prototype_adapters(settings.root), "usage_ledger": ledger},
+    )
 
     assert [stage.stage for stage in result.stages] == ["research"]
     assert ledger.consumption(TENANT).used > 0
@@ -508,13 +527,15 @@ async def test_a_run_within_its_allowance_completes_uninterrupted(
 async def test_a_run_without_a_ledger_is_not_refused(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The CLI runs with no ledger, and must still work rather than fail closed."""
+    """An uncharged run is legal (ADR-0020) and must work rather than fail closed."""
     from marketing_os.graph.runner import arun_campaign
 
     write_all_agent_specs(settings)
     install_scripted_graph(monkeypatch, handler=_counting_handler)
 
-    result = await arun_campaign(settings, TENANT, SLUG, stage="research")
+    result = await arun_campaign(
+        settings, TENANT, SLUG, stage="research", **prototype_adapters(settings.root)
+    )
 
     assert [stage.stage for stage in result.stages] == ["research"]
 
@@ -542,7 +563,13 @@ async def test_a_run_cancelled_mid_call_is_still_charged_for_it(
     ledger = InMemoryUsageLedger(settings)
 
     task = asyncio.create_task(
-        arun_campaign(settings, TENANT, SLUG, stage="research", usage_ledger=ledger)
+        arun_campaign(
+            settings,
+            TENANT,
+            SLUG,
+            stage="research",
+            **{**prototype_adapters(settings.root), "usage_ledger": ledger},
+        )
     )
     await asyncio.wait_for(model.entered.wait(), timeout=5)
     task.cancel()
@@ -570,7 +597,12 @@ async def test_a_deliverable_written_before_the_halt_is_not_lost(
     ledger = InMemoryUsageLedger(settings)
 
     with pytest.raises(QuotaExhaustedError):
-        await arun_campaign(settings, TENANT, SLUG, usage_ledger=ledger)
+        await arun_campaign(
+            settings,
+            TENANT,
+            SLUG,
+            **{**prototype_adapters(settings.root), "usage_ledger": ledger},
+        )
 
     research = settings.tenant_dir(TENANT) / "campaigns" / SLUG / "research.md"
     assert research.is_file(), "the stage that completed before the halt lost its deliverable"

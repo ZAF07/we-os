@@ -23,6 +23,8 @@ from conftest import (
     TENANT,
     BlockingChatModel,
     authenticate,
+    clear_prototype_adapters,
+    install_prototype_adapters,
     install_scripted_graph,
 )
 from marketing_os.adapters.documents import FilesystemDocumentStore, InMemoryDocumentStore
@@ -41,10 +43,10 @@ def _client(repo: Path, tenant: str) -> TestClient:
     Returns:
         A configured (not yet entered) test client.
     """
-    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import app, get_settings
 
     get_settings.cache_clear()
-    reset_providers()
+    install_prototype_adapters(repo)
     authenticate(app, tenant)
     return TestClient(app)
 
@@ -57,10 +59,10 @@ def test_every_route_except_health_refuses_a_request_with_no_token(
 ) -> None:
     """Without a token the API answers 401 — and never falls open to a default tenant."""
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
-    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import app, get_settings
 
     get_settings.cache_clear()
-    reset_providers()
+    install_prototype_adapters(repo)
     app.dependency_overrides.clear()
 
     with TestClient(app) as client:
@@ -76,7 +78,7 @@ def test_every_route_except_health_refuses_a_request_with_no_token(
             assert response.json()["type"] == "unauthenticated"
 
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
 
 
 def test_a_malformed_authorization_header_is_refused(
@@ -88,6 +90,7 @@ def test_a_malformed_authorization_header_is_refused(
 
     get_settings.cache_clear()
     get_token_verifier.cache_clear()
+    install_prototype_adapters(repo)
     app.dependency_overrides.clear()
 
     with TestClient(app) as client:
@@ -97,6 +100,7 @@ def test_a_malformed_authorization_header_is_refused(
 
     get_settings.cache_clear()
     get_token_verifier.cache_clear()
+    clear_prototype_adapters()
 
 
 # --- No operation accepts a business identity -----------------------------------

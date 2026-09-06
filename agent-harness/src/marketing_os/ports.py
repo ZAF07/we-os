@@ -14,12 +14,14 @@ spans workers, and the :class:`TokenVerifier`, which establishes who a caller is
 hold the admin-curated question set and each business's answers to it
 (ADR-0018), and the :class:`UsageLedger`, which records what every billable call
 cost its tenant and refuses the next one when their allowance is spent
-(ADR-0020). Tests substitute all of them with hermetic fakes.
+(ADR-0020), and the :class:`StorageBackend`, which owns the whole set as one
+lifetime because storage is one durability decision (ADR-0014). Tests substitute
+all of them with hermetic fakes.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from marketing_os.schemas import (
     BrandDnaRecord,
@@ -602,4 +604,67 @@ class UsageLedger(Protocol):
         Returns:
             The entries, newest first, empty when nothing has been charged.
         """
+        ...
+
+
+@runtime_checkable
+class StorageBackend(Protocol):
+    """Everything a deployment stores, as one object with one lifetime.
+
+    Documents, deliverables, the tenant directory, the run registry, the
+    question set, the answers, the ledger and the checkpointer are a single
+    durability decision, not eight (ADR-0014): they must all be open before any
+    is used and closed after all are done. Naming that as one port is what stops
+    a caller assembling a half-Postgres state no deployment has.
+
+    ``open`` and ``close`` bracket the pool's lifetime; a backend that holds no
+    connection implements them as no-ops.
+    """
+
+    async def open(self) -> None:
+        """Connect and make every adapter usable."""
+        ...
+
+    async def close(self) -> None:
+        """Release the connection, after which no adapter may be used."""
+        ...
+
+    @property
+    def documents(self) -> DocumentStore:
+        """Return the store tenant documents resolve through."""
+        ...
+
+    @property
+    def deliverables(self) -> DeliverableStore:
+        """Return the store holding each deliverable's version history."""
+        ...
+
+    @property
+    def tenants(self) -> TenantDirectory:
+        """Return the directory mapping IdP organizations to platform tenants."""
+        ...
+
+    @property
+    def runs(self) -> RunStore:
+        """Return the store holding run claims and statuses."""
+        ...
+
+    @property
+    def questionnaires(self) -> QuestionnaireStore:
+        """Return the store holding the published question set."""
+        ...
+
+    @property
+    def answers(self) -> AnswerStore:
+        """Return the store holding each business's Brand DNA answers."""
+        ...
+
+    @property
+    def usage(self) -> UsageLedger:
+        """Return the ledger every billable call is checked against and charged to."""
+        ...
+
+    @property
+    def checkpointer(self) -> Any:
+        """Return the LangGraph saver runs are resumable through."""
         ...

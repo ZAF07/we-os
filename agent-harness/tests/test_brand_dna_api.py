@@ -14,7 +14,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import OTHER_TENANT, SLUG, TENANT, authenticate, identity_for
+from conftest import (
+    OTHER_TENANT,
+    SLUG,
+    TENANT,
+    authenticate,
+    clear_prototype_adapters,
+    identity_for,
+    install_prototype_adapters,
+)
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 
 
@@ -34,16 +42,16 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     (repo / "tenants" / TENANT / "dna.md").unlink()
-    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import app, get_settings
 
     get_settings.cache_clear()
-    reset_providers()
+    install_prototype_adapters(repo)
     authenticate(app)
     with TestClient(app) as entered:
         yield entered
     app.dependency_overrides.clear()
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
 
 
 def answer_everything(client: TestClient, *, skip: set[str] | None = None) -> dict:

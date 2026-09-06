@@ -38,6 +38,7 @@ from conftest import (
     TENANT,
     authenticate,
     deliverable_from,
+    install_prototype_adapters,
     install_scripted_graph,
     run_without_approval_gates,
     write_all_agent_specs,
@@ -68,10 +69,10 @@ def _client(repo: Path) -> TestClient:
     Returns:
         A configured (not yet entered) test client.
     """
-    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import app, get_settings
 
     get_settings.cache_clear()
-    reset_providers()
+    install_prototype_adapters(repo)
     authenticate(app)
     return TestClient(app)
 

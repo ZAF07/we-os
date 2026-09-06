@@ -27,7 +27,9 @@ from conftest import (
     SLUG,
     TENANT,
     authenticate,
+    clear_prototype_adapters,
     deliverable_from,
+    install_prototype_adapters,
     install_scripted_graph,
     write_all_agent_specs,
     write_call,
@@ -90,15 +92,15 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     write_all_agent_specs(Settings(root=repo))
     install_scripted_graph(monkeypatch, handler=_numbered_handler)
-    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import app, get_settings
 
     get_settings.cache_clear()
-    reset_providers()
+    install_prototype_adapters(repo)
     authenticate(app)
     with TestClient(app) as entered:
         yield entered
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
 
 
 def test_workspace_first_load_carries_every_field_the_stepper_needs(

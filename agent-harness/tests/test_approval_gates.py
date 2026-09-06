@@ -32,8 +32,11 @@ from conftest import (
     FakeReviewer,
     ProgrammableChatModel,
     authenticate,
+    clear_prototype_adapters,
     deliverable_from,
+    install_prototype_adapters,
     install_scripted_graph,
+    with_prototype_defaults,
     write_all_agent_specs,
     write_call,
 )
@@ -45,7 +48,7 @@ from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 
 
 def build_campaign_graph(settings: Settings, **kwargs: Any) -> Any:
-    """Build the full campaign graph gated against the code-shipped seed question set.
+    """Build the full campaign graph against the seed question set and the hermetic repo.
 
     Args:
         settings: The harness settings.
@@ -55,6 +58,7 @@ def build_campaign_graph(settings: Settings, **kwargs: Any) -> Any:
         The compiled campaign graph.
     """
     kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
+    with_prototype_defaults(settings, kwargs)
     return _build_campaign_graph(settings, **kwargs)
 
 
@@ -296,10 +300,10 @@ def _make_client(repo: Path) -> TestClient:
     Returns:
         A configured (not yet entered) FastAPI test client.
     """
-    from marketing_os.entrypoints.api.app import app, get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import app, get_settings
 
     get_settings.cache_clear()
-    reset_providers()
+    install_prototype_adapters(repo)
     authenticate(app)
     return TestClient(app)
 
@@ -337,12 +341,12 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     write_all_agent_specs(Settings(root=repo))
     install_scripted_graph(monkeypatch, handler=_numbered_handler)
-    from marketing_os.entrypoints.api.app import get_settings, reset_providers
+    from marketing_os.entrypoints.api.app import get_settings
 
     with _make_client(repo) as entered:
         yield entered
     get_settings.cache_clear()
-    reset_providers()
+    clear_prototype_adapters()
 
 
 def test_run_reports_awaiting_approval_rather_than_completed(client: TestClient) -> None:

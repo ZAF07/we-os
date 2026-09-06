@@ -11,7 +11,14 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
-from conftest import SLUG, TENANT, FakeReviewer, ProgrammableChatModel, write_call
+from conftest import (
+    SLUG,
+    TENANT,
+    FakeReviewer,
+    ProgrammableChatModel,
+    prototype_adapters,
+    write_call,
+)
 from marketing_os.adapters.observability import (
     find_trace,
     list_run_ids,
@@ -24,7 +31,6 @@ from marketing_os.errors import GuardrailError
 from marketing_os.graph import nodes, runner
 from marketing_os.graph.graph import build_single_stage_graph
 from marketing_os.ports import Reviewer
-from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import Discrepancy, ReviewVerdict
 
 _FAIL = ReviewVerdict(
@@ -73,20 +79,21 @@ def _patch_graph(monkeypatch: pytest.MonkeyPatch, reviewer: Reviewer) -> None:
         *,
         web_backend,
         checkpointer,
-        document_store=None,
-        deliverable_store=None,
-        usage_ledger=None,
-        questionnaire=None,
+        document_store,
+        deliverable_store,
+        usage_ledger,
+        questionnaire,
     ):
         return build_single_stage_graph(
             settings,
             stage or "research",
             model=ProgrammableChatModel(handler=_writing_handler),
             reviewer=reviewer,
+            checkpointer=checkpointer,
             document_store=document_store,
             deliverable_store=deliverable_store,
             usage_ledger=usage_ledger,
-            questionnaire=questionnaire or SEED_QUESTIONNAIRE,
+            questionnaire=questionnaire,
         )
 
     monkeypatch.setattr(runner, "_select_graph", fake_select)
@@ -99,7 +106,11 @@ def test_failed_run_writes_trace_and_structured_error(
     _patch_graph(monkeypatch, FakeReviewer([_FAIL]))
 
     with pytest.raises(GuardrailError) as excinfo:
-        asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
+        asyncio.run(
+            runner.arun_campaign(
+                settings, TENANT, SLUG, stage="research", **prototype_adapters(settings.root)
+            )
+        )
 
     exc = excinfo.value
     detail = exc.detail
@@ -125,7 +136,11 @@ def test_crashed_run_writes_terminal_error_event(
     _patch_graph(monkeypatch, _CrashingReviewer())
 
     with pytest.raises(RuntimeError, match="playwright navigation exploded"):
-        asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
+        asyncio.run(
+            runner.arun_campaign(
+                settings, TENANT, SLUG, stage="research", **prototype_adapters(settings.root)
+            )
+        )
 
     traces = list((settings.tenant_logs_dir(TENANT) / SLUG).glob("*.jsonl"))
     assert traces, "a run-log trace file should be written even on crash"
@@ -144,7 +159,11 @@ def test_crashed_run_logs_terminal_error_to_console(
         caplog.at_level(logging.INFO, logger="marketing_os.runner"),
         pytest.raises(RuntimeError, match="playwright navigation exploded"),
     ):
-        asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
+        asyncio.run(
+            runner.arun_campaign(
+                settings, TENANT, SLUG, stage="research", **prototype_adapters(settings.root)
+            )
+        )
 
     messages = [record.getMessage() for record in caplog.records]
     assert any("run.summary outcome=error" in message for message in messages)
@@ -153,7 +172,11 @@ def test_crashed_run_logs_terminal_error_to_console(
 def test_run_logs_can_be_disabled(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
     settings.run_logs = False
     _patch_graph(monkeypatch, FakeReviewer([_PASS]))
-    result = asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
+    result = asyncio.run(
+        runner.arun_campaign(
+            settings, TENANT, SLUG, stage="research", **prototype_adapters(settings.root)
+        )
+    )
     assert result.run_log is None
     assert not (settings.tenant_logs_dir(TENANT) / SLUG).exists()
 
@@ -164,7 +187,11 @@ def test_stage_log_lines_carry_slug(
     _patch_graph(monkeypatch, FakeReviewer([_PASS]))
 
     with caplog.at_level(logging.INFO, logger="marketing_os.graph"):
-        asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
+        asyncio.run(
+            runner.arun_campaign(
+                settings, TENANT, SLUG, stage="research", **prototype_adapters(settings.root)
+            )
+        )
 
     stage_lines = [
         record.getMessage() for record in caplog.records if record.getMessage().startswith("stage.")

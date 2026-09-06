@@ -22,8 +22,10 @@ from conftest import (
     FakeReviewer,
     ProgrammableChatModel,
     deliverable_from,
+    with_prototype_defaults,
     write_call,
 )
+from marketing_os.adapters.documents import FilesystemDocumentStore
 from marketing_os.adapters.tools import (
     FallbackWebSearch,
     GoogleWebSearch,
@@ -50,7 +52,7 @@ from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 
 
 def build_single_stage_graph(settings: Settings, stage_key: str, **kwargs: Any) -> Any:
-    """Build a single-stage graph gated against the code-shipped seed question set.
+    """Build a single-stage graph against the seed question set and the hermetic repo.
 
     Args:
         settings: The harness settings.
@@ -61,6 +63,7 @@ def build_single_stage_graph(settings: Settings, stage_key: str, **kwargs: Any) 
         The compiled single-stage graph.
     """
     kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
+    with_prototype_defaults(settings, kwargs)
     return _build_single_stage_graph(settings, stage_key, **kwargs)
 
 
@@ -616,7 +619,12 @@ def test_build_tools_uses_backend_for_web_capabilities(
     backend = PlaywrightWebSearch()
     monkeypatch.setattr(backend, "_new_page", lambda: page)
 
-    tools = build_tools(["Read", "WebSearch", "WebFetch"], sandbox=sandbox, web_backend=backend)
+    tools = build_tools(
+        ["Read", "WebSearch", "WebFetch"],
+        sandbox=sandbox,
+        web_backend=backend,
+        document_store=FilesystemDocumentStore(sandbox.root),
+    )
     web_search = next(t for t in tools if t.name == "web_search")
 
     assert "https://hit.test" in web_search.invoke({"query": "beans"})
@@ -674,7 +682,9 @@ async def test_sync_web_tool_runs_under_async_specialist_node(
 
 def test_build_tools_defaults_to_noop_when_no_backend(settings: Settings) -> None:
     sandbox = FilesystemSandbox(settings.root)
-    tools = build_tools(["WebSearch"], sandbox=sandbox)
+    tools = build_tools(
+        ["WebSearch"], sandbox=sandbox, document_store=FilesystemDocumentStore(sandbox.root)
+    )
     web_search = next(t for t in tools if t.name == "web_search")
 
     assert "not configured" in web_search.invoke({"query": "beans"})
