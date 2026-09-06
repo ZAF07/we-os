@@ -65,7 +65,7 @@ not as deduplication.
 ## Completion
 
 - Completed: 2026-09-07
-- Commit: `<pending>`
+- Commit: `7da05ad` — Campaign progress and the markdown field format become core modules
 
 `campaign/progress.py` owns the derivation and returns domain values —
 `CampaignProgress`, `StageProgress`, `DeliverableProgress` and plain status

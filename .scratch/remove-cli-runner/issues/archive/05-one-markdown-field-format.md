@@ -52,7 +52,7 @@ directions — see Scope.
 ## Completion
 
 - Completed: 2026-09-07
-- Commit: `<pending>`
+- Commit: `7da05ad` — Campaign progress and the markdown field format become core modules
 
 Top-level `markdown.py` owns the format: `render_field`, `parse_fields`,
 `walk_fields`, `is_placeholder` and `labels_under_heading`. `_FIELD_RE` is
