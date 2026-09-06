@@ -356,35 +356,6 @@ def test_the_dna_gate_still_blocks_a_run_and_names_every_missing_field(
     assert not (repo / "tenants" / TENANT / "campaigns" / SLUG / "research.md").is_file()
 
 
-# --- The CLI takes its tenant from configuration, never an argument -------------
-
-
-def test_the_cli_refuses_to_run_without_a_configured_tenant(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    from marketing_os.entrypoints.cli import main
-
-    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
-    monkeypatch.delenv("MARKETING_OS_TENANT_ID", raising=False)
-
-    code = main(["check", SLUG])
-    err = capsys.readouterr().err
-
-    assert code == 1
-    assert "MARKETING_OS_TENANT_ID" in err
-
-
-def test_the_cli_accepts_no_tenant_argument() -> None:
-    """``new-campaign`` takes a slug and nothing that names a business."""
-    from marketing_os.entrypoints.cli import build_parser
-
-    parsed = build_parser().parse_args(["new-campaign", "spring", "--stage", "research"])
-
-    assert parsed.slug == "spring"
-    assert not hasattr(parsed, "name")
-    assert not hasattr(parsed, "tenant")
-
-
 def test_settings_expose_no_customer_vocabulary() -> None:
     """'customer' means a person the business sells to — never the business itself."""
     settings = Settings()

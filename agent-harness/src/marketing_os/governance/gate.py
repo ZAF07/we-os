@@ -9,12 +9,11 @@ Reproduces the orchestrator's three blocking checks:
 Tenant documents resolve through the DocumentStore port. What "Required" means
 has two sources, both outside this module so neither can drift from the gate:
 
-  * The **Brand DNA**'s Required fields come from the **published question set**
-    when one is supplied, so publishing a question set with a new Required
-    question tightens the gate with no code change (ADR-0018). Without one — the
-    CLI, and any caller with no questionnaire store — it falls back to
-    `templates/brand-dna.md`, which is the same rule against the hand-authored
-    template.
+  * The **Brand DNA**'s Required fields come from the **published question set**,
+    which every caller must name, so publishing a question set with a new
+    Required question tightens the gate with no code change (ADR-0018). There is
+    no template fallback: an omitted question set is how one entrypoint came to
+    enforce a weaker rule than another (ADR-0026).
   * The **campaign goal**'s Required fields always come from
     `templates/campaign-goal.md`, which is code-shipped: the goal is authored per
     campaign and has no questionnaire behind it.
@@ -159,7 +158,7 @@ def check_gate(
     slug: str,
     *,
     store: DocumentStore,
-    questionnaire: Questionnaire | None = None,
+    questionnaire: Questionnaire,
 ) -> GateReport:
     """Run the gate and return a report (does not raise).
 
@@ -168,10 +167,9 @@ def check_gate(
         tenant: The tenant the campaign runs for.
         slug: The campaign slug.
         store: The document store the DNA and goal resolve through.
-        questionnaire: The published question set, when the caller has one. Its
-            Required questions define the Required Brand DNA fields, so the
-            questionnaire and the gate cannot drift apart. Omitted, the gate
-            falls back to the hand-authoring template.
+        questionnaire: The published question set. Its Required questions define
+            the Required Brand DNA fields, so the questionnaire and the gate
+            cannot drift apart.
 
     Returns:
         The structured gate report.
@@ -179,11 +177,7 @@ def check_gate(
     dna_document = "dna.md"
     goal_document = f"campaigns/{slug}/goal.md"
     goal_template = settings.templates_dir / "campaign-goal.md"
-    dna_labels = (
-        required_dna_fields(questionnaire)
-        if questionnaire is not None
-        else required_fields(settings.templates_dir / "brand-dna.md")
-    )
+    dna_labels = required_dna_fields(questionnaire)
 
     report = GateReport(tenant=tenant, slug=slug)
     if not store.exists(tenant, dna_document):
@@ -212,7 +206,7 @@ def enforce_gate(
     slug: str,
     *,
     store: DocumentStore,
-    questionnaire: Questionnaire | None = None,
+    questionnaire: Questionnaire,
 ) -> GateReport:
     """Run the gate and raise GateError if it does not pass.
 
@@ -222,7 +216,7 @@ def enforce_gate(
         slug: The campaign slug.
         store: The document store the DNA and goal resolve through.
         questionnaire: The published question set defining the Required Brand
-            DNA fields, when the caller has one.
+            DNA fields.
 
     Returns:
         The passing gate report.

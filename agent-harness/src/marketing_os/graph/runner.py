@@ -1,7 +1,7 @@
 """Runner — the application layer that drives the graph and shapes its results.
 
-Both entrypoints (CLI and API) use these helpers so graph selection, error
-mapping, and result assembly live in one place. A run is keyed by ``thread_id``
+The API entrypoint uses these helpers so graph selection, error mapping, and
+result assembly live in one place. A run is keyed by ``thread_id``
 (see :mod:`marketing_os.graph.checkpoints`) so it is resumable; single-stage runs
 use a stage-scoped thread so they do not collide with the full-campaign thread,
 and every thread is tenant-scoped so two businesses running the same slug cannot
@@ -16,7 +16,7 @@ not to import, so it is spelled here instead.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -37,7 +37,8 @@ from marketing_os.graph.checkpoints import thread_id
 from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
 from marketing_os.graph.state import CampaignState
 from marketing_os.ports import DeliverableStore, DocumentStore, UsageLedger
-from marketing_os.schemas import CampaignResult, StageResult, Usage
+from marketing_os.questionnaire import SEED_QUESTIONNAIRE
+from marketing_os.schemas import CampaignResult, Questionnaire, StageResult, Usage
 
 _LOGGER = get_logger("marketing_os.runner")
 
@@ -53,6 +54,7 @@ def _select_graph(
     document_store: DocumentStore | None,
     deliverable_store: DeliverableStore | None = None,
     usage_ledger: UsageLedger | None = None,
+    questionnaire: Questionnaire | None = None,
 ) -> Any:
     """Build the campaign or single-stage graph for a run.
 
@@ -67,10 +69,13 @@ def _select_graph(
             ``None`` for the filesystem default.
         usage_ledger: The Usage Ledger every model call is checked against and
             charged to, or ``None`` to run uncharged.
+        questionnaire: The published question set the Stage 0 gate enforces, or
+            ``None`` for the code-shipped seed set.
 
     Returns:
         The compiled graph to run.
     """
+    gate_questionnaire = questionnaire or SEED_QUESTIONNAIRE
     if stage:
         return build_single_stage_graph(
             settings,
@@ -80,6 +85,7 @@ def _select_graph(
             document_store=document_store,
             deliverable_store=deliverable_store,
             usage_ledger=usage_ledger,
+            questionnaire=gate_questionnaire,
         )
     return build_campaign_graph(
         settings,
@@ -88,6 +94,7 @@ def _select_graph(
         document_store=document_store,
         deliverable_store=deliverable_store,
         usage_ledger=usage_ledger,
+        questionnaire=gate_questionnaire,
     )
 
 
@@ -508,6 +515,7 @@ async def arun_campaign(
     document_store: DocumentStore | None = None,
     deliverable_store: DeliverableStore | None = None,
     usage_ledger: UsageLedger | None = None,
+    questionnaire: Questionnaire | None = None,
     resume: Command | None = None,
     feedback: str | None = None,
 ) -> CampaignResult:
@@ -540,6 +548,10 @@ async def arun_campaign(
             charged to, or ``None`` to run uncharged. Checking inside the graph
             is what stops a run already in flight from spending past an
             allowance it was within when it started (ADR-0020).
+        questionnaire: The published question set the Stage 0 gate enforces, or
+            ``None`` for the code-shipped seed set. Passing the set the
+            entrypoint gated against is what keeps the graph's own gate from
+            enforcing a different rule (ADR-0026).
         resume: A :class:`~langgraph.types.Command` carrying a person's decision
             at an Approval Gate, which continues the checkpointed run from where
             it halted instead of starting a fresh one.
@@ -574,6 +586,7 @@ async def arun_campaign(
             document_store=document_store,
             deliverable_store=deliverable_store,
             usage_ledger=usage_ledger,
+            questionnaire=questionnaire,
         )
         config = _config(tenant, slug, stage)
         inbound: Any = resume if resume is not None else _initial_state(tenant, slug, feedback)
@@ -595,137 +608,3 @@ async def arun_campaign(
             backend.close()
     _raise_on_error(state, run_log)
     return _to_result(tenant, slug, state, run_log, awaiting)
-
-
-def run_campaign(
-    settings: Settings,
-    tenant: str,
-    slug: str,
-    *,
-    stage: str | None = None,
-    run_id: str | None = None,
-    on_event: Callable[[dict[str, Any]], None] | None = None,
-    web_backend: WebSearchTool | None = None,
-    checkpointer: BaseCheckpointSaver | None = None,
-    document_store: DocumentStore | None = None,
-) -> CampaignResult:
-    """Run a campaign (or a single stage) to completion, blocking until done.
-
-    A synchronous convenience wrapper for the CLI and other sync callers: it drives
-    :func:`arun_campaign` on a fresh event loop via :func:`asyncio.run`. Callers
-    that need to cancel a run (the API) must await :func:`arun_campaign` directly so
-    the run is an :class:`asyncio.Task` on their loop.
-
-    Args:
-        settings: The harness settings.
-        tenant: The tenant name.
-        slug: The campaign slug.
-        stage: The single stage to run, or ``None`` for the full pipeline.
-        run_id: The id used as the trace filename; a fresh id is generated when
-            ``None``.
-        on_event: An optional callback invoked with each progress event.
-        web_backend: The web backend for agents that declare web tools.
-        checkpointer: An optional checkpointer.
-        document_store: The store tenant documents resolve through, or ``None``
-            for the filesystem default.
-
-    Returns:
-        The structured campaign result.
-
-    Raises:
-        GateError: If the run halted on the Stage 0 gate.
-        PipelineError: If a prerequisite was missing or a deliverable never saved.
-        GuardrailError: If a deliverable failed QA within the revision budget.
-    """
-    return asyncio.run(
-        arun_campaign(
-            settings,
-            tenant,
-            slug,
-            stage=stage,
-            run_id=run_id,
-            on_event=on_event,
-            web_backend=web_backend,
-            checkpointer=checkpointer,
-            document_store=document_store,
-        )
-    )
-
-
-async def astream_campaign(
-    settings: Settings,
-    tenant: str,
-    slug: str,
-    *,
-    stage: str | None = None,
-    web_backend: WebSearchTool | None = None,
-    checkpointer: BaseCheckpointSaver | None = None,
-    document_store: DocumentStore | None = None,
-) -> AsyncIterator[dict[str, Any]]:
-    """Stream a campaign run as semantic progress events.
-
-    Yields each event emitted by the nodes, then a terminal ``campaign.done`` or
-    ``error`` event derived from the final state. Every event is also appended to
-    the run's JSONL trace.
-
-    Args:
-        settings: The harness settings.
-        tenant: The tenant name.
-        slug: The campaign slug.
-        stage: The single stage to run, or ``None`` for the full pipeline.
-        web_backend: The web backend for agents that declare web tools.
-        checkpointer: An optional checkpointer.
-        document_store: The store tenant documents resolve through, or ``None``
-            for the filesystem default.
-
-    Yields:
-        Event dictionaries with an ``event`` key and event-specific fields.
-    """
-    run_id = new_run_id()
-    trace = _open_trace(settings, tenant, slug, run_id)
-    run_log = _rel_log(settings, trace)
-    _LOGGER.info("run.start tenant=%s slug=%s stage=%s run_log=%s", tenant, slug, stage, run_log)
-    backend: WebSearchTool | None = None
-    owns_backend = False
-    try:
-        backend, owns_backend = _resolve_web_backend(settings, web_backend)
-        graph = _select_graph(
-            settings,
-            stage,
-            web_backend=backend,
-            checkpointer=checkpointer,
-            document_store=document_store,
-        )
-        config = _config(tenant, slug, stage)
-        async for mode, chunk in graph.astream(
-            {"tenant": tenant, "slug": slug},
-            config=config,
-            stream_mode=["custom", "updates"],
-        ):
-            if mode != "custom":
-                continue
-            if trace is not None:
-                trace.event(chunk)
-            yield chunk
-        snapshot = await graph.aget_state(config)
-        final = snapshot.values
-        awaiting = _awaiting_stage(snapshot)
-        if awaiting is not None:
-            _write_awaiting_summary(trace, awaiting, run_log)
-        else:
-            _write_summary(trace, final, run_log)
-    except Exception as exc:
-        _write_error_summary(trace, exc, run_log)
-        raise
-    finally:
-        if trace is not None:
-            trace.close()
-        if owns_backend and backend is not None:
-            backend.close()
-    error = final.get("error")
-    if awaiting is not None:
-        yield {"event": "stage.awaiting_approval", "stage": awaiting, "run_log": run_log}
-    elif error:
-        yield {"event": "error", "error": error, "run_log": run_log}
-    else:
-        yield {"event": "campaign.done", "results": final.get("results", []), "run_log": run_log}

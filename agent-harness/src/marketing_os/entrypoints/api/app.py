@@ -1470,6 +1470,7 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
             document_store=store,
             deliverable_store=get_deliverable_store(),
             usage_ledger=get_usage_ledger(),
+            questionnaire=get_questionnaire_store().published(),
         )
 
     try:
@@ -1598,6 +1599,7 @@ async def reopen_stage(
             document_store=store,
             deliverable_store=get_deliverable_store(),
             usage_ledger=get_usage_ledger(),
+            questionnaire=get_questionnaire_store().published(),
             feedback=feedback,
         )
 
@@ -1785,6 +1787,7 @@ async def _resume_run(
             document_store=get_document_store(),
             deliverable_store=get_deliverable_store(),
             usage_ledger=get_usage_ledger(),
+            questionnaire=get_questionnaire_store().published(),
             resume=Command(resume=decision.model_dump()),
         )
 

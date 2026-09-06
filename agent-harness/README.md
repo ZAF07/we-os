@@ -66,15 +66,19 @@ OpenAI are swappable through `init_chat_model`.
 
 ## CLI
 
+`marketing-os` is an administrative tool. It does not run campaigns — the HTTP
+API is the only execution surface (ADR-0026).
+
 ```bash
-uv run marketing-os agents                 # list specialists + their tool grants
-uv run marketing-os check <customer>       # run only the Stage 0 gate
-uv run marketing-os new-campaign <customer> [--slug S] [--stage research] [--provider anthropic]
+uv run marketing-os init-db --dsn <admin dsn> [--app-role NAME]
+uv run marketing-os publish-questionnaire --dsn <dsn> --file <question set json>
 ```
 
-`new-campaign` runs the gate, then the pipeline (research → brand-strategy →
-campaign-strategy → performance-plan → creative-brief → asset-prompts), streaming
-each stage and its QA iterations and writing deliverables under `campaigns/<slug>/`.
+`init-db` provisions the schema and grants the application role; it needs
+administrative rights the service deliberately lacks (ADR-0023).
+`publish-questionnaire` publishes a new onboarding question set, which changes
+the wizard and what the DNA Gate enforces together (ADR-0018). Both run from the
+compose `migrate` service.
 
 ## HTTP API
 
@@ -126,8 +130,8 @@ for record in state["results"]:
 ```
 
 Runs are keyed by `thread_id`, so re-invoking the same slug resumes from the last
-checkpoint. `graph.runner.run_campaign` / `astream_campaign` wrap this with typed
-results and error mapping.
+checkpoint. `graph.runner.arun_campaign` wraps this with typed results, error
+mapping and a run trace.
 
 ## Architecture
 
@@ -170,5 +174,5 @@ save-retry, budget exhaustion, prerequisite halt, and a full six-stage advance.
 ```bash
 export DEEPSEEK_API_KEY=...
 export MARKETING_OS_REVIEWER_MODEL=...
-uv run marketing-os new-campaign coast-coffee --slug coast-coffee-test --stage research
+make dev   # then start a run from the UI at http://localhost:3000
 ```

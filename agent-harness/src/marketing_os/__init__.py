@@ -7,8 +7,8 @@ LangChain chat models.
 
 The specialist and review nodes run on the async graph path (ADR-0009), so a run
 is driven with ``ainvoke``/``astream`` on the event loop and can be cancelled with
-its in-flight LLM calls. The :func:`marketing_os.graph.runner.run_campaign` helper
-wraps this for synchronous callers.
+its in-flight LLM calls. :func:`marketing_os.graph.runner.arun_campaign` wraps
+this with typed results, error mapping and a run trace.
 
 Public surface::
 

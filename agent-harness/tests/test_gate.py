@@ -8,6 +8,7 @@ from conftest import SLUG, TENANT
 from marketing_os.adapters.documents import FilesystemDocumentStore, InMemoryDocumentStore
 from marketing_os.errors import GateError
 from marketing_os.governance import check_gate, enforce_gate, required_fields, validate_document
+from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 
 
 def _store(settings) -> FilesystemDocumentStore:
@@ -37,21 +38,27 @@ def test_goal_required_includes_h3_kpi_fields(settings):
 
 
 def test_gate_passes_for_complete_repo(settings):
-    report = check_gate(settings, TENANT, SLUG, store=_store(settings))
+    report = check_gate(
+        settings, TENANT, SLUG, store=_store(settings), questionnaire=SEED_QUESTIONNAIRE
+    )
     assert report.ok, report.all_issues
 
 
 def test_gate_blocks_on_placeholder(settings):
     dna = settings.tenant_dir(TENANT) / "dna.md"
     dna.write_text(dna.read_text().replace("Acme Climbing Gym", "<name>"), encoding="utf-8")
-    report = check_gate(settings, TENANT, SLUG, store=_store(settings))
+    report = check_gate(
+        settings, TENANT, SLUG, store=_store(settings), questionnaire=SEED_QUESTIONNAIRE
+    )
     assert not report.ok
     assert any("Business name" in i for i in report.dna_issues)
 
 
 def test_gate_blocks_on_missing_files(settings):
     (settings.tenant_dir(TENANT) / "dna.md").unlink()
-    report = check_gate(settings, TENANT, SLUG, store=_store(settings))
+    report = check_gate(
+        settings, TENANT, SLUG, store=_store(settings), questionnaire=SEED_QUESTIONNAIRE
+    )
     assert not report.ok
     assert any("no Brand DNA" in i for i in report.dna_issues)
 
@@ -59,7 +66,7 @@ def test_gate_blocks_on_missing_files(settings):
 def test_gate_runs_against_an_in_memory_store(settings):
     memory = InMemoryDocumentStore()
     memory.write(TENANT, "dna.md", (settings.tenant_dir(TENANT) / "dna.md").read_text())
-    report = check_gate(settings, TENANT, SLUG, store=memory)
+    report = check_gate(settings, TENANT, SLUG, store=memory, questionnaire=SEED_QUESTIONNAIRE)
     assert report.dna_issues == []
     assert any("no campaign goal" in i for i in report.goal_issues)
 
@@ -67,7 +74,9 @@ def test_gate_runs_against_an_in_memory_store(settings):
 def test_enforce_gate_raises(settings):
     (settings.tenant_dir(TENANT) / "campaigns" / SLUG / "goal.md").unlink()
     with pytest.raises(GateError) as exc:
-        enforce_gate(settings, TENANT, SLUG, store=_store(settings))
+        enforce_gate(
+            settings, TENANT, SLUG, store=_store(settings), questionnaire=SEED_QUESTIONNAIRE
+        )
     assert exc.value.missing  # carries the structured issue list
 
 
@@ -99,7 +108,6 @@ def test_validate_document_reports_missing_field(settings):
 def test_gate_derives_required_dna_fields_from_the_question_set(settings):
     # Adding a Required question tightens the gate with no code change: the DNA
     # in the repo answers the template's fields but not this new one.
-    from marketing_os.questionnaire import SEED_QUESTIONNAIRE
     from marketing_os.schemas import Question, Questionnaire
 
     added = Question(
@@ -125,7 +133,7 @@ def test_gate_ignores_the_template_when_a_question_set_is_supplied(settings):
     # The published question set is authoritative for the DNA half of the gate,
     # so a DNA answering every published Required question passes even though
     # the template names fields the question set does not (ADR-0018).
-    from marketing_os.questionnaire import SEED_QUESTIONNAIRE, render_brand_dna
+    from marketing_os.questionnaire import render_brand_dna
     from marketing_os.schemas import BrandDnaRecord, DnaAnswer
 
     record = BrandDnaRecord(
@@ -144,3 +152,10 @@ def test_gate_ignores_the_template_when_a_question_set_is_supplied(settings):
     )
     report = check_gate(settings, TENANT, SLUG, store=store, questionnaire=SEED_QUESTIONNAIRE)
     assert report.ok, report.all_issues
+
+
+def test_check_gate_requires_a_question_set(settings):
+    # There is no template fallback left: every caller names the set it gates
+    # against, so no entrypoint can enforce a weaker rule than another.
+    with pytest.raises(TypeError):
+        check_gate(settings, TENANT, SLUG, store=_store(settings))
