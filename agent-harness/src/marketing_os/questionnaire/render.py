@@ -7,13 +7,16 @@ that is the document every specialist prompt and the gate's field parser already
 understand. Nothing about the agents changes when a business onboards through the
 questionnaire instead of hand-authoring the file.
 
-A multi-line answer is written as an indented sub-list under its label, which the
-gate's field parser reads as one filled value rather than an empty one.
+The line format itself — and the multi-line and placeholder rules that make a
+render read back as one filled value — belongs to
+:mod:`marketing_os.markdown`, which the gate parses with. Writing and reading
+agree because they are the same module.
 """
 
 from __future__ import annotations
 
-from marketing_os.schemas import BrandDnaRecord, Question, Questionnaire
+from marketing_os.markdown import render_field
+from marketing_os.schemas import BrandDnaRecord, Questionnaire
 
 REQUIRED_HEADING = "## Required (the agent will not start without these)"
 RECOMMENDED_HEADING = "## Recommended (sharper inputs = sharper output)"
@@ -26,23 +29,6 @@ _PREAMBLE = (
     "The structured answers are the source of truth; this file is their canonical "
     "projection, and is what the specialists read."
 )
-
-
-def _render_field(question: Question, answer: str) -> list[str]:
-    """Render one answered question as its Brand DNA field line.
-
-    Args:
-        question: The question whose ``field`` labels the line.
-        answer: The owner's answer text.
-
-    Returns:
-        The markdown lines for the field — one line for a single-line answer,
-        a label plus an indented sub-list for a multi-line one.
-    """
-    lines = [line.strip() for line in answer.strip().splitlines() if line.strip()]
-    if len(lines) == 1:
-        return [f"- **{question.field}:** {lines[0]}"]
-    return [f"- **{question.field}:**", *[f"  - {line.lstrip('-* ')}" for line in lines]]
 
 
 def _title_for(record: BrandDnaRecord, fallback: str) -> str:
@@ -100,7 +86,7 @@ def render_brand_dna(
         if not is_recommended and question.section != current_section:
             current_section = question.section
             target.extend(["", f"### {question.section}"])
-        target.extend(_render_field(question, answer))
+        target.extend(render_field(question.field, answer))
 
     body = [f"# Brand DNA — {title}", "", _PREAMBLE, "", REQUIRED_HEADING]
     body.extend(required_lines)

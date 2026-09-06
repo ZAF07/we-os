@@ -26,6 +26,8 @@ import re
 
 from pydantic import BaseModel, Field
 
+from marketing_os.markdown import parse_fields, render_field, walk_fields
+
 OBJECTIVE_LABEL = "Primary business objective"
 TIMEFRAME_LABEL = "Timeframe"
 BUDGET_LABEL = "Campaign budget"
@@ -37,7 +39,6 @@ OFFER_LABEL = "Offer / promotion"
 CONSTRAINTS_LABEL = "Campaign-specific constraints"
 
 _SEGMENT_FIELD = "Primary segment(s)"
-_FIELD_RE = re.compile(r"^\s*-\s*\*\*(.+?):\*\*\s*(.*)$")
 _TIMEFRAME_RE = re.compile(r"^\s*(\S+)\s*→\s*(\S+)\s*$")
 _BUDGET_RE = re.compile(r"^\s*([\d,.]+)\s+([A-Za-z]{3})\s*$")
 _SEGMENT_DETAIL_RE = re.compile(r"\s+[—–-]\s+")
@@ -188,16 +189,16 @@ def render_campaign_goal(goal: CampaignGoal) -> str:
         "",
         "## Required",
         "",
-        f"- **{OBJECTIVE_LABEL}:** {goal.objective}",
-        f"- **{TIMEFRAME_LABEL}:** {_format_timeframe(goal.timeframe)}",
-        f"- **{BUDGET_LABEL}:** {_format_budget(goal.budget)}",
-        f"- **{SEGMENT_LABEL}:** {goal.audience_segment}",
+        *render_field(OBJECTIVE_LABEL, goal.objective),
+        *render_field(TIMEFRAME_LABEL, _format_timeframe(goal.timeframe)),
+        *render_field(BUDGET_LABEL, _format_budget(goal.budget)),
+        *render_field(SEGMENT_LABEL, goal.audience_segment),
         "",
         "### Success metrics (define all three tiers)",
         "",
-        f"- **{BUSINESS_KPI_LABEL}:** {goal.kpis.business}",
-        f"- **{MARKETING_KPI_LABEL}:** {goal.kpis.marketing}",
-        f"- **{CREATIVE_KPI_LABEL}:** {goal.kpis.creative}",
+        *render_field(BUSINESS_KPI_LABEL, goal.kpis.business),
+        *render_field(MARKETING_KPI_LABEL, goal.kpis.marketing),
+        *render_field(CREATIVE_KPI_LABEL, goal.kpis.creative),
     ]
     optional = [
         (OFFER_LABEL, goal.offer),
@@ -206,32 +207,29 @@ def render_campaign_goal(goal: CampaignGoal) -> str:
     written = [(label, value) for label, value in optional if value.strip()]
     if written:
         lines.extend(["", "## Optional", ""])
-        lines.extend(f"- **{label}:** {value.strip()}" for label, value in written)
+        for label, value in written:
+            lines.extend(render_field(label, value))
     return "\n".join(lines).strip() + "\n"
 
 
-def parse_campaign_goal(markdown: str) -> CampaignGoal:
+def parse_campaign_goal(document: str) -> CampaignGoal:
     """Read a rendered ``goal.md`` back into its structured goal.
 
     The inverse of :func:`render_campaign_goal`, so the interface can show a
     campaign's goal fields without a second store holding them.
 
     Args:
-        markdown: The campaign-goal document text.
+        document: The campaign-goal document text.
 
     Returns:
         The structured goal; any field the document does not carry is empty.
     """
-    values: dict[str, str] = {}
-    for line in markdown.splitlines():
-        match = _FIELD_RE.match(line)
-        if match:
-            values[match.group(1).strip()] = match.group(2).strip()
+    values = parse_fields(document)
 
     title = next(
         (
             line.removeprefix("# Campaign Goal —").strip()
-            for line in markdown.splitlines()
+            for line in document.splitlines()
             if line.startswith("# Campaign Goal —")
         ),
         "",
@@ -323,23 +321,11 @@ def audience_segments(brand_dna: str) -> list[str]:
         The segment names, in the order the business listed them; empty when the
         DNA names none.
     """
-    collecting = False
-    names: list[str] = []
-    for line in brand_dna.splitlines():
-        match = _FIELD_RE.match(line)
-        if match:
-            collecting = match.group(1).strip() == _SEGMENT_FIELD
-            if collecting and match.group(2).strip():
-                names.append(match.group(2))
-            continue
-        if line.lstrip().startswith("#"):
-            collecting = False
-        elif collecting and line.strip():
-            names.append(line.strip())
-    return [
-        name
-        for name in (
-            _SEGMENT_DETAIL_RE.split(raw.strip().lstrip("-*").strip())[0].strip() for raw in names
-        )
-        if name
+    names = [
+        line
+        for label, value in walk_fields(brand_dna)
+        if label == _SEGMENT_FIELD
+        for line in value.splitlines()
+        if line.strip()
     ]
+    return [name for name in (_SEGMENT_DETAIL_RE.split(raw)[0].strip() for raw in names) if name]

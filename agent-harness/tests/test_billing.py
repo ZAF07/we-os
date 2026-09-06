@@ -22,8 +22,6 @@ from marketing_os.governance.pipeline import PIPELINE_BY_KEY
 from marketing_os.graph.state import CampaignState
 from marketing_os.schemas import Usage
 
-pytestmark = pytest.mark.asyncio
-
 STAGE = PIPELINE_BY_KEY["research"]
 MODEL = "counted-model"
 RATE = 0.001

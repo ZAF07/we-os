@@ -36,6 +36,7 @@ from conftest import (
     write_call,
 )
 from marketing_os.adapters.deliverables import InMemoryDeliverableStore
+from marketing_os.campaign.progress import campaign_progress
 from marketing_os.config import Settings
 from marketing_os.governance.staleness import stale_stages
 
@@ -337,29 +338,54 @@ def test_re_running_a_stale_stage_clears_its_flag_and_appends_a_version(
     assert [version["version"] for version in versions["versions"]] == [2, 1]
 
 
-def _campaign_status(client: TestClient) -> str:
-    """Return the campaign's reported lifecycle status.
+async def _campaign_status(repo: Path, *, waiting: str | None) -> str:
+    """Return the campaign's lifecycle status, asked of the domain directly.
+
+    Lifecycle derivation lives in :mod:`marketing_os.campaign.progress`, so this
+    calls it rather than driving a ``TestClient`` — the status is a fact about
+    the business's work, and asserting it should not need an HTTP round trip.
+
+    ``waiting`` is named by each caller rather than defaulted, because a
+    campaign holding at a gate is ``awaiting_approval`` before staleness is ever
+    consulted. A test about staleness that quietly stubbed a waiting stage would
+    pass whether or not staleness blocked anything.
 
     Args:
-        client: The entered test client.
+        repo: The hermetic repository root the deliverables were written under.
+        waiting: The stage a live run is holding at, or ``None`` when the run
+            has finished and nothing is waiting on a person.
 
     Returns:
-        The lifecycle status the stages endpoint reports.
+        The campaign's lifecycle status.
     """
-    return str(client.get(f"/campaigns/{SLUG}/stages").json()["status"])
+    from marketing_os.adapters.deliverables import FilesystemDeliverableStore
+
+    async def waiting_stage() -> str | None:
+        return waiting
+
+    progress = await campaign_progress(
+        FilesystemDeliverableStore(repo),
+        TENANT,
+        SLUG,
+        human_gate_stages=None,
+        awaiting_stage=waiting_stage,
+    )
+    return progress.status
 
 
-def test_a_campaign_reads_approved_once_every_stage_is_approved(client: TestClient) -> None:
+async def test_a_campaign_reads_approved_once_every_stage_is_approved(
+    client: TestClient, repo: Path
+) -> None:
     run_id = _run_to_creative_brief(client)
     client.post(f"/runs/{run_id}/approve", json={"stage_key": "creative-brief"})
     _wait_for_status(client, run_id, "awaiting_approval")
     client.post(f"/runs/{run_id}/approve", json={"stage_key": "asset-prompts"})
     _wait_for_status(client, run_id, "completed")
 
-    assert _campaign_status(client) == "approved"
+    assert await _campaign_status(repo, waiting=None) == "approved"
 
 
-def test_a_campaign_with_stale_work_is_not_approved(client: TestClient) -> None:
+async def test_a_campaign_with_stale_work_is_not_approved(client: TestClient, repo: Path) -> None:
     run_id = _run_to_creative_brief(client)
     client.post(f"/runs/{run_id}/approve", json={"stage_key": "creative-brief"})
     _wait_for_status(client, run_id, "awaiting_approval")
@@ -371,7 +397,9 @@ def test_a_campaign_with_stale_work_is_not_approved(client: TestClient) -> None:
     ).json()["run_id"]
     _wait_for_status(client, reopened, "awaiting_approval")
 
-    assert _campaign_status(client) != "approved"
+    assert await _campaign_status(repo, waiting=None) == "running", (
+        "stale work must un-approve the campaign on its own, with nothing waiting on a person"
+    )
 
 
 def test_reopening_a_stage_that_produced_nothing_is_refused(client: TestClient) -> None:

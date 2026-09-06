@@ -73,6 +73,12 @@ from marketing_os.campaign import (
     parse_campaign_goal,
     render_campaign_goal,
 )
+from marketing_os.campaign.progress import (
+    StageProgress,
+    campaign_progress,
+    produced_deliverables,
+    stale_keys,
+)
 from marketing_os.config import Settings, load_settings
 from marketing_os.entrypoints.env import load_env
 from marketing_os.errors import (
@@ -92,10 +98,7 @@ from marketing_os.governance import check_gate
 from marketing_os.governance.pipeline import (
     PIPELINE,
     PIPELINE_BY_KEY,
-    Stage,
-    apply_approval_policies,
 )
-from marketing_os.governance.staleness import stale_stages
 from marketing_os.graph.registry import RunRegistry, read_run_status, resolve_trace_path
 from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage
 from marketing_os.ports import (
@@ -115,7 +118,6 @@ from marketing_os.schemas import (
     BrandDnaRecord,
     CampaignResult,
     Consumption,
-    DeliverableVersion,
     DnaAnswer,
     DnaCompleteness,
     Questionnaire,
@@ -606,8 +608,6 @@ def usage(identity: Identity, slug: str | None = None) -> dict[str, object]:
 
 DNA_DOCUMENT = "dna.md"
 
-STALE = "stale"
-
 
 def read_brand_dna(tenant: str) -> tuple[Questionnaire, BrandDnaRecord]:
     """Return the published question set and one business's answers to it.
@@ -874,7 +874,11 @@ async def _campaign_payload(
 
 
 async def _stage_report(tenant: str, slug: str) -> tuple[list[dict[str, object]], str]:
-    """Report a campaign's stages and the lifecycle status derived from them.
+    """Report a campaign's stages and lifecycle status as the interface reads them.
+
+    Where the campaign has got to is derived in
+    :mod:`marketing_os.campaign.progress`; this only renders those values as the
+    contract's shapes.
 
     Args:
         tenant: The tenant that owns the campaign.
@@ -883,14 +887,14 @@ async def _stage_report(tenant: str, slug: str) -> tuple[list[dict[str, object]]
     Returns:
         The stages in pipeline order, and the campaign's lifecycle status.
     """
-    versions = get_deliverable_store()
-    configured = apply_approval_policies(PIPELINE, get_settings().human_gate_stages)
-    waiting = await _stage_awaiting_approval(tenant, slug)
-    stale = set(stale_stages(versions, tenant, slug))
-    latest = {stage.key: versions.latest(tenant, slug, stage.key) for stage in configured}
-    produced = {key for key, version in latest.items() if version is not None}
-    reported = [_report_stage(stage, latest[stage.key], waiting, stale) for stage in configured]
-    return reported, _campaign_status(produced, stale, waiting)
+    progress = await campaign_progress(
+        get_deliverable_store(),
+        tenant,
+        slug,
+        human_gate_stages=get_settings().human_gate_stages,
+        awaiting_stage=lambda: _stage_awaiting_approval(tenant, slug),
+    )
+    return [_render_stage(stage) for stage in progress.stages], progress.status
 
 
 @app.post("/campaigns", status_code=201)
@@ -1166,22 +1170,15 @@ def _deliverable_summaries(tenant: str, slug: str) -> list[dict[str, object]]:
         One entry per produced deliverable in pipeline order, each with its
         stage key, latest version, staleness, and when it was last written.
     """
-    versions = get_deliverable_store()
-    stale = set(stale_stages(versions, tenant, slug))
-    summaries: list[dict[str, object]] = []
-    for stage_key in versions.stages(tenant, slug):
-        latest = versions.latest(tenant, slug, stage_key)
-        if latest is None:
-            continue
-        summaries.append(
-            {
-                "stage_key": stage_key,
-                "latest_version": latest.version,
-                "stale": stage_key in stale,
-                "updated_at": latest.created_at,
-            }
-        )
-    return summaries
+    return [
+        {
+            "stage_key": produced.stage_key,
+            "latest_version": produced.latest.version,
+            "stale": produced.stale,
+            "updated_at": produced.latest.created_at,
+        }
+        for produced in produced_deliverables(get_deliverable_store(), tenant, slug)
+    ]
 
 
 @app.get("/campaigns/{slug}/deliverables/{name}")
@@ -1209,7 +1206,7 @@ def deliverable(slug: str, name: str, identity: Identity) -> dict[str, object]:
         "name": name,
         "path": document,
         "stage_key": stage_key,
-        "stale": stage_key in stale_stages(get_deliverable_store(), tenant, slug),
+        "stale": stage_key in stale_keys(get_deliverable_store(), tenant, slug),
         "content": store.read(tenant, document),
     }
 
@@ -1237,39 +1234,6 @@ async def stages(slug: str, identity: Identity) -> dict[str, object]:
     return {"slug": slug, "status": status, "stages": reported}
 
 
-def _campaign_status(produced: set[str], stale: set[str], waiting: str | None) -> str:
-    """Return the campaign's lifecycle status, a separate axis from stage progress.
-
-    Lifecycle answers "what is this campaign's situation?" while stage state
-    answers "how far has it got?" (ADR-0017), so a campaign waiting on a person
-    is ``awaiting_approval`` whichever stage it is holding at.
-
-    A campaign is only ``approved`` once every stage has produced a deliverable
-    **and none of them is stale**. That is the criterion that stops re-opening a
-    decision leaving the campaign looking signed off while creative underneath it
-    rests on strategy the owner has since replaced (ADR-0015).
-
-    Derived from the deliverables themselves rather than from the state strings
-    rendered for the interface, so the lifecycle cannot drift from the stages it
-    describes by way of a presentation change.
-
-    Args:
-        produced: The stages that have produced a deliverable.
-        stale: The stages resting on a decision that has since been re-opened.
-        waiting: The stage holding at an Approval Gate, if any.
-
-    Returns:
-        One of ``draft``, ``running``, ``awaiting_approval`` or ``approved``.
-    """
-    if waiting is not None:
-        return AWAITING_APPROVAL
-    if not produced:
-        return "draft"
-    if stale or len(produced) < len(PIPELINE):
-        return RUNNING
-    return "approved"
-
-
 async def _stage_awaiting_approval(tenant: str, slug: str) -> str | None:
     """Return the stage a campaign's live run is halted at, if one is.
 
@@ -1292,43 +1256,26 @@ async def _stage_awaiting_approval(tenant: str, slug: str) -> str | None:
     )
 
 
-def _report_stage(
-    stage: Stage, latest: DeliverableVersion | None, waiting: str | None, stale: set[str]
-) -> dict[str, object]:
-    """Describe one stage for the interface: its phase, its state, and its policy.
+def _render_stage(progress: StageProgress) -> dict[str, object]:
+    """Render one stage's progress as the contract's stage object.
 
     The phase is what the operator's stepper groups by, so the interface renders
     its designed steps without the engine adopting UI vocabulary (ADR-0017).
 
-    A stage holding at a gate reports ``awaiting_approval`` even when its
-    deliverable is stale: what the person must do next is decide on the draft in
-    front of them, and telling them the stage is stale instead would hide the
-    decision the run is actually blocked on.
-
     Args:
-        stage: The pipeline stage, carrying its configured approval policy.
-        latest: The newest version of its deliverable, if it has produced one.
-        waiting: The stage currently halted at an Approval Gate, if any.
-        stale: The stages resting on a decision that has since been re-opened.
+        progress: How far the stage has got.
 
     Returns:
-        The stage's key, phase, state, approval policy, and latest version.
+        The stage's key, phase, state, approval policy, latest version, and
+        whether it rests on a superseded decision.
     """
-    if stage.key == waiting:
-        state = AWAITING_APPROVAL
-    elif stage.key in stale:
-        state = STALE
-    elif latest is not None:
-        state = "completed"
-    else:
-        state = "pending"
     return {
-        "key": stage.key,
-        "phase": stage.phase,
-        "state": state,
-        "approval_policy": stage.approval_policy,
-        "latest_version": latest.version if latest else None,
-        "stale": stage.key in stale,
+        "key": progress.stage.key,
+        "phase": progress.stage.phase,
+        "state": progress.state,
+        "approval_policy": progress.stage.approval_policy,
+        "latest_version": progress.latest.version if progress.latest else None,
+        "stale": progress.stale,
     }
 
 

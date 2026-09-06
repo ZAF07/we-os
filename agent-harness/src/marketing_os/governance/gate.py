@@ -23,75 +23,45 @@ Fails by raising `GateError` with the exact offending fields.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from marketing_os.config import Settings
 from marketing_os.errors import GateError
+from marketing_os.markdown import is_placeholder, labels_under_heading, parse_fields
 from marketing_os.ports import DocumentStore
 from marketing_os.questionnaire import required_dna_fields
 from marketing_os.schemas import Questionnaire
 
-_FIELD_RE = re.compile(r"^\s*-\s*\*\*(.+?):\*\*\s*(.*)$")
-_PLACEHOLDER_RE = re.compile(r"^<[^>]*>$")
-
 
 def required_fields(template_path: Path) -> list[str]:
-    """Field labels under the template's `## Required` section."""
+    """Return the field labels under the template's ``## Required`` section.
+
+    Args:
+        template_path: The code-shipped template to read.
+
+    Returns:
+        The Required field labels in document order.
+
+    Raises:
+        GateError: If the template is not there to read.
+    """
     if not template_path.is_file():
         raise GateError(f"Template not found: {template_path}")
-    labels: list[str] = []
-    in_required = False
-    for line in template_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped.startswith("## Required"):
-            in_required = True
-            continue
-        if in_required and stripped.startswith("## ") and not stripped.startswith("## Required"):
-            break  # next H2 ends the Required block (H3 subsections stay inside)
-        if in_required:
-            m = _FIELD_RE.match(line)
-            if m:
-                labels.append(m.group(1).strip())
-    return labels
+    return labels_under_heading(template_path.read_text(encoding="utf-8"), "Required")
 
 
 def field_map(doc_text: str) -> dict[str, str]:
-    """Map every `- **Label:**` field to its value block.
+    """Map every labelled field in a document to its value.
 
-    A field's value is the text on the same line PLUS any following lines
-    (indented sub-bullets, numbered lists, continuation prose) up to the next
-    field line or markdown heading. This means a label whose value is written as
-    a multi-line list underneath it counts as filled, not empty.
+    Args:
+        doc_text: The document text to read.
+
+    Returns:
+        Each label mapped to its value; see :mod:`marketing_os.markdown` for the
+        multi-line and placeholder rules.
     """
-    out: dict[str, str] = {}
-    label: str | None = None
-    parts: list[str] = []
-
-    def flush() -> None:
-        if label is not None:
-            out[label] = "\n".join(parts).strip()
-
-    for line in doc_text.splitlines():
-        m = _FIELD_RE.match(line)
-        if m:
-            flush()
-            label = m.group(1).strip()
-            parts = [m.group(2)]
-        elif line.lstrip().startswith("#"):
-            flush()
-            label, parts = None, []
-        elif label is not None:
-            parts.append(line)
-    flush()
-    return out
-
-
-def _is_placeholder(value: str) -> bool:
-    v = value.strip()
-    # Empty, or a single unfilled angle-bracket placeholder like "<name>".
-    return v == "" or bool(_PLACEHOLDER_RE.match(v))
+    return parse_fields(doc_text)
 
 
 def validate_fields(labels: list[str], doc_text: str) -> list[str]:
@@ -113,7 +83,7 @@ def validate_fields(labels: list[str], doc_text: str) -> list[str]:
     for label in labels:
         if label not in values:
             issues.append(f"missing Required field: '{label}'")
-        elif _is_placeholder(values[label]):
+        elif is_placeholder(values[label]):
             issues.append(f"placeholder/empty Required field: '{label}'")
     return issues
 
