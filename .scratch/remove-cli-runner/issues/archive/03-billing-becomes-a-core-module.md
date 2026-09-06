@@ -69,7 +69,7 @@ fact that getting the order wrong is a silent overspend rather than a visible bu
 ## Completion
 
 - Completed: 2026-09-07
-- Commit: `<pending>`
+- Commit: `5d3aabf` — Postgres is the only backend, and billing is a core module
 
 `billing.py` at the top level, beside `ports.py` / `schemas.py`, owning
 `billed_call` plus the three helpers that moved with it (`usage_delta`,

@@ -110,7 +110,7 @@ the need for them where it touches.
 ## Completion
 
 - Completed: 2026-09-07
-- Commit: `<pending>`
+- Commit: `5d3aabf` — Postgres is the only backend, and billing is a core module
 
 Verified against a running stack, not just green tests: `make dev` brought the
 stack up healthy with the DSN now mandatory, and `make test-e2e` passed 43/43 —
