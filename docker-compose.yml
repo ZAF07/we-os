@@ -1,0 +1,153 @@
+# The local development stack: Postgres, the engine and the web app together.
+#
+# `make dev` starts everything and `http://localhost:3000` is the app. This is
+# the stack for *using* we-OS locally — signing up, filling in a Brand DNA and
+# running real campaigns.
+#
+# It is deliberately not the end-to-end test stack (`docker-compose.e2e.yml`),
+# which differs in the three ways that matter here:
+#
+#   - it runs the `scripted` provider, which fabricates deliverables instantly
+#     and for free, where this stack calls a real model;
+#   - it keeps Postgres in a tmpfs, where this stack keeps a named volume so
+#     the campaigns you create survive a restart;
+#   - it seeds and re-blanks two fixture tenants on every start, where this
+#     stack seeds nothing — you sign up through Clerk like any user.
+#
+# Both stacks can run at once: this one binds 3000/8001/5436, the test stack
+# 3100/8000.
+#
+# Credentials come from `.env` in this directory, which is gitignored — see
+# `.env.example` for what it must contain.
+name: we-os
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: marketing_os
+      POSTGRES_PASSWORD: marketing_os
+      POSTGRES_DB: marketing_os
+    volumes:
+      # Named, unlike the test stack's tmpfs: this is where your campaigns
+      # live. `make dev-down` keeps it; only `make dev-reset` destroys it.
+      - we-os-postgres:/var/lib/postgresql/data
+      - ./agent-harness/scripts/create-app-role.sql:/docker-entrypoint-initdb.d/10-create-app-role.sql:ro
+    ports:
+      # 5436: this machine already runs Postgres on 5432, and other projects'
+      # containers on 5431/5433/5434/5435. Exposed so you can inspect your own
+      # data with psql, which is worth having now that it persists.
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketing_os -d marketing_os"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  # Brings the schema up to date, then exits. Everything that needs a database
+  # waits for this rather than for Postgres alone, so nothing ever reads a
+  # half-built schema.
+  #
+  # It runs on every start, not just the first. The data directory is persistent
+  # here, so `docker-entrypoint-initdb.d` fires only once ever — and a schema
+  # that was current when the volume was created goes stale the moment you pull
+  # a change that adds a column. `init-db` is idempotent (CREATE TABLE IF NOT
+  # EXISTS, ADD COLUMN IF NOT EXISTS) and reports drift rather than silently
+  # succeeding on an out-of-date database, so re-running it is both safe and
+  # the thing that keeps a long-lived volume usable.
+  migrate:
+    build:
+      context: ./agent-harness
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMIN_DSN: postgresql://marketing_os:marketing_os@postgres:5432/marketing_os
+      MARKETING_OS_ROOT: /repo
+    volumes:
+      # `init-db` runs through the CLI, which resolves the repo root before it
+      # does anything — so it needs the same mount the engine has.
+      - ./:/repo:ro
+    command:
+      - sh
+      - -c
+      - marketing-os init-db --dsn "$$ADMIN_DSN" --app-role marketing_os_app
+
+  engine:
+    build:
+      context: ./agent-harness
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      MARKETING_OS_POSTGRES_DSN: postgresql://marketing_os_app:marketing_os_app@postgres:5432/marketing_os
+      MARKETING_OS_AUTH_ISSUER: ${MARKETING_OS_AUTH_ISSUER:?set MARKETING_OS_AUTH_ISSUER in .env}
+      MARKETING_OS_ROOT: /repo
+      # No MARKETING_OS_PROVIDER: the built-in default is deepseek (ADR-0004),
+      # which is what you want here. The test stack pins `scripted` instead.
+      #
+      # Unset is allowed: the stack starts and every screen works without a
+      # key, and only a run fails — so you can onboard before you have one.
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      MARKETING_OS_WEB: ${MARKETING_OS_WEB:-0}
+      MARKETING_OS_TAVILY_API_KEY: ${MARKETING_OS_TAVILY_API_KEY:-}
+      MARKETING_OS_LOG_LEVEL: ${MARKETING_OS_LOG_LEVEL:-INFO}
+    volumes:
+      # The engine reads code-shipped material — agent specs, guardrails,
+      # templates — from the repo root at runtime (ADR-0003). Read-only, so a
+      # run cannot edit the governance it is bound by.
+      - ./:/repo:ro
+      # Run traces, writable and landing in the working tree rather than in an
+      # anonymous volume: when a local run misbehaves, its trace is the thing
+      # you go and read.
+      - ./logs:/repo/logs
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  web:
+    build:
+      context: ./web
+    depends_on:
+      engine:
+        condition: service_healthy
+    volumes:
+      # The working tree, so the app you open is the code you have.
+      - ./web:/app
+      # Keep the container's own installed dependencies and build cache: the
+      # host's are built for a different platform.
+      - /app/node_modules
+      - /app/.next
+    environment:
+      # Overrides whatever web/.env.local says. That file points at
+      # 127.0.0.1:8000 for running `pnpm dev` natively, which inside this
+      # container would resolve to the web container itself.
+      ENGINE_BASE_URL: http://engine:8000
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:?set it in .env}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?set it in .env}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:3000/sign-in').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 45
+
+volumes:
+  we-os-postgres:
