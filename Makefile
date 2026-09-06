@@ -1,3 +1,32 @@
+# The local development stack — Postgres, the engine and the web app.
+#
+# One command to run we-OS locally and actually use it: real model provider,
+# persistent database, no fixture tenants. Open http://localhost:3000.
+#
+# Needs `.env` in this directory; see `.env.example`.
+DEV = docker compose -f docker-compose.yml
+
+dev:
+	$(DEV) up --build --wait
+	@echo ""
+	@echo "  we-OS is running -> http://localhost:3000"
+	@echo "  engine           -> http://localhost:8001/health"
+	@echo "  logs             -> make dev-logs"
+	@echo ""
+
+# Stops the stack and KEEPS your database. This is the everyday one.
+dev-down:
+	$(DEV) down
+
+dev-logs:
+	$(DEV) logs -f
+
+# Destroys the database along with the stack — every campaign, Brand DNA and
+# run you created locally. Separate from `dev-down` precisely so it cannot
+# happen by reflex.
+dev-reset:
+	$(DEV) down -v
+
 COMPOSE = docker compose --env-file web/.env.local -f docker-compose.e2e.yml
 
 # Bring up Postgres, the engine and the web app, seed the test tenant, and run
@@ -68,4 +97,4 @@ e2e-prune-cache:
 e2e-logs:
 	$(COMPOSE) logs -f
 
-.PHONY: test-e2e e2e-up e2e-down e2e-prune e2e-prune-cache e2e-logs
+.PHONY: dev dev-down dev-logs dev-reset test-e2e e2e-up e2e-down e2e-prune e2e-prune-cache e2e-logs

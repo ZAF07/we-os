@@ -4,3 +4,9 @@ test-results/
 web/test-results/
 web/playwright-report/
 web/.auth/
+# Environment files anywhere in the repo — real credentials.
+# `.env.example` templates are tracked deliberately.
+.env
+.env.*
+!.env.example
+!*.env.example
