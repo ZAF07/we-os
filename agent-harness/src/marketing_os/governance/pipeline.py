@@ -32,7 +32,7 @@ class Stage:
     """One mandatory pipeline stage.
 
     Attributes:
-        key: The short stage id used in the CLI and API.
+        key: The short stage id used in the API.
         agent: The specialist agent name, or ``DIRECTOR`` for the Director-owned stage.
         deliverable: The filename written under ``campaigns/<slug>/``.
         prerequisite: The deliverable filename required first, or ``None`` when the

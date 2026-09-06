@@ -44,8 +44,24 @@ from marketing_os.adapters.tools.websearch_playwright import (
 )
 from marketing_os.config import Settings, WebBackend
 from marketing_os.errors import ConfigError, ToolError
-from marketing_os.graph.graph import build_single_stage_graph
+from marketing_os.graph.graph import build_single_stage_graph as _build_single_stage_graph
 from marketing_os.graph.runner import _resolve_web_backend
+from marketing_os.questionnaire import SEED_QUESTIONNAIRE
+
+
+def build_single_stage_graph(settings: Settings, stage_key: str, **kwargs: Any) -> Any:
+    """Build a single-stage graph gated against the code-shipped seed question set.
+
+    Args:
+        settings: The harness settings.
+        stage_key: The key of the single stage to run.
+        **kwargs: The builder's remaining keyword arguments.
+
+    Returns:
+        The compiled single-stage graph.
+    """
+    kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
+    return _build_single_stage_graph(settings, stage_key, **kwargs)
 
 
 class _FakeElement:

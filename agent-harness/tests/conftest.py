@@ -576,10 +576,12 @@ def install_scripted_graph(
 ) -> None:
     """Patch the runner's graph builders to inject a scripted model and reviewer.
 
-    The CLI and API entrypoints build the graph internally through the runner, so
-    they never expose a model seam. This wraps :func:`build_campaign_graph` and
+    The API entrypoint builds the graph internally through the runner, so it
+    never exposes a model seam. This wraps :func:`build_campaign_graph` and
     :func:`build_single_stage_graph` as the runner imports them, defaulting the
-    ``model`` and ``reviewer`` arguments to hermetic fakes so no network is used.
+    ``model`` and ``reviewer`` arguments to hermetic fakes so no network is used,
+    and the ``questionnaire`` argument to the code-shipped seed set, which is what
+    an unconfigured deployment serves.
 
     Args:
         monkeypatch: The pytest monkeypatch fixture.
@@ -601,11 +603,13 @@ def install_scripted_graph(
     def campaign(settings: Settings, **kwargs: Any) -> Any:
         kwargs.setdefault("model", build_model())
         kwargs.setdefault("reviewer", FakeReviewer(list(script)))
+        kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
         return real_campaign(settings, **kwargs)
 
     def single(settings: Settings, stage_key: str, **kwargs: Any) -> Any:
         kwargs.setdefault("model", build_model())
         kwargs.setdefault("reviewer", FakeReviewer(list(script)))
+        kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
         return real_single(settings, stage_key, **kwargs)
 
     monkeypatch.setattr(runner_mod, "build_campaign_graph", campaign)

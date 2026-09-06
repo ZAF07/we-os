@@ -46,12 +46,11 @@ from marketing_os.adapters.deliverables import (
 from marketing_os.adapters.observability import get_logger
 from marketing_os.config import Settings
 from marketing_os.errors import QuotaExhaustedError
-from marketing_os.governance import load_governance
 from marketing_os.governance.gate import check_gate
 from marketing_os.governance.pipeline import HUMAN, Stage, prerequisite_met, stage_document
 from marketing_os.graph.state import CampaignState
 from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer, UsageLedger
-from marketing_os.schemas import ApprovalDecision, StageResult, Usage
+from marketing_os.schemas import ApprovalDecision, Questionnaire, StageResult, Usage
 
 _LOGGER = get_logger("marketing_os.graph")
 
@@ -189,7 +188,7 @@ def _charge(
     Args:
         ledger: The Usage Ledger to charge, or ``None`` when the deployment runs
             without one — a run then proceeds uncharged rather than failing,
-            which is what keeps the CLI and the graph tests usable.
+            which is what keeps the graph tests usable.
         state: The campaign state naming the tenant and campaign.
         stage: The stage the call was made on behalf of.
         callback: The usage-metadata callback the call ran under.
@@ -342,12 +341,17 @@ def _stage_seed_body(slug: str, stage: Stage, feedback: str | None, previous: st
     )
 
 
-def make_gate_node(settings: Settings, store: DocumentStore) -> CampaignNode:
+def make_gate_node(
+    settings: Settings, store: DocumentStore, questionnaire: Questionnaire
+) -> CampaignNode:
     """Build the Stage 0 gate node.
 
     Args:
         settings: The harness settings.
         store: The document store the DNA and goal resolve through.
+        questionnaire: The published question set whose Required questions the
+            gate enforces, so the graph gates on the same rule as the entrypoint
+            that launched it.
 
     Returns:
         A node that validates the DNA/goal gate and loads the DNA on success.
@@ -360,13 +364,13 @@ def make_gate_node(settings: Settings, store: DocumentStore) -> CampaignNode:
             state: The campaign state carrying ``tenant`` and ``slug``.
 
         Returns:
-            A state update: the loaded DNA and governance on success, or an error
-            and halt flag on failure.
+            A state update: the loaded DNA on success, or an error and halt flag
+            on failure.
         """
         tenant = state["tenant"]
         slug = state["slug"]
         _emit("gate.start", tenant=tenant, slug=slug)
-        report = check_gate(settings, tenant, slug, store=store)
+        report = check_gate(settings, tenant, slug, store=store, questionnaire=questionnaire)
         if not report.ok:
             _emit("gate.failed", tenant=tenant, slug=slug, issues=report.all_issues)
             return {
@@ -377,7 +381,6 @@ def make_gate_node(settings: Settings, store: DocumentStore) -> CampaignNode:
         _emit("gate.passed", tenant=tenant, slug=slug)
         return {
             "dna_text": dna_text,
-            "governance": load_governance(settings),
             "halt": False,
             "error": None,
             "usage": dict.fromkeys(_USAGE_KEYS, 0),

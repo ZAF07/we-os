@@ -24,6 +24,7 @@ from marketing_os.errors import GuardrailError
 from marketing_os.graph import nodes, runner
 from marketing_os.graph.graph import build_single_stage_graph
 from marketing_os.ports import Reviewer
+from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import Discrepancy, ReviewVerdict
 
 _FAIL = ReviewVerdict(
@@ -75,6 +76,7 @@ def _patch_graph(monkeypatch: pytest.MonkeyPatch, reviewer: Reviewer) -> None:
         document_store=None,
         deliverable_store=None,
         usage_ledger=None,
+        questionnaire=None,
     ):
         return build_single_stage_graph(
             settings,
@@ -84,6 +86,7 @@ def _patch_graph(monkeypatch: pytest.MonkeyPatch, reviewer: Reviewer) -> None:
             document_store=document_store,
             deliverable_store=deliverable_store,
             usage_ledger=usage_ledger,
+            questionnaire=questionnaire or SEED_QUESTIONNAIRE,
         )
 
     monkeypatch.setattr(runner, "_select_graph", fake_select)
@@ -96,7 +99,7 @@ def test_failed_run_writes_trace_and_structured_error(
     _patch_graph(monkeypatch, FakeReviewer([_FAIL]))
 
     with pytest.raises(GuardrailError) as excinfo:
-        runner.run_campaign(settings, TENANT, SLUG, stage="research")
+        asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
 
     exc = excinfo.value
     detail = exc.detail
@@ -122,7 +125,7 @@ def test_crashed_run_writes_terminal_error_event(
     _patch_graph(monkeypatch, _CrashingReviewer())
 
     with pytest.raises(RuntimeError, match="playwright navigation exploded"):
-        runner.run_campaign(settings, TENANT, SLUG, stage="research")
+        asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
 
     traces = list((settings.tenant_logs_dir(TENANT) / SLUG).glob("*.jsonl"))
     assert traces, "a run-log trace file should be written even on crash"
@@ -141,33 +144,16 @@ def test_crashed_run_logs_terminal_error_to_console(
         caplog.at_level(logging.INFO, logger="marketing_os.runner"),
         pytest.raises(RuntimeError, match="playwright navigation exploded"),
     ):
-        runner.run_campaign(settings, TENANT, SLUG, stage="research")
+        asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
 
     messages = [record.getMessage() for record in caplog.records]
     assert any("run.summary outcome=error" in message for message in messages)
 
 
-async def test_crashed_astream_writes_terminal_error_event(
-    settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _patch_graph(monkeypatch, _CrashingReviewer())
-
-    with pytest.raises(RuntimeError, match="playwright navigation exploded"):
-        async for _ in runner.astream_campaign(settings, TENANT, SLUG, stage="research"):
-            pass
-
-    traces = list((settings.tenant_logs_dir(TENANT) / SLUG).glob("*.jsonl"))
-    assert traces, "a run-log trace file should be written even on crash"
-    lines = [json.loads(line) for line in traces[0].read_text().splitlines() if line]
-    summary = next(line for line in lines if line["event"] == "run.summary")
-    assert summary["outcome"] == "error"
-    assert "playwright navigation exploded" in summary["error"]["message"]
-
-
 def test_run_logs_can_be_disabled(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
     settings.run_logs = False
     _patch_graph(monkeypatch, FakeReviewer([_PASS]))
-    result = runner.run_campaign(settings, TENANT, SLUG, stage="research")
+    result = asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
     assert result.run_log is None
     assert not (settings.tenant_logs_dir(TENANT) / SLUG).exists()
 
@@ -178,7 +164,7 @@ def test_stage_log_lines_carry_slug(
     _patch_graph(monkeypatch, FakeReviewer([_PASS]))
 
     with caplog.at_level(logging.INFO, logger="marketing_os.graph"):
-        runner.run_campaign(settings, TENANT, SLUG, stage="research")
+        asyncio.run(runner.arun_campaign(settings, TENANT, SLUG, stage="research"))
 
     stage_lines = [
         record.getMessage() for record in caplog.records if record.getMessage().startswith("stage.")

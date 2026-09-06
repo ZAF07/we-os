@@ -9,12 +9,14 @@ Postgres checkpointer is covered against a real database in ``test_postgres.py``
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from conftest import SLUG, TENANT, install_scripted_graph
 from marketing_os.config import Settings
-from marketing_os.graph.runner import run_campaign, thread_id
+from marketing_os.graph.runner import arun_campaign, thread_id
 
 
 def test_thread_id_scopes_threads_by_tenant_and_stage() -> None:
@@ -32,7 +34,9 @@ def test_run_persists_checkpoint_under_thread_id(
 ) -> None:
     install_scripted_graph(monkeypatch)
     saver = MemorySaver()
-    result = run_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver)
+    result = asyncio.run(
+        arun_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver)
+    )
     assert result.stages[0].stage == "research"
     config = {"configurable": {"thread_id": thread_id(TENANT, SLUG, "research")}}
     stored = saver.get_tuple(config)
@@ -45,11 +49,11 @@ def test_supplied_checkpointer_is_reused_across_runs(
 ) -> None:
     install_scripted_graph(monkeypatch)
     saver = MemorySaver()
-    run_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver)
+    asyncio.run(arun_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver))
     thread = {"configurable": {"thread_id": thread_id(TENANT, SLUG, "research")}}
     first = saver.get_tuple(thread)
 
-    run_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver)
+    asyncio.run(arun_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver))
     second = saver.get_tuple(thread)
 
     assert first is not None and second is not None

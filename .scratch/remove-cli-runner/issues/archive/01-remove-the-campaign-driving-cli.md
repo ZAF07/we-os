@@ -1,6 +1,6 @@
 # 01 — Remove the campaign-driving CLI and the runner paths that served it
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Parent
@@ -85,15 +85,15 @@ API. Fix it anyway: it reads as a safety net and is not one.
 
 ## Acceptance criteria
 
-- [ ] `marketing-os --help` lists exactly `init-db` and `publish-questionnaire`.
-- [ ] `run_campaign`, `astream_campaign`, `state.revisions` and `state.governance` are gone, and nothing imports them.
-- [ ] `check_gate` requires `questionnaire`; `graph/nodes.py:369` passes the published set.
-- [ ] No test asserts on a deleted surface; checkpoint and observability coverage is unchanged in what it asserts.
-- [ ] `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src`, `uv run pytest` all pass.
-- [ ] `make dev` brings the stack up and the schema is provisioned — the `migrate` service still runs `init-db`.
-- [ ] `make test-e2e` passes.
-- [ ] A campaign runs end to end through the UI at http://localhost:3000.
-- [ ] README carries no CLI campaign examples.
+- [x] `marketing-os --help` lists exactly `init-db` and `publish-questionnaire`.
+- [x] `run_campaign`, `astream_campaign`, `state.revisions` and `state.governance` are gone, and nothing imports them.
+- [x] `check_gate` requires `questionnaire`; `graph/nodes.py:369` passes the published set.
+- [x] No test asserts on a deleted surface; checkpoint and observability coverage is unchanged in what it asserts.
+- [x] `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src`, `uv run pytest` all pass.
+- [x] `make dev` brings the stack up and the schema is provisioned — the `migrate` service still runs `init-db`.
+- [x] `make test-e2e` passes.
+- [x] A campaign runs end to end through the UI at http://localhost:3000.
+- [x] README carries no CLI campaign examples.
 
 ## Verification
 
@@ -118,3 +118,30 @@ with the surface) and **09** (dead state fields and the duplicated stream path).
 Candidates **01, 02, 03, 04, 10** are untouched and still open; **02** (one
 composition root) gets smaller once there is one entrypoint left to build
 dependencies for.
+
+## Completion
+
+- Completed: 2026-09-06
+- Commits:
+  - `d6f90aa` — Remove the campaign-driving CLI and the runner paths that served it
+  - `8a34ad0` — Require the question set at the graph builders, not just the gate
+
+Verified against a running stack, not just green tests: `make dev` brought the
+stack up and the compose `migrate` service provisioned all 11 tables through
+`init-db`; `make test-e2e` passed 43/43, including the two Workspace specs that
+drive a campaign run through the UI on both the launch and the
+`Command(resume=...)` approval path.
+
+Code review (`/code-review`, both axes) independently found the same gap: the
+`questionnaire` parameter was made required on `check_gate` but re-defaulted to
+the seed set one layer up, on the graph builders — trading a silent template
+fallback for a silent seed fallback at the same seam. Fixed in `8a34ad0`: the
+builders now require it, which forced 27 test call sites to name the question
+set they gate against. `arun_campaign` keeps an explicit optional, since it is
+the entrypoint boundary rather than the seam where the gate node is constructed.
+
+One e2e flake seen once and not reproduced: `onboarding.spec.ts` "completing the
+questionnaire lands on the Brand screen with the answers". Its own comment
+documents cross-spec dependence on shared tenant state, and it sits on the
+onboarding-render path, not gating or run execution. Pre-existing, worth filing
+separately.

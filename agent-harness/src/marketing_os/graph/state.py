@@ -5,11 +5,10 @@ DNA, accumulated results, usage) and the per-stage working set for the QA loop
 (the specialist conversation, the current verdict, and the retry counters). The
 per-stage working keys are reset at each stage's entry node.
 
-``revisions`` is the exception to that reset: it counts human revision rounds
-per stage for the lifetime of the run, so an Approval Gate can tell the person how
-many of their revisions they have spent. Which stage is currently waiting is
-deliberately **not** kept here — it is read from the checkpoint's pending
-interrupt, which is the one place that stays true across a restart.
+Which stage is currently waiting on a person is deliberately **not** kept here —
+it is read from the checkpoint's pending interrupt, which is the one place that
+stays true across a restart. Human revision counts are likewise read from the
+deliverable store rather than carried in state.
 """
 
 from __future__ import annotations
@@ -44,7 +43,6 @@ class CampaignState(TypedDict, total=False):
         tenant: The tenant name the campaign runs for.
         slug: The campaign slug and checkpoint thread key.
         dna_text: The loaded Brand DNA, populated by the gate node.
-        governance: The assembled governance preamble, populated by the gate node.
         error: A structured error describing why the run halted, if it did.
         halt: Whether the run should short-circuit to the end.
         results: The accumulated per-stage result dicts in pipeline order.
@@ -57,14 +55,11 @@ class CampaignState(TypedDict, total=False):
         route: The routing decision the review node produced for the router.
         human_feedback: The written feedback a person sent the current stage back
             with, applied on the next specialist attempt.
-        revisions: Completed human revision rounds, per stage key, which is what
-            the per-deliverable revision cap counts.
     """
 
     tenant: str
     slug: str
     dna_text: str
-    governance: str
     error: dict[str, Any] | None
     halt: bool
     results: Annotated[list[dict[str, Any]], operator.add]
@@ -76,4 +71,3 @@ class CampaignState(TypedDict, total=False):
     save_retries: int
     route: str
     human_feedback: str | None
-    revisions: dict[str, int]

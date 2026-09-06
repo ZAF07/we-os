@@ -3,8 +3,8 @@
 **What** this is: an HTTP + library interface to the Marketing OS agent pipeline.
 **Why** use it as an API: so your SaaS frontend (or another service) can start
 campaigns, watch progress, and fetch deliverables without embedding the engine.
-**How** it works: every request runs the same governance the CLI does — Stage 0
-gate → mandatory pipeline → specialist agent + QA self-critique per stage.
+**How** it works: every request runs the full governance — Stage 0 gate →
+mandatory pipeline → specialist agent + QA self-critique per stage.
 
 ---
 
@@ -121,11 +121,13 @@ Fetch file contents with your own static file serving (writes land under
 
 **Why**: for tests, batch jobs, or wrapping in a different transport.
 ```python
+import asyncio
+
 from marketing_os import load_settings
-from marketing_os.graph.runner import run_campaign
+from marketing_os.graph.runner import arun_campaign
 
 settings = load_settings()                                  # provider from env
-result = run_campaign(settings, "coast-coffee", "coast-spring")  # or stage="research"
+result = asyncio.run(arun_campaign(settings, "coast-coffee", "coast-spring"))
 for s in result.stages:
     print(s.stage, s.deliverable_path, "QA:", s.qa_iterations, "ok:", s.approved)
 ```
