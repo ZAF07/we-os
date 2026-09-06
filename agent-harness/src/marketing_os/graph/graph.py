@@ -43,7 +43,6 @@ from marketing_os.graph.nodes import (
 )
 from marketing_os.graph.state import CampaignState
 from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer, UsageLedger
-from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import Questionnaire
 
 
@@ -183,7 +182,7 @@ def build_campaign_graph(
     document_store: DocumentStore | None = None,
     deliverable_store: DeliverableStore | None = None,
     usage_ledger: UsageLedger | None = None,
-    questionnaire: Questionnaire = SEED_QUESTIONNAIRE,
+    questionnaire: Questionnaire,
 ) -> CompiledStateGraph:
     """Build and compile the full campaign graph from the mandatory pipeline.
 
@@ -202,11 +201,11 @@ def build_campaign_graph(
         deliverable_store: The store deliverable versions are appended to;
             defaults to the filesystem adapter rooted at the repo root.
         usage_ledger: The Usage Ledger every model call is checked against and
-            charged to, or ``None`` to run uncharged — which is what the CLI and
-            the graph tests do (ADR-0020).
-        questionnaire: The published question set the Stage 0 gate enforces;
-            defaults to the code-shipped seed set, which is what an unconfigured
-            deployment serves.
+            charged to, or ``None`` to run uncharged — which is what the graph
+            tests do (ADR-0020).
+        questionnaire: The published question set the Stage 0 gate enforces.
+            Required rather than defaulted: an omitted question set is how one
+            entrypoint came to enforce a weaker rule than another (ADR-0026).
 
     Returns:
         The compiled campaign graph, keyed at runtime by ``thread_id``.
@@ -259,7 +258,7 @@ def build_single_stage_graph(
     document_store: DocumentStore | None = None,
     deliverable_store: DeliverableStore | None = None,
     usage_ledger: UsageLedger | None = None,
-    questionnaire: Questionnaire = SEED_QUESTIONNAIRE,
+    questionnaire: Questionnaire,
 ) -> CompiledStateGraph:
     """Build and compile a gate-then-one-stage graph for a single-stage run.
 
@@ -276,8 +275,9 @@ def build_single_stage_graph(
             defaults to the filesystem adapter rooted at the repo root.
         usage_ledger: The Usage Ledger every model call is checked against and
             charged to, or ``None`` to run uncharged.
-        questionnaire: The published question set the Stage 0 gate enforces;
-            defaults to the code-shipped seed set.
+        questionnaire: The published question set the Stage 0 gate enforces.
+            Required rather than defaulted, for the reason given on
+            :func:`build_campaign_graph`.
 
     Returns:
         The compiled single-stage graph.

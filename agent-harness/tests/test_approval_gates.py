@@ -17,6 +17,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -38,8 +39,23 @@ from conftest import (
 )
 from marketing_os.adapters.deliverables import InMemoryDeliverableStore
 from marketing_os.config import Settings
-from marketing_os.graph.graph import build_campaign_graph
+from marketing_os.graph.graph import build_campaign_graph as _build_campaign_graph
 from marketing_os.graph.runner import awaiting_approval_stage
+from marketing_os.questionnaire import SEED_QUESTIONNAIRE
+
+
+def build_campaign_graph(settings: Settings, **kwargs: Any) -> Any:
+    """Build the full campaign graph gated against the code-shipped seed question set.
+
+    Args:
+        settings: The harness settings.
+        **kwargs: The builder's remaining keyword arguments.
+
+    Returns:
+        The compiled campaign graph.
+    """
+    kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
+    return _build_campaign_graph(settings, **kwargs)
 
 
 def _config(thread: str) -> dict:

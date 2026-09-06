@@ -24,6 +24,7 @@ from marketing_os.errors import GuardrailError
 from marketing_os.graph import nodes, runner
 from marketing_os.graph.graph import build_single_stage_graph
 from marketing_os.ports import Reviewer
+from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import Discrepancy, ReviewVerdict
 
 _FAIL = ReviewVerdict(
@@ -85,6 +86,7 @@ def _patch_graph(monkeypatch: pytest.MonkeyPatch, reviewer: Reviewer) -> None:
             document_store=document_store,
             deliverable_store=deliverable_store,
             usage_ledger=usage_ledger,
+            questionnaire=questionnaire or SEED_QUESTIONNAIRE,
         )
 
     monkeypatch.setattr(runner, "_select_graph", fake_select)

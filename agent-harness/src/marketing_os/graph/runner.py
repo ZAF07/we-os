@@ -54,7 +54,7 @@ def _select_graph(
     document_store: DocumentStore | None,
     deliverable_store: DeliverableStore | None = None,
     usage_ledger: UsageLedger | None = None,
-    questionnaire: Questionnaire | None = None,
+    questionnaire: Questionnaire,
 ) -> Any:
     """Build the campaign or single-stage graph for a run.
 
@@ -69,13 +69,11 @@ def _select_graph(
             ``None`` for the filesystem default.
         usage_ledger: The Usage Ledger every model call is checked against and
             charged to, or ``None`` to run uncharged.
-        questionnaire: The published question set the Stage 0 gate enforces, or
-            ``None`` for the code-shipped seed set.
+        questionnaire: The published question set the Stage 0 gate enforces.
 
     Returns:
         The compiled graph to run.
     """
-    gate_questionnaire = questionnaire or SEED_QUESTIONNAIRE
     if stage:
         return build_single_stage_graph(
             settings,
@@ -85,7 +83,7 @@ def _select_graph(
             document_store=document_store,
             deliverable_store=deliverable_store,
             usage_ledger=usage_ledger,
-            questionnaire=gate_questionnaire,
+            questionnaire=questionnaire,
         )
     return build_campaign_graph(
         settings,
@@ -94,7 +92,7 @@ def _select_graph(
         document_store=document_store,
         deliverable_store=deliverable_store,
         usage_ledger=usage_ledger,
-        questionnaire=gate_questionnaire,
+        questionnaire=questionnaire,
     )
 
 
@@ -548,10 +546,10 @@ async def arun_campaign(
             charged to, or ``None`` to run uncharged. Checking inside the graph
             is what stops a run already in flight from spending past an
             allowance it was within when it started (ADR-0020).
-        questionnaire: The published question set the Stage 0 gate enforces, or
-            ``None`` for the code-shipped seed set. Passing the set the
-            entrypoint gated against is what keeps the graph's own gate from
-            enforcing a different rule (ADR-0026).
+        questionnaire: The published question set the Stage 0 gate enforces, so
+            the graph gates on the same rule as the entrypoint that launched it
+            (ADR-0026). ``None`` falls back to the code-shipped seed set, which
+            is what a deployment with no database published serves.
         resume: A :class:`~langgraph.types.Command` carrying a person's decision
             at an Approval Gate, which continues the checkpointed run from where
             it halted instead of starting a fresh one.
@@ -586,7 +584,7 @@ async def arun_campaign(
             document_store=document_store,
             deliverable_store=deliverable_store,
             usage_ledger=usage_ledger,
-            questionnaire=questionnaire,
+            questionnaire=questionnaire or SEED_QUESTIONNAIRE,
         )
         config = _config(tenant, slug, stage)
         inbound: Any = resume if resume is not None else _initial_state(tenant, slug, feedback)

@@ -7,6 +7,7 @@ no network is used. The model writes whichever deliverable the seeded task names
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
@@ -22,7 +23,9 @@ from marketing_os.adapters.deliverables import InMemoryDeliverableStore
 from marketing_os.adapters.documents import InMemoryDocumentStore
 from marketing_os.config import Settings
 from marketing_os.governance.pipeline import PIPELINE
-from marketing_os.graph.graph import build_campaign_graph, build_single_stage_graph
+from marketing_os.graph.graph import build_campaign_graph as _build_campaign_graph
+from marketing_os.graph.graph import build_single_stage_graph as _build_single_stage_graph
+from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import Discrepancy, ReviewVerdict
 
 _PASS = ReviewVerdict(passed=True, summary="ok")
@@ -31,6 +34,35 @@ _FAIL = ReviewVerdict(
     summary="needs work",
     discrepancies=[Discrepancy(rubric_point="x", problem="p", fix="f")],
 )
+
+
+def build_single_stage_graph(settings: Settings, stage_key: str, **kwargs: Any) -> Any:
+    """Build a single-stage graph gated against the code-shipped seed question set.
+
+    Args:
+        settings: The harness settings.
+        stage_key: The key of the single stage to run.
+        **kwargs: The builder's remaining keyword arguments.
+
+    Returns:
+        The compiled single-stage graph.
+    """
+    kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
+    return _build_single_stage_graph(settings, stage_key, **kwargs)
+
+
+def build_campaign_graph(settings: Settings, **kwargs: Any) -> Any:
+    """Build the full campaign graph gated against the code-shipped seed question set.
+
+    Args:
+        settings: The harness settings.
+        **kwargs: The builder's remaining keyword arguments.
+
+    Returns:
+        The compiled campaign graph.
+    """
+    kwargs.setdefault("questionnaire", SEED_QUESTIONNAIRE)
+    return _build_campaign_graph(settings, **kwargs)
 
 
 def _deliverable_from(messages: list[BaseMessage]) -> str:
@@ -397,7 +429,6 @@ async def test_full_pipeline_on_in_memory_store_writes_nothing_to_disk(
 async def test_gate_node_enforces_the_question_set_it_is_given(settings: Settings) -> None:
     # The graph's own gate enforces the same Required fields as the entrypoint
     # that launched it, rather than falling back to the hand-authoring template.
-    from marketing_os.questionnaire import SEED_QUESTIONNAIRE
     from marketing_os.schemas import Question, Questionnaire
 
     tightened = Questionnaire(

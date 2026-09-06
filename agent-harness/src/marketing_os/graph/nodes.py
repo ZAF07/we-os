@@ -188,7 +188,7 @@ def _charge(
     Args:
         ledger: The Usage Ledger to charge, or ``None`` when the deployment runs
             without one — a run then proceeds uncharged rather than failing,
-            which is what keeps the CLI and the graph tests usable.
+            which is what keeps the graph tests usable.
         state: The campaign state naming the tenant and campaign.
         stage: The stage the call was made on behalf of.
         callback: The usage-metadata callback the call ran under.
