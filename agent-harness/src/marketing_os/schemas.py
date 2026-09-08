@@ -458,6 +458,11 @@ class Questionnaire(BaseModel):
 class DnaAnswer(BaseModel):
     """One business owner's answer to one questionnaire question.
 
+    Also the shape a stored answer is read back as, which is why the "an answer
+    is never blank" rule lives on the way in (:class:`DnaAnswersUpsert`) rather
+    than here: blank rows written before that rule exist, and a business's whole
+    Brand DNA — and the gate with it — must not become unreadable because of one.
+
     Attributes:
         question_id: The question this answers.
         answer: The answer text, exactly as the owner wrote it.

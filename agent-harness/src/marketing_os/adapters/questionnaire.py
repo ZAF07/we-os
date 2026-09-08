@@ -155,3 +155,26 @@ class InMemoryAnswerStore:
         )
         self._records[tenant] = record
         return record.model_copy(deep=True)
+
+    def remove(self, tenant: str, *, question_id: str) -> BrandDnaRecord:
+        """Withdraw a business's answer to one question.
+
+        Args:
+            tenant: The tenant whose answer is withdrawn.
+            question_id: The question to leave unanswered.
+
+        Returns:
+            The business's full record after the removal, unchanged when the
+            question was never answered.
+        """
+        existing = self.read(tenant)
+        kept = [answer for answer in existing.answers if answer.question_id != question_id]
+        if len(kept) == len(existing.answers):
+            return existing
+        record = BrandDnaRecord(
+            questionnaire_version=existing.questionnaire_version,
+            updated_at=existing.updated_at,
+            answers=kept,
+        )
+        self._records[tenant] = record
+        return record.model_copy(deep=True)

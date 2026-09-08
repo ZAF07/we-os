@@ -1,6 +1,6 @@
 # 01 — A business cannot remove a Brand DNA answer, and a blank Save stores an empty one
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Context
@@ -89,14 +89,51 @@ no ADR is contradicted and none is needed.
 
 ## Acceptance criteria
 
-- [ ] Save with an empty draft sends **no** request and tells the business to use
+- [x] Save with an empty draft sends **no** request and tells the business to use
       Delete instead.
-- [ ] A Delete button on each answered question removes that answer.
-- [ ] `DELETE /brand-dna/answers/{question_id}` removes the answer, re-projects
+- [x] A Delete button on each answered question removes that answer.
+- [x] `DELETE /brand-dna/answers/{question_id}` removes the answer, re-projects
       the Brand DNA markdown, and returns the updated completeness report.
-- [ ] `remove` is on the answer store port and implemented by both the in-memory
+- [x] `remove` is on the answer store port and implemented by both the in-memory
       and Postgres adapters, with tests against both.
-- [ ] Deleting a Required answer flips the completeness banner to name it, and
+- [x] Deleting a Required answer flips the completeness banner to name it, and
       the DNA Gate blocks a run until it is answered again.
-- [ ] Deleting an unknown question id answers 404.
-- [ ] No empty-string answer can be stored through any path.
+- [x] Deleting an unknown question id answers 404.
+- [x] No empty-string answer can be stored through any path.
+
+## Completion
+
+- Completed: 2026-09-08
+- Commits:
+  - `bf1c178` — the delete operation, the blank refusal, and the Brand screen affordances.
+  - `0ad624f` — code-review fixes: the blank rule moved off the read model, the
+    `updated_at` contract aligned across both adapters, Delete moved onto the
+    collapsed card, and the banner fed from the write's own report.
+
+### Verification
+
+- `uv run ruff check .` — all checks passed.
+- `uv run mypy src` — no issues in 68 source files.
+- `uv run pytest` — 576 passed, 86 skipped.
+- `MARKETING_OS_TEST_POSTGRES=1 uv run pytest tests/test_postgres.py` — the five
+  Brand DNA answer-store tests pass against a real database.
+- `web`: typecheck, lint, prettier and 43 unit tests clean.
+- Verified in the running app on the e2e compose stack: 46 browser tests passed,
+  including the two new Brand specs and the Required-banner spec.
+
+### Notes for whoever reads this next
+
+- The blank rule lives on `DnaAnswersUpsert` (the request body), **not** on
+  `DnaAnswer`. That is deliberate: `DnaAnswer` is also the shape a stored answer
+  is read back as, so validating it there made any pre-existing blank row
+  unreadable and took `GET /brand-dna`, completeness and the gate down with it.
+  A Postgres test writes such a row directly and reads it back, to keep that
+  from regressing.
+- Blank rows written by the shipped code may still exist in production data.
+  Nothing breaks on them and completeness already counts them as unanswered, so
+  they surface as a missing Required field rather than silently passing the
+  gate. No cleanup migration was written.
+- `MARKETING_OS_TEST_POSTGRES=1` also surfaces three **pre-existing** failures in
+  `test_postgres.py` from `arun_campaign` signature drift. Confirmed on `main`
+  at 33c1527, unrelated to this work, filed as
+  [postgres-checkpoint-tests/01](../../../postgres-checkpoint-tests/issues/01-postgres-checkpoint-tests-call-a-stale-arun-campaign.md).

@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  deleteBrandDnaAnswer,
   getBrandDna,
   getBrandDnaCompleteness,
   getQuestionnaire,
@@ -49,4 +50,19 @@ export async function saveAnswers(
   answers: DnaAnswer[],
 ): Promise<DnaCompleteness> {
   return saveBrandDnaAnswers(answers);
+}
+
+/**
+ * Withdraws one answer, leaving that question unanswered.
+ *
+ * Args:
+ *   questionId: The question to leave unanswered.
+ *
+ * Returns:
+ *   The updated completeness report.
+ */
+export async function deleteAnswer(
+  questionId: string,
+): Promise<DnaCompleteness> {
+  return deleteBrandDnaAnswer(questionId);
 }

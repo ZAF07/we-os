@@ -199,3 +199,21 @@ class PostgresAnswerStore:
                     (scoped, answer.question_id, answer.answer, version),
                 )
         return self.read(tenant)
+
+    def remove(self, tenant: str, *, question_id: str) -> BrandDnaRecord:
+        """Withdraw a business's answer to one question.
+
+        Args:
+            tenant: The tenant whose answer is withdrawn.
+            question_id: The question to leave unanswered.
+
+        Returns:
+            The business's full record after the removal, unchanged when the
+            question was never answered.
+        """
+        with self._scoped_to(tenant) as (connection, scoped):
+            connection.execute(
+                "DELETE FROM dna_answers WHERE tenant_id = %s AND question_id = %s",
+                (scoped, question_id),
+            )
+        return self.read(tenant)

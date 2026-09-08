@@ -161,6 +161,81 @@ def test_an_answer_to_an_unknown_question_is_refused(client):
     assert "q_not_a_question" in response.text
 
 
+def test_a_blank_answer_is_refused(client):
+    name = next(q for q in SEED_QUESTIONNAIRE.questions if q.field == "Business name")
+    response = client.post(
+        "/brand-dna/answers",
+        json={"answers": [{"question_id": name.id, "answer": "   "}]},
+    )
+    assert response.status_code == 422
+    assert client.get("/brand-dna").json()["answers"] == []
+
+
+def test_an_answer_can_be_deleted_and_the_projection_follows(client):
+    price = next(q for q in SEED_QUESTIONNAIRE.questions if q.field == "Price point")
+    answer_everything(client)
+    assert "**Price point:**" in client.get("/brand-dna").json()["markdown"]
+
+    response = client.delete(f"/brand-dna/answers/{price.id}")
+
+    assert response.status_code == 200, response.text
+    body = client.get("/brand-dna").json()
+    assert all(answer["question_id"] != price.id for answer in body["answers"])
+    assert "**Price point:**" not in body["markdown"]
+
+
+def test_deleting_a_required_answer_reports_it_as_missing(client):
+    price = next(q for q in SEED_QUESTIONNAIRE.questions if q.field == "Price point")
+    answer_everything(client)
+
+    report = client.delete(f"/brand-dna/answers/{price.id}").json()
+
+    assert report["complete"] is False
+    assert [missing["field"] for missing in report["missing"]] == ["Price point"]
+    assert client.get("/brand-dna/completeness").json()["complete"] is False
+
+
+def test_deleting_a_required_answer_re_blocks_the_gate(client):
+    client.post("/campaigns", json={"slug": SLUG})
+    price = next(q for q in SEED_QUESTIONNAIRE.questions if q.field == "Price point")
+    answer_everything(client)
+    assert client.get(f"/campaigns/{SLUG}/gate").json()["ok"] is True
+
+    client.delete(f"/brand-dna/answers/{price.id}")
+
+    blocked = client.get(f"/campaigns/{SLUG}/gate").json()
+    assert blocked["ok"] is False
+    assert any("Price point" in issue for issue in blocked["issues"])
+
+
+def test_deleting_an_unanswered_question_leaves_the_rest_alone(client):
+    price = next(q for q in SEED_QUESTIONNAIRE.questions if q.field == "Price point")
+    answer_everything(client, skip={price.id})
+
+    report = client.delete(f"/brand-dna/answers/{price.id}").json()
+
+    assert report["required_answered"] == report["required_total"] - 1
+
+
+def test_deleting_an_unknown_question_is_not_found(client):
+    response = client.delete("/brand-dna/answers/q_not_a_question")
+    assert response.status_code == 404
+    assert "q_not_a_question" in response.text
+
+
+def test_one_business_cannot_delete_anothers_answer(client):
+    from marketing_os.entrypoints.api.app import app, get_identity
+
+    price = next(q for q in SEED_QUESTIONNAIRE.questions if q.field == "Price point")
+    answer_everything(client)
+
+    app.dependency_overrides[get_identity] = lambda: identity_for(OTHER_TENANT)
+    client.delete(f"/brand-dna/answers/{price.id}")
+
+    app.dependency_overrides[get_identity] = lambda: identity_for(TENANT)
+    assert client.get("/brand-dna/completeness").json()["complete"] is True
+
+
 def test_completed_answers_render_the_brand_dna_the_gate_reads(client):
     assert answer_everything(client)["complete"] is True
     markdown = client.get("/brand-dna").json()["markdown"]

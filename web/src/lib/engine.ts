@@ -265,6 +265,27 @@ export function saveBrandDnaAnswers(
   });
 }
 
+/**
+ * Withdraws one questionnaire answer, leaving the question unanswered.
+ *
+ * Its own call rather than saving a blank: a save merges over what is stored,
+ * so absence means "leave it alone" and cannot express a removal.
+ *
+ * Args:
+ *   questionId: The question to leave unanswered.
+ *
+ * Returns:
+ *   The updated completeness report.
+ */
+export function deleteBrandDnaAnswer(
+  questionId: string,
+): Promise<DnaCompleteness> {
+  return engineFetch<DnaCompleteness>(
+    `/brand-dna/answers/${encodeURIComponent(questionId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export interface Timeframe {
   start_date: string;
   end_date: string;
