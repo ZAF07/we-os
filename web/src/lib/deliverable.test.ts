@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  headingNamesPart,
   isBullet,
   kpiTier,
   planPart,
@@ -138,6 +139,22 @@ describe("kpiTier", () => {
 
   it("has no tier for a line that names none", () => {
     expect(kpiTier("Measured weekly.")).toBeNull();
+  });
+});
+
+describe("headingNamesPart", () => {
+  it("is true when the heading already carries the part's own words", () => {
+    expect(headingNamesPart("Channel mix", "channels")).toBe(true);
+    expect(headingNamesPart("Placements and format specs", "placements")).toBe(
+      true,
+    );
+    expect(headingNamesPart("KPI targets", "kpis")).toBe(true);
+  });
+
+  it("is false when the heading matched on a different word", () => {
+    expect(headingNamesPart("Budget allocation", "spend")).toBe(false);
+    expect(headingNamesPart("Media split", "channels")).toBe(false);
+    expect(headingNamesPart("Success metrics", "kpis")).toBe(false);
   });
 });
 

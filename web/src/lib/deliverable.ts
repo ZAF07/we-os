@@ -19,8 +19,8 @@ export interface DeliverableSection {
  * heading unusually costs a section its special treatment and nothing more — it
  * renders plainly, and no governance failure passes unnoticed. Structured output
  * from the engine would remove even that cosmetic risk; it is deferred until
- * Performance is a priority. See
- * `.scratch/saas-foundation/issues/archive/16-*.md` for the reasoning.
+ * Performance is a priority. Issue 16 under `.scratch/saas-foundation/` carries
+ * the reasoning.
  *
  * Deliberately shallow otherwise: it finds headings and the lines beneath them,
  * and does not try to be a markdown renderer.
@@ -105,6 +105,20 @@ export type PlanPart = "channels" | "spend" | "placements" | "kpis";
 /** One of the three KPI tiers every campaign is required to define. */
 export type KpiTierName = "Business" | "Marketing" | "Creative";
 
+/**
+ * What each part is called when the screen has to name it.
+ *
+ * Separate from the chip copy a screen renders: these are the words that decide
+ * whether a heading already tells the reader which part it is, and deriving
+ * them from display text would let a wording change alter the logic.
+ */
+const PART_NAMES: Record<PlanPart, readonly string[]> = {
+  channels: ["channel"],
+  spend: ["spend"],
+  placements: ["placement"],
+  kpis: ["kpi"],
+};
+
 const PART_PATTERNS: ReadonlyArray<[PlanPart, RegExp]> = [
   ["spend", /\b(spend|budget|allocation|investment)\b/i],
   ["kpis", /\b(kpi|kpis|success metric|success metrics|target|targets)\b/i],
@@ -185,4 +199,24 @@ export function kpiTier(line: string): KpiTierName | null {
 export function withoutTierLabel(line: string, tier: KpiTierName): string {
   const label = new RegExp(`^${tier}(\\s+KPIs?)?\\s*[:\\-–—]\\s*`, "i");
   return plainText(line).replace(label, "").trim();
+}
+
+/**
+ * Reports whether a heading already tells the reader which part it introduces.
+ *
+ * A heading reading "Channel mix" is the channel mix in the specialist's own
+ * words, so labelling it again adds a chip and no information. The label earns
+ * its place on the heading that matched on some other word — "Budget
+ * allocation", say — where naming the part is the point of identifying it.
+ *
+ * Args:
+ *   heading: The heading as the specialist wrote it.
+ *   part: The plan part it was identified as.
+ *
+ * Returns:
+ *   Whether the heading carries the part's own name.
+ */
+export function headingNamesPart(heading: string, part: PlanPart): boolean {
+  const written = heading.toLowerCase();
+  return PART_NAMES[part].every((name) => written.includes(name));
 }

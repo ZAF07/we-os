@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Card, CardHeader } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
+  headingNamesPart,
   isBullet,
   kpiTier,
   planPart,
@@ -166,31 +167,6 @@ function PlanSection({ section }: { section: DeliverableSection }) {
 }
 
 /**
- * Reports whether a heading already tells the reader which part it is.
- *
- * A heading reading "Budget allocation" is the spend allocation in the reader's
- * own words, so labelling it again adds a chip and no information. The label is
- * for the heading that matched on one word — "Media split", say — where naming
- * the part is the whole point of identifying it.
- *
- * Args:
- *   heading: The heading as the specialist wrote it.
- *   part: The plan part it was identified as.
- *
- * Returns:
- *   Whether the heading carries the words the label would add.
- */
-function namesPart(heading: string, part: PlanPart): boolean {
-  const written = heading.toLowerCase();
-  return PART_LABELS[part]
-    .split("·")[0]
-    .trim()
-    .toLowerCase()
-    .split(" ")
-    .every((word) => written.includes(word));
-}
-
-/**
  * Renders a section's heading, naming the part when the heading is one.
  *
  * Args:
@@ -207,7 +183,7 @@ function SectionHeading({
   return (
     <h3 className="mb-1.5 flex items-baseline gap-2 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
       <span className={part ? "text-slate-700" : undefined}>{heading}</span>
-      {part && !namesPart(heading, part) && (
+      {part && !headingNamesPart(heading, part) && (
         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold tracking-normal text-slate-600 normal-case">
           {PART_LABELS[part]}
         </span>
@@ -222,45 +198,43 @@ function SectionHeading({
  * Lines that name no tier keep their place beneath the grouped ones rather than
  * being dropped — the specialist wrote them, and the screen shows what is there.
  *
- * A tier with no line under this heading gets an empty slot rather than a
- * warning. Three slots is what the tiers *are*, so leaving one out would
- * misdescribe the layout; saying the plan is incomplete is the guardrail's job,
- * not this screen's.
+ * A tier with no line under this heading gets no card. Rendering an empty slot
+ * would make a plan missing a tier look visibly incomplete, and that is the
+ * guardrail's judgement to make, not this screen's — the screen reports a plan
+ * the reviewer has already scored.
  *
  * Args:
  *   lines: The KPI section's lines.
  */
 function KpiTiers({ lines }: { lines: string[] }) {
+  const grouped = KPI_TIERS.map((tier) => ({
+    tier,
+    stated: lines.filter((line) => kpiTier(line) === tier),
+  })).filter((group) => group.stated.length > 0);
+
   const ungrouped = lines.filter((line) => kpiTier(line) === null);
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid gap-2 sm:grid-cols-3">
-        {KPI_TIERS.map((tier) => {
-          const stated = lines.filter((line) => kpiTier(line) === tier);
-          return (
+      {grouped.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-3">
+          {grouped.map(({ tier, stated }) => (
             <div key={tier} className="rounded-[10px] border bg-card px-3 py-2">
               <div className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">
                 {tier}
               </div>
-              {stated.length === 0 ? (
-                <div className="mt-0.5 text-[13px] text-muted-foreground">
-                  —
+              {stated.map((line, position) => (
+                <div
+                  key={position}
+                  className="mt-0.5 text-[13px] text-slate-800"
+                >
+                  {withoutTierLabel(line, tier)}
                 </div>
-              ) : (
-                stated.map((line, position) => (
-                  <div
-                    key={position}
-                    className="mt-0.5 text-[13px] text-slate-800"
-                  >
-                    {withoutTierLabel(line, tier)}
-                  </div>
-                ))
-              )}
+              ))}
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
       <PlainLines lines={ungrouped} emphasised={false} />
     </div>
   );
