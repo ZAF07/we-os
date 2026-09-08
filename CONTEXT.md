@@ -40,6 +40,10 @@ _Avoid_: home page (for the public page), marketing site, website.
 The first signed-in screen — what needs the business owner right now (decisions waiting, work under way, credits left). Only reachable with a signed-in session whose business is a tenant.
 _Avoid_: dashboard, landing (for the signed-in screen).
 
+**Pricing**:
+The second public page: the three Tiers side by side, what a credit is, and the questions a business asks before paying. It shows exactly the tiers the Landing shows, so a visitor never sees two prices, and it exists so the tiers can be sent to a colleague as one address.
+_Avoid_: plans page (a plan is the Performance Plan), billing page (there is no billing yet), packages.
+
 **Questionnaire**:
 The admin-curated set of questions a business answers to author its Brand DNA. It asks only for **facts the business owner uniquely knows** — never for crafted artifacts like positioning or channel choice, which the pipeline produces. One artifact drives three things: the onboarding wizard, the shape of the DNA, and what the DNA Gate enforces as Required.
 _Avoid_: survey, form, intake, onboarding flow.
@@ -149,8 +153,8 @@ What one business may spend on generation before billable work is refused, and t
 _Avoid_: allowance (the former identifier, renamed out of the code), quota (for the number itself — quota is the enforcement, credits are the amount), tokens, limit.
 
 **Tier**:
-One of the subscriptions a business picks at sign-up — **Operator**, **Strategist**, or **Command**. Tiers differ only in the credits they grant each month; every tier gets the whole product. Prices and credit amounts are placeholders until pricing is decided, so they live in one place and nowhere else.
-_Avoid_: plan (taken by the Performance Plan), package, subscription level, seat.
+One of the subscriptions a business picks at sign-up — **Operator**, **Strategist**, or **Command**. Tiers differ only in the credits they grant each month; every tier gets the whole product. Prices and credit amounts are placeholders until pricing is decided, so they live in one place and nowhere else. One tier is **recommended** as the default for a business unsure which to pick (Strategist today); it is a recommendation the product makes, never a claim about what other businesses chose.
+_Avoid_: plan (taken by the Performance Plan), package, subscription level, seat, "most chosen" / "most popular" (popularity nothing backs).
 
 **Web Backend**:
 The pluggable live-web capability (`WebSearchTool` port) granting the specialists that declare it — market-research and performance-marketing — `web_search`/`web_fetch` tools. Adapters: the default **NoopWebSearch**, which returns an honest "web search is not configured" message so runs stay grounded in the Brand DNA; **TavilyWebSearch**, the primary backend calling Tavily's JSON API (`/search` + `/extract`) over plain HTTP with no browser (see [ADR-0011](docs/adr/0011-tavily-primary-web-backend.md)); **PlaywrightWebSearch**, a browser-driven backend scraping DuckDuckGo (see [ADR-0007](docs/adr/0007-thread-confined-sync-playwright-backend.md)); and **GoogleWebSearch**, which subclasses it to scrape `google.com/search`, reusing the same browser lifecycle and `fetch`. The live capability is off by default and wired only when `MARKETING_OS_WEB=1` (see [ADR-0001](docs/adr/0001-ports-and-adapters-architecture.md)).
