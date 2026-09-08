@@ -1,6 +1,6 @@
 # 01 — The spec asks which fields exist before the wizard has loaded them
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Symptom
@@ -165,3 +165,8 @@ unfixed tree turned out to be luck.
       — no empty-string answers are sent.
 - [x] `make test-e2e` passes on three consecutive clean runs (six were run).
 - [x] The spec does not depend on any other spec having run first.
+
+## Completion
+
+- Completed: 2026-09-08
+- Commit: <to be filled in manually>
