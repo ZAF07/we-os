@@ -139,6 +139,21 @@ export default function OnboardingPage() {
     onFinish: () => router.push("/brand"),
   });
 
+  /**
+   * Steps back, retiring any save failure once the move has settled.
+   *
+   * The message names a write for the step being left, so carrying it onto
+   * the previous step would report a failure about somewhere the business
+   * no longer is. Clearing it after the transition rather than before means
+   * a save that fails on the way out does not re-raise it. The answers it
+   * referred to are still in state, and the next save that lands writes
+   * them.
+   */
+  const backAndClearFailure = async () => {
+    await back();
+    setFailure(null);
+  };
+
   if (!questionnaire) {
     return (
       <main className="flex-1 px-4 py-6 md:px-8 md:py-7">
@@ -187,7 +202,7 @@ export default function OnboardingPage() {
       }
       nextLabel={busy ? "Saving…" : "Finish onboarding"}
       busy={busy}
-      onBack={back}
+      onBack={() => void backAndClearFailure()}
       onNext={next}
     >
       {current.questions.map((question) => (

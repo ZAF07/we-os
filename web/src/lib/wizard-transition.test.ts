@@ -121,7 +121,7 @@ describe("resolveTransition backwards", () => {
       save,
     });
 
-    expect(outcome).toEqual({ step: 1, attempted: false, finished: false });
+    expect(outcome).toEqual({ step: 1, attempted: null, finished: false });
     expect(save).toHaveBeenCalledTimes(1);
   });
 
@@ -136,22 +136,20 @@ describe("resolveTransition backwards", () => {
       save,
     });
 
-    expect(outcome).toEqual({ step: 1, attempted: false, finished: false });
+    expect(outcome).toEqual({ step: 1, attempted: null, finished: false });
     expect(save).toHaveBeenCalledTimes(1);
   });
 
-  it("still tries to save on the way back", async () => {
-    const save = savesBadly();
-
-    await resolveTransition({
+  it("leaves a revealed required-field error alone, having demanded nothing", async () => {
+    const outcome = await resolveTransition({
       direction: "back",
-      step: 3,
+      step: 2,
       stepCount: 5,
-      isStepIncomplete: () => false,
-      save,
+      isStepIncomplete: () => true,
+      save: savesFine(),
     });
 
-    expect(save).toHaveBeenCalledTimes(1);
+    expect(outcome.attempted).toBeNull();
   });
 
   it("never steps below the first step", async () => {

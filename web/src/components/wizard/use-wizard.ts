@@ -34,6 +34,8 @@ import {
  *
  * Returns:
  *   The current step, the attempted and busy flags, and back/next handlers.
+ *   Each handler resolves once its transition has settled, so a caller with
+ *   something to do afterwards can await it.
  */
 export function useWizard({
   stepCount,
@@ -76,7 +78,7 @@ export function useWizard({
     step,
     attempted,
     busy,
-    back: () => void move("back"),
-    next: () => void move("forward"),
+    back: () => move("back"),
+    next: () => move("forward"),
   };
 }

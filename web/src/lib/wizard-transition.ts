@@ -45,6 +45,10 @@ export interface TransitionOutcome {
  * blanks are dropped by the payload builder, so a half-filled step writes
  * only its real answers.
  *
+ * Going back says nothing about the required-field errors either way. It
+ * neither reveals them, having demanded nothing, nor clears ones already on
+ * screen, which no unfilled field was filled to earn.
+ *
  * Args:
  *   direction: Whether the wizard is moving forward or back.
  *   step: The step the wizard is on.
@@ -64,11 +68,9 @@ export async function resolveTransition({
   isStepIncomplete,
   save,
 }: TransitionRequest): Promise<TransitionOutcome> {
-  const moved = { step, attempted: false, finished: false };
-
   if (direction === "back") {
     await save();
-    return { ...moved, step: Math.max(0, step - 1) };
+    return { step: Math.max(0, step - 1), attempted: null, finished: false };
   }
 
   if (isStepIncomplete(step)) {
@@ -77,8 +79,10 @@ export async function resolveTransition({
   if (!(await save())) {
     return { step, attempted: null, finished: false };
   }
+
+  const saved = { step, attempted: false, finished: false };
   if (step < stepCount - 1) {
-    return { ...moved, step: step + 1 };
+    return { ...saved, step: step + 1 };
   }
-  return { ...moved, finished: true };
+  return { ...saved, finished: true };
 }

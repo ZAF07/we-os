@@ -72,12 +72,12 @@ in-flight guard already prevents on its own.
 
 ## Acceptance criteria
 
-- [ ] With the engine unreachable, a business on step 2+ can reach step 1.
-- [ ] No answer entered before the failure is lost by going back.
-- [ ] Whatever the chosen behaviour, the wizard never presents a state where
+- [x] With the engine unreachable, a business on step 2+ can reach step 1.
+- [x] No answer entered before the failure is lost by going back.
+- [x] Whatever the chosen behaviour, the wizard never presents a state where
       neither Back nor Next moves the business anywhere.
-- [ ] A test covers the fixed behaviour, red before and green after.
-- [ ] `pnpm typecheck`, `pnpm lint`, `pnpm format:check` and `pnpm test:unit`
+- [x] A test covers the fixed behaviour, red before and green after.
+- [x] `pnpm typecheck`, `pnpm lint`, `pnpm format:check` and `pnpm test:unit`
       pass in `web/`, and `make test-e2e` passes.
 
 ## Decision
@@ -100,6 +100,39 @@ Implemented on `fix/back-never-blocks-on-failed-save`.
 - `web/src/app/onboarding/page.tsx` — failure copy now says the answers are held.
 - Unit test `steps back even when the save fails, so a failing write is never a
   trap` was red before the change, green after.
-- E2E `Back still goes back when the save is failing` aborts the server-action
-  POST to simulate an unreachable engine; verified red against the unfixed code
-  and green after.
+- E2E `Back still goes back when the save is failing, and keeps the answer`
+  aborts the server-action POST to simulate an unreachable engine. Verified red
+  against `main`'s transition (with the container rebuilt on it — an earlier
+  check was invalid because the running image still carried the fix) and green
+  after.
+
+### Code review
+
+Both axes ran. Standards found no hard violations. Three substantive findings
+were confirmed and fixed:
+
+1. `attempted: false` on the back path cleared required-field errors that
+   nothing had fixed. Back now returns `attempted: null` — it neither reveals
+   the errors, having demanded nothing, nor clears ones already shown.
+2. The save-failure banner survived onto the previous step, reporting a
+   failure about a step the business had left. `onBack` now clears it once the
+   transition settles, which required `useWizard`'s handlers to return their
+   promise rather than discarding it.
+3. The first e2e test inherited a filled step 1 from the preceding spec, which
+   reintroduced the run-order coupling that
+   [01](archive/01-onboarding-spec-depends-on-run-order.md) was closed for
+   removing, and asserted on a loaded answer rather than one held through the
+   failure. It now fills its own way to step 2, types an answer there, and
+   asserts that answer survives.
+
+Also noted and deliberately not changed: on **step 0** with the engine down,
+Back is hidden and Next is blocked by the failing save. That is not the trap
+this issue describes — step 0 has nowhere back to go — but it does mean a
+business cannot progress at all while the engine is unreachable. Forward
+blocking on an unwritten step is the rule 01 established and the Decision above
+kept, so relaxing it is a separate product call.
+
+### Gate output
+
+`pnpm typecheck`, `pnpm lint`, `pnpm format:check` clean; `pnpm test:unit`
+55 passed; `make test-e2e` 47 passed.
