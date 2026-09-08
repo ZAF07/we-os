@@ -1,6 +1,6 @@
 # 16 — The Performance screen shows a plan's sections but cannot tell you which is the channel mix
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Parent
@@ -70,13 +70,13 @@ identification is cheap and the screen genuinely fails to say what it is showing
 Revised by the Decision section below — the originals assumed the screen was a
 second enforcement point, which it is not.
 
-- [ ] The screen identifies the channel mix, the spend allocation, the Placements and the three KPI tiers as those things, not as anonymous sections.
-- [ ] Each identified part carries a visual treatment that suits it — KPI tiers grouped by tier, Placements laid out as specs, spend emphasised — while an unrecognised section still renders as it does today.
-- [ ] A section whose heading matches nothing renders plainly rather than breaking or disappearing.
-- [ ] `web/src/lib/deliverable.ts` no longer documents heading-agnosticism as the design; its docstring carries the reasoning in the Decision section.
-- [ ] A spec asserts on a seeded plan with all four parts, and on one whose headings match nothing.
-- [ ] Web gates pass — `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test:unit`.
-- [ ] `make test-e2e` still passes.
+- [x] The screen identifies the channel mix, the spend allocation, the Placements and the three KPI tiers as those things, not as anonymous sections.
+- [x] Each identified part carries a visual treatment that suits it — KPI tiers grouped by tier, Placements laid out as specs, spend emphasised — while an unrecognised section still renders as it does today.
+- [x] A section whose heading matches nothing renders plainly rather than breaking or disappearing.
+- [x] `web/src/lib/deliverable.ts` no longer documents heading-agnosticism as the design; its docstring carries the reasoning in the Decision section.
+- [x] A spec asserts on a seeded plan with all four parts, and on one whose headings match nothing.
+- [x] Web gates pass — `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test:unit`.
+- [x] `make test-e2e` still passes.
 
 **Withdrawn** (see Decision):
 
@@ -198,3 +198,43 @@ change), which fails the three-of-three bar. No `CONTEXT.md` change either —
 Performance Plan, Placement, KPI tiers and Guardrail are all already defined, and
 this decision is about rendering, not the domain. Status moved to
 `ready-for-agent`.
+
+## Completion
+
+- Completed: 2026-09-08
+- Commits:
+  - `229af6b` — Performance names the four parts of a plan
+  - `bb4c224` — Address code review on the Performance plan parts
+
+### Evidence
+
+- **AC1** — `planPart` (`web/src/lib/deliverable.ts:156`) matches a heading against
+  `PART_PATTERNS`; the screen calls it at `web/src/app/performance/page.tsx:151`.
+- **AC2** — `PlanSection` branches to `KpiTiers` (tier cards), `PlacementSpecs`
+  (spec rows) and `PlainLines` with `emphasised` for spend
+  (`web/src/app/performance/page.tsx:158-163`). Confirmed by screenshot against the
+  running e2e stack.
+- **AC3** — an unrecognised heading falls through to `PlainLines`, the pre-existing
+  renderer. "Optimization guidance" renders unchanged in the screenshot.
+- **AC4** — the `toSections` docstring no longer argues heading-agnosticism; it
+  carries decision 1's reader-not-a-check reasoning
+  (`web/src/lib/deliverable.ts:6-27`).
+- **AC5** — `describe("reading a whole performance plan")` asserts on a seeded plan
+  with all four parts and on one whose headings match nothing
+  (`web/src/lib/deliverable.test.ts:203-236`).
+- **AC6** — `pnpm typecheck`, `pnpm lint`, `pnpm format:check` clean;
+  `pnpm test:unit` 68 passed.
+- **AC7** — `make test-e2e` 48 passed.
+
+### Notes
+
+Both code-review passes flagged that always rendering three KPI tier cards — an
+em dash in any tier the plan did not state — reproduced the exact user-visible
+effect of the **withdrawn** criterion ("a plan missing one of them is visibly
+incomplete"). Fixed in `bb4c224`: a tier with no line gets no card. Verified
+against a deliberately tier-missing plan, which renders two cards and no gap.
+
+The reviewer's vocabulary flag on "spend" was dismissed: `CONTEXT.md:133` warns
+against *unqualified* "spend" as a name for **Campaign Budget**, but its own
+definition reads "media/ad spend" and `.claude/rules/decision-hierarchy.md:37`
+names this stage's output "spend allocation" verbatim.
