@@ -1,6 +1,6 @@
 # 02 — The definition of done documents a command that skips the Postgres suite
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Context
@@ -72,15 +72,30 @@ Documentation only. No code, no workflow file.
 
 ## Acceptance criteria
 
-- [ ] `CLAUDE.md` **Definition of done** names `make check` and
+- [x] `CLAUDE.md` **Definition of done** names `make check` and
       `make test-postgres`, and states that a bare `uv run pytest` skips the
       Postgres suite.
-- [ ] The pre-push expectation appears in the workflow router's session ritual.
-- [ ] `agent-harness/Makefile` no longer claims `test-postgres` is for CI.
-- [ ] `agent-harness/README.md` notes what `uv run pytest` excludes.
-- [ ] No `.github/workflows/` file added.
+- [x] The pre-push expectation appears in the workflow router's session ritual.
+- [x] `agent-harness/Makefile` no longer claims `test-postgres` is for CI.
+- [x] `agent-harness/README.md` notes what `uv run pytest` excludes.
+- [x] No `.github/workflows/` file added.
 
 ## Blocked by
 
 Nothing. Independent of 01 — but 01 is the evidence for it, so land 01 first if
 either slips.
+
+## Completion
+
+- Completed: 2026-09-08
+- Commit: `2c57669` — documentation only, landed alongside the 01 test fix.
+- Evidence:
+  - `CLAUDE.md` **Definition of done** item 2 names `make check` and
+    `make test-postgres` and states plainly that a bare `uv run pytest` is not
+    sufficient because the Postgres suite skips silently.
+  - `CLAUDE.md:104` adds the **Before pushing** bullet to the session ritual.
+  - `agent-harness/Makefile:14-15` now reads "There is no CI: this is the
+    pre-push gate" instead of "Use this in CI".
+  - `agent-harness/README.md:164,176` notes what `uv run pytest` excludes and
+    names `make test-postgres`.
+- Out of scope respected: no `.github/workflows/` file, no git pre-push hook.

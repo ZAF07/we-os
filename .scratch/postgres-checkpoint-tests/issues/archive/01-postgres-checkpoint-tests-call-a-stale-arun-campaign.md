@@ -1,6 +1,6 @@
 # 01 — The Postgres checkpoint tests call a stale `arun_campaign` signature
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Context
@@ -49,8 +49,8 @@ Confirmed present on `main` at 33c1527, independent of any in-flight branch.
 
 ## Acceptance criteria
 
-- [ ] `MARKETING_OS_TEST_POSTGRES=1 uv run pytest tests/test_postgres.py` passes.
-- [ ] The three tests assert the same durability behaviour they were written for,
+- [x] `MARKETING_OS_TEST_POSTGRES=1 uv run pytest tests/test_postgres.py` passes.
+- [x] The three tests assert the same durability behaviour they were written for,
       not a narrowed version of it.
 
 ## Agent brief
@@ -156,14 +156,14 @@ The documentation half of that decision is tracked separately as issue
 
 Unchanged from above, plus:
 
-- [ ] `MARKETING_OS_TEST_POSTGRES=1 uv run pytest tests/test_postgres.py -q` passes
+- [x] `MARKETING_OS_TEST_POSTGRES=1 uv run pytest tests/test_postgres.py -q` passes
       (expect 32 passed).
-- [ ] The three tests assert the same durability behaviour they were written for.
+- [x] The three tests assert the same durability behaviour they were written for.
       In particular `test_a_run_halted_at_a_gate_is_approvable_after_a_restart`
       still asserts `versions.latest(TENANT, SLUG, "campaign-strategy") is not None`
       against its own `InMemoryDeliverableStore`.
-- [ ] `make check` passes (ruff, ruff format, mypy, pytest).
-- [ ] No `.github/workflows/` file added.
+- [x] `make check` passes (ruff, ruff format, mypy, pytest).
+- [x] No `.github/workflows/` file added.
 
 ### Where the work is
 
@@ -171,3 +171,20 @@ Unchanged from above, plus:
 
 No production code changes. `arun_campaign`'s signature is correct as it stands;
 the tests are what drifted.
+
+## Completion
+
+- Completed: 2026-09-08
+- Commits:
+  - `2c57669` — pass the stores at the three call sites via the
+    `prototype_adapters` splat, keeping each test's intent.
+  - `dcfd255` — code review follow-up: one splat idiom across all three sites.
+- Evidence: `MARKETING_OS_TEST_POSTGRES=1 uv run pytest tests/test_postgres.py -q`
+  → **32 passed** (was 3 failed / 29 passed). `make check` → 576 passed / 86
+  skipped. `make test-postgres` → **662 passed, 0 skipped**.
+- The three tests keep the durability behaviour they were written for: zero
+  `assert` lines were deleted, and
+  `test_a_run_halted_at_a_gate_is_approvable_after_a_restart` still asserts
+  `versions.latest(TENANT, SLUG, "campaign-strategy") is not None` against its
+  own `InMemoryDeliverableStore` (`tests/test_postgres.py:412`).
+- No production code changed; no `.github/workflows/` file added.
