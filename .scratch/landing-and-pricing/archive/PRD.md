@@ -1,10 +1,10 @@
 # PRD: We-OS Landing and Pricing — the public half of the app
 
-Status: ready-for-agent
+Status: completed
 Category: feature
 Date: 2026-09-08
 
-Governed by ADRs [0012](../../docs/adr/0012-nextjs-frontend-and-bff-in-monolith.md) (and its 2026-09-08 amendment), [0013](../../docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md), [0018](../../docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md), [0020](../../docs/adr/0020-usage-ledger-and-enforced-quota.md) (and its 2026-09-08 amendment), [0021](../../docs/adr/0021-organic-publishing-before-paid-ads.md). Vocabulary per [CONTEXT.md](../../CONTEXT.md): **Landing**, **Home**, **Tenant**, **Brand DNA**, **Credits**, **Tier**.
+Governed by ADRs [0012](../../../docs/adr/0012-nextjs-frontend-and-bff-in-monolith.md) (and its 2026-09-08 amendment), [0013](../../../docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md), [0018](../../../docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md), [0020](../../../docs/adr/0020-usage-ledger-and-enforced-quota.md) (and its 2026-09-08 amendment), [0021](../../../docs/adr/0021-organic-publishing-before-paid-ads.md). Vocabulary per [CONTEXT.md](../../../CONTEXT.md): **Landing**, **Home**, **Tenant**, **Brand DNA**, **Credits**, **Tier**.
 
 ## Problem Statement
 
@@ -130,3 +130,17 @@ A good test here opens a page the way a person would and checks what they would 
 - The grilling that produced this PRD also changed the glossary intro to the augment framing, added **Landing**, **Home**, **Credits**, and **Tier** to `CONTEXT.md`, and appended dated amendments to ADR-0012 and ADR-0020. Read those first.
 - "Marketing OS" survives only as a descriptor ("the marketing OS for small businesses" style phrasing is fine); it is not the product name.
 - When the real tiers are decided, the expected change is the values in the tier module and possibly the FAQ answer about credits. Nothing else should need to move.
+
+## Completion
+
+- Completed: 2026-09-08
+- Commits, on branch `landing-and-pricing`:
+  - `ac6557e` Split the app into public and signed-in halves, with a bare Landing
+  - `c9927b4` Tiers, defined once, shown on Pricing and on the Landing
+  - `71e0d34` The rest of the Landing story, and the FAQ on both pages
+  - `fc5d251` Address code review: vocabulary, one pricing intro, one height token, no animation
+  - `b78329f` Document the public half in the web README and env example
+  - merged to main as `00c13af` Merge: We-OS Landing and Pricing, the public half of the app
+- Per-criterion evidence lives on the three archived issues in [issues/archive/](../issues/archive/).
+- Where the shipped page departs from this document, on purpose: the user-supplied mockup's "augmented loop" section sits between the hero and "How it works"; the highlighted tier says "Recommended" rather than "Most chosen", since no data backs a popularity claim yet; the top bar's section links hide below the tablet breakpoint, as in the mockup, with the footer's "Pricing" link always present.
+- Open tension for the author: the copy says credits are granted monthly and that a business can move to a higher tier, as issues 02 and 03 prescribe, while the engine has no monthly reset and billing is out of scope.

@@ -83,3 +83,13 @@ Filed 2026-09-08 while closing out `.scratch/credits-rename`. The credits work
 touched exactly one line of one spec (`home.spec.ts:18`, the "Allowance" →
 "Credits" label) and that assertion passed in all four runs above; this bug is
 older than that change and is filed separately rather than fixed inside it.
+
+Seen again 2026-09-08 while closing out `.scratch/landing-and-pricing`, which
+touched no campaign code. On a freshly started stack the full suite passed 58
+of 59 (`new-campaign.spec.ts:105` failed, then passed alone). After five suite
+runs against the same stack, a run of the `chromium` and `chromium-public`
+projects failed `new-campaign.spec.ts:61`, `smoke.spec.ts:94` and
+`workspace.spec.ts:43`, all at the "Create campaign" step. The failure set
+grows with the number of campaigns the stack has accumulated, which supports
+the isolation reading above. The new `chromium-public` project, which creates
+nothing, has not failed once.
