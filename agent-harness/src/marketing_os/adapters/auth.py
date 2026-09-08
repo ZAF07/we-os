@@ -23,6 +23,16 @@ from marketing_os.schemas import VerifiedClaims
 
 _ALGORITHMS = ["RS256"]
 
+# How far the IdP's clock and ours may disagree before a token is refused.
+#
+# A session token reaches the engine second-hand: the BFF accepts it under its
+# own skew allowance (Clerk's default is 5 seconds past ``exp``) and forwards it
+# as-is, so this tolerance must cover the BFF's plus the hop in between. Clerk
+# itself dates ``nbf`` 10 seconds before ``iat``; that is the tolerance the IdP
+# asks for, so it is the one honoured here — on ``exp``, ``nbf`` and ``iat``
+# alike, since the same skew moves all three.
+_CLOCK_SKEW_LEEWAY_SECONDS = 10
+
 # Clerk's session token v2 nests organization claims under a compact ``o``
 # object (``{id, slg, rol, per, fpm}``); v1 spelled them out as ``org_id`` /
 # ``org_slug``. Both are read so the verifier works against either, and
@@ -152,6 +162,7 @@ class JwksTokenVerifier:
                 algorithms=_ALGORITHMS,
                 issuer=self.issuer,
                 audience=self.audience,
+                leeway=_CLOCK_SKEW_LEEWAY_SECONDS,
                 options={
                     "require": ["exp", "iat", "iss", "sub"],
                     "verify_aud": self.audience is not None,

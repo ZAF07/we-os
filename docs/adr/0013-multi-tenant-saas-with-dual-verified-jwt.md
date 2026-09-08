@@ -16,3 +16,19 @@ Identity comes from a managed IdP issuing JWTs. The Next.js BFF verifies the tok
 - The `customers/<name>/` collection is agency-shaped and collapses to a Brand DNA singleton owned by the tenant (see [ADR-0022](0022-brand-dna-and-the-overloaded-customer.md)).
 - Tenant scoping is enforced in the repository/DocumentStore layer — and backstopped by Postgres row-level security — never at individual call sites, so a forgotten `WHERE` clause cannot leak across tenants. Implementing this found three places where the pre-tenancy code did not honour it; see [ADR-0023](0023-tenant-partitioned-storage-and-a-sandbox-that-serves-no-tenant-data.md) for what leaked and how partitioning closed it.
 - Every existing endpoint changes shape, which is why FE↔BE wiring cannot precede this work.
+
+## Amendment (2026-09-09)
+
+Dual verification carries an inter-service contract that was implicit until it
+broke: **the engine's clock-skew tolerance must be at least the BFF's, plus the
+hop between them.** The BFF forwards the session token it accepted, and it
+accepts one up to 5 seconds past `exp` (Clerk's default `clockSkewInMs`), so an
+engine that verified with zero leeway refused every token in the 5 seconds
+after its expiry — a burst of 401s, once per token lifetime, that surfaced as a
+shifting handful of e2e failures (`.scratch/e2e-suite-flake`, issue 01).
+
+The engine now verifies `exp`, `nbf` and `iat` with a 10-second leeway, the
+tolerance Clerk itself encodes by dating `nbf` 10 seconds before `iat`. Anyone
+raising the BFF's `clockSkewInMs` above that must raise the engine's leeway
+with it; a token the BFF trusts and the engine refuses is the failure mode this
+amendment exists to name.

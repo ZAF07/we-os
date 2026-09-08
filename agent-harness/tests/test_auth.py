@@ -105,6 +105,33 @@ def test_rejects_an_expired_token(verifier: JwksTokenVerifier, keypair: tuple[An
         verifier.verify(make_token(private_key, expires_in=-60))
 
 
+def test_accepts_a_token_the_bff_still_forwards_just_past_expiry(
+    verifier: JwksTokenVerifier, keypair: tuple[Any, Any]
+) -> None:
+    """A token 5 s past ``exp`` verifies: the BFF forwards up to 5 s past it."""
+    private_key, _ = keypair
+    identity = verifier.verify(make_token(private_key, expires_in=-5))
+    assert identity.organization_id == "org_coast"
+
+
+def test_rejects_a_token_past_the_clock_skew_tolerance(
+    verifier: JwksTokenVerifier, keypair: tuple[Any, Any]
+) -> None:
+    """The tolerance is a few seconds, not a second life for the token."""
+    private_key, _ = keypair
+    with pytest.raises(UnauthenticatedError):
+        verifier.verify(make_token(private_key, expires_in=-15))
+
+
+def test_accepts_a_token_issued_a_few_seconds_ahead_of_this_clock(
+    verifier: JwksTokenVerifier, keypair: tuple[Any, Any]
+) -> None:
+    """An ``iat`` slightly in the future is clock skew, not forgery."""
+    private_key, _ = keypair
+    identity = verifier.verify(make_token(private_key, iat=int(time.time()) + 3))
+    assert identity.organization_id == "org_coast"
+
+
 def test_rejects_a_token_signed_by_a_different_key(verifier: JwksTokenVerifier) -> None:
     impostor = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     with pytest.raises(UnauthenticatedError):
