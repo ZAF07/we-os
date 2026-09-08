@@ -1,6 +1,6 @@
-# 01 — Two concurrent saves race on Finish, so the wizard can restore a stale answer
+# 01 — The spec asks which fields exist before the wizard has loaded them
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Symptom
@@ -105,14 +105,68 @@ requires every field, blocks advancing on any blank, and submits the goal once
 at the end — no partial saves, no merge, nothing blank on the wire. It needs no
 change.
 
+## Correction — the cause above is wrong
+
+The concurrent-save diagnosis was real and is fixed, and it was worth fixing.
+It was **not** what makes this spec flake.
+
+Probes on a failing run showed the *first* save already carrying the stale
+name, and every row in `dna_answers` sharing one `updated_at` — one write per
+step, nothing racing. So the wrong value was in the field before anything was
+saved.
+
+The next probe showed why. On a failing run there is no confirmation that any
+**step 1** field was ever filled; the first field the spec successfully fills
+is `Urban commuters`, on step 2. The step-1 loop ran and filled nothing.
+
+The spec asks which fields are on screen with:
+
+    if (await field.count()) await field.fill(value);
+
+`count()` resolves **immediately**. Unlike `fill()`, `click()` and the
+`expect` locators, it does not auto-wait for the element. The wizard renders
+"Loading your questions…" until `loadOnboarding()` resolves, so when the spec
+asks during that window it is told there are no fields, fills none of the
+eleven, and clicks `Next`. Step 1 advances carrying the values it loaded. By
+step 2 the page has loaded, so every later fill works.
+
+That is the exact reported signature: the only visibly wrong field is
+`q_business_name`, the only one with an answer stored from the previous spec
+to be carried forward. Every other field had nothing stored, so its step-2+
+fill landed normally.
+
+Intermittent because it is a race between the spec's first `count()` and the
+wizard's initial load — lost only when the load is slow, which under parallel
+Playwright load against a compiling dev server is roughly one run in three.
+
+Fixed in the spec: each step waits for `Step N of 5` to render before asking
+which fields it has, and each fill is confirmed to have held.
+
+The wizard's load path is left exactly as it was. A guard against a second,
+slower load clobbering typed answers was written and then removed: probes
+showed a single load per visit, so it defended against nothing this bug
+involves.
+
+## Verified
+
+Six consecutive clean `make test-e2e` runs, 46 passed each, `docker compose
+down -v` between every one. Three runs was the acceptance bar but is weak
+evidence against a one-in-three failure rate — an earlier three-run pass on an
+unfixed tree turned out to be luck.
+
 ## Acceptance criteria
 
-- [ ] Finish issues exactly one `POST /brand-dna/answers`, not two.
-- [ ] `Next`, `Back` and Finish await their save; the primary button is disabled
+- [x] Finish issues exactly one `POST /brand-dna/answers`, not two.
+- [x] `Next`, `Back` and Finish await their save; the primary button is disabled
       while it is in flight.
-- [ ] A save that fails leaves the wizard on its current step and shows the
+- [x] A save that fails leaves the wizard on its current step and shows the
       error, rather than advancing.
-- [ ] A question the business has not answered is still absent from the payload
+- [x] A question the business has not answered is still absent from the payload
       — no empty-string answers are sent.
-- [ ] `make test-e2e` passes on three consecutive clean runs.
-- [ ] The spec does not depend on any other spec having run first.
+- [x] `make test-e2e` passes on three consecutive clean runs (six were run).
+- [x] The spec does not depend on any other spec having run first.
+
+## Completion
+
+- Completed: 2026-09-08
+- Commit: <to be filled in manually>

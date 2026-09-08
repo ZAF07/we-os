@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 // These specs share one mutable fixture — a tenant that starts blank and ends
 // filled in — so they must run in declaration order, not merely one at a time.
@@ -32,6 +32,32 @@ const CRAFTED_ARTIFACT_QUESTIONS = [
   "Brand personality",
   "Tone of voice",
 ];
+
+/**
+ * Types a value into a wizard field and waits for it to hold.
+ *
+ * Each step's save is awaited before the wizard advances, so a spec walking
+ * the wizard must wait for the next step to render rather than firing every
+ * click at once — clicking blind outruns the save still in flight, which is
+ * the impatience the disabled button exists to refuse.
+ *
+ * These inputs are controlled by React state. A fill that lands before the
+ * page is interactive sets the DOM value and is then discarded by the next
+ * render, silently leaving the field on whatever was loaded — which for a
+ * question the business has answered before is the *previous* answer, not a
+ * blank. Retrying until the value sticks makes the spec assert what it came
+ * to assert rather than a stale answer that happens to still be there.
+ *
+ * Args:
+ *   field: The input to fill.
+ *   value: The answer to type.
+ */
+async function fillAndConfirm(field: Locator, value: string) {
+  await expect(async () => {
+    await field.fill(value);
+    expect(await field.inputValue()).toBe(value);
+  }).toPass({ timeout: 10_000 });
+}
 
 test("the wizard renders the published questions, each explaining itself", async ({
   page,
@@ -132,11 +158,18 @@ test("completing the questionnaire lands on the Brand screen with the answers", 
   };
 
   for (let step = 1; step <= 4; step += 1) {
+    // `count()` resolves immediately, unlike the locators that auto-wait, so
+    // it must not be asked which fields are on screen until the step has
+    // actually rendered. Before that it answers "none", the loop fills
+    // nothing, and the wizard advances carrying whatever it loaded — which
+    // for a question answered on an earlier visit is the previous answer.
+    await expect(page.getByText(`Step ${step} of 5`)).toBeVisible();
     for (const [label, value] of Object.entries(answers)) {
       const field = page.getByLabel(label);
-      if (await field.count()) await field.fill(value);
+      if (await field.count()) await fillAndConfirm(field, value);
     }
     await page.getByRole("button", { name: "Next →" }).click();
+    await expect(page.getByText(`Step ${step + 1} of 5`)).toBeVisible();
   }
   await page.getByRole("button", { name: "Finish onboarding" }).click();
 

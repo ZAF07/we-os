@@ -104,24 +104,32 @@ export default function OnboardingPage() {
   const stepIncomplete = (step: number) =>
     steps.length > 0 && unansweredRequired(steps[step], answers).length > 0;
 
+  /**
+   * Writes the answers entered so far.
+   *
+   * Returns:
+   *   Whether the wizard may move on — true when the save landed, or when
+   *   there was nothing yet to save.
+   */
   const persist = async () => {
     const payload = toAnswerPayload(answers);
-    if (!payload.length) return;
+    if (!payload.length) return true;
     try {
       const report = await saveAnswers(payload);
       setNewQuestions(report.unanswered_new_questions);
       setFailure(null);
+      return true;
     } catch {
       setFailure("We could not save your answers. Check your connection.");
+      return false;
     }
   };
 
-  const { step, attempted, back, next } = useWizard({
+  const { step, attempted, busy, back, next } = useWizard({
     stepCount: Math.max(steps.length, 1),
     isStepIncomplete: stepIncomplete,
-    onFinish: () => {
-      void persist().then(() => router.push("/brand"));
-    },
+    save: persist,
+    onFinish: () => router.push("/brand"),
   });
 
   if (!questionnaire) {
@@ -170,15 +178,10 @@ export default function OnboardingPage() {
           ? "Fill in the required fields to continue."
           : undefined)
       }
-      nextLabel="Finish onboarding"
-      onBack={() => {
-        void persist();
-        back();
-      }}
-      onNext={() => {
-        if (!stepIncomplete(step)) void persist();
-        next();
-      }}
+      nextLabel={busy ? "Saving…" : "Finish onboarding"}
+      busy={busy}
+      onBack={back}
+      onNext={next}
     >
       {current.questions.map((question) => (
         <QuestionField
