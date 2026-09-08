@@ -1,4 +1,4 @@
-"""Billing — checking an allowance, making a billable call, and charging for it.
+"""Billing — checking credits, making a billable call, and charging for it.
 
 The check-then-charge ordering is load-bearing (ADR-0020): recording without
 checking first observes an overspend rather than preventing one. That ordering
@@ -105,7 +105,7 @@ async def billed_call(
     stage: Stage,
     call: Callable[[], Awaitable[_Result]],
 ) -> tuple[_Result, dict[str, int]]:
-    """Check the allowance, await one billable call, and charge for what it used.
+    """Check the credits, await one billable call, and charge for what it used.
 
     The whole sequence in one place, because its order is the rule: the check
     runs before ``call``, so an exhausted tenant makes no model call at all, and
@@ -128,7 +128,7 @@ async def billed_call(
         The call's result, and the token counts it consumed.
 
     Raises:
-        QuotaExhaustedError: If the tenant's allowance is already spent, before
+        QuotaExhaustedError: If the tenant's credits are already spent, before
             any call is made. Turning that refusal into a halted run is the
             graph's business, not billing's, so it is raised rather than shaped.
     """

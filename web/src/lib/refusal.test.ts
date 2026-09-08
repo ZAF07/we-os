@@ -18,17 +18,17 @@ function refusal(status: number, detail: Record<string, unknown>): EngineError {
 }
 
 describe("refusalMessage", () => {
-  it("appends how far past the allowance the business is", () => {
+  it("appends how far past the credits the business is", () => {
     const message = refusalMessage(
       refusal(402, {
         type: "quota_exhausted",
-        message: "Your allowance is used up.",
+        message: "Your credits are used up.",
         used: 1042.5,
-        allowance: 1000,
+        credits: 1000,
       }),
     );
 
-    expect(message).toContain("Your allowance is used up.");
+    expect(message).toContain("Your credits are used up.");
     expect(message).toContain("1042.50");
     expect(message).toContain("1000.00");
   });
@@ -37,11 +37,11 @@ describe("refusalMessage", () => {
     const message = refusalMessage(
       refusal(402, {
         type: "quota_exhausted",
-        message: "Your allowance is used up.",
+        message: "Your credits are used up.",
       }),
     );
 
-    expect(message).toBe("Your allowance is used up.");
+    expect(message).toBe("Your credits are used up.");
   });
 
   it("names the fields a failed gate is still owed", () => {
@@ -65,9 +65,9 @@ describe("refusalMessage", () => {
     const message = refusalMessage(
       refusal(402, {
         type: "quota_exhausted",
-        message: "Your allowance is used up.",
+        message: "Your credits are used up.",
         used: 1000,
-        allowance: 1000,
+        credits: 1000,
         missing_fields: ["Business name"],
       }),
     );

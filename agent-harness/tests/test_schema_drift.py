@@ -58,7 +58,7 @@ def test_every_table_declares_the_columns_it_is_checked_for() -> None:
         "status",
         "started_at",
     )
-    assert "allowance" in EXPECTED_COLUMNS["tenants"]
+    assert "credits" in EXPECTED_COLUMNS["tenants"]
     assert "sequence" in EXPECTED_COLUMNS["deliverable_versions"]
     for table, columns in EXPECTED_COLUMNS.items():
         assert columns, f"{table} declares no expected columns"
@@ -81,7 +81,7 @@ def test_every_declared_index_is_checked_for() -> None:
 def test_columns_added_after_a_table_shipped_are_repaired_not_only_created() -> None:
     # A column introduced after the table existed somewhere must carry an
     # explicit ALTER, or `init-db` reports success without adding it.
-    for table, column in (("runs", "user_id"), ("tenants", "allowance")):
+    for table, column in (("runs", "user_id"), ("tenants", "credits")):
         assert f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}" in SCHEMA_SQL, (
             f"{table}.{column} is only created inside CREATE TABLE IF NOT EXISTS"
         )
@@ -130,3 +130,59 @@ def test_a_missing_index_is_reported_as_stale(
 def test_a_provisioned_database_reports_no_drift(postgres_pool: Any) -> None:
     with postgres_pool.connection() as connection:
         assert schema_drift(connection) == []
+
+
+@pytest.mark.slow
+def test_a_database_with_the_old_allowance_column_is_renamed_to_credits(
+    postgres_dsn: str, postgres_superuser_dsn: str
+) -> None:
+    # A database provisioned before the rename carries `tenants.allowance`. The
+    # rename must carry the column — and the values on it — across, so a design
+    # partner's raised ceiling survives the deploy rather than silently reverting
+    # to the platform default.
+    with _admin(postgres_superuser_dsn) as admin:
+        admin.execute("ALTER TABLE tenants RENAME COLUMN credits TO allowance")
+        admin.execute(
+            "INSERT INTO tenants (tenant_id, name, external_auth_id, allowance)"
+            " VALUES ('renamed', 'Renamed', 'auth-renamed', 99)"
+        )
+        try:
+            ensure_schema(admin)
+            assert schema_drift(admin) == []
+            assert _columns_of(admin, "tenants") >= {"credits"}
+            assert "allowance" not in _columns_of(admin, "tenants")
+            carried = admin.execute(
+                "SELECT credits FROM tenants WHERE tenant_id = 'renamed'"
+            ).fetchone()
+            assert carried is not None and float(carried[0]) == 99.0
+        finally:
+            admin.execute("DELETE FROM tenants WHERE tenant_id = 'renamed'")
+            ensure_schema(admin)
+
+
+@pytest.mark.slow
+def test_running_the_rename_twice_is_harmless(postgres_superuser_dsn: str) -> None:
+    # The second start of a service already on the new column must not re-run the
+    # rename, and a fresh database has no old column to rename at all.
+    with _admin(postgres_superuser_dsn) as admin:
+        ensure_schema(admin)
+        ensure_schema(admin)
+        assert schema_drift(admin) == []
+        assert "allowance" not in _columns_of(admin, "tenants")
+
+
+def _columns_of(connection: Any, table: str) -> set[str]:
+    """Return the column names a table actually has in the database.
+
+    Args:
+        connection: An open psycopg connection.
+        table: The table to inspect.
+
+    Returns:
+        Every column name on the table.
+    """
+    rows = connection.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+        (table,),
+    ).fetchall()
+    return {row[0] for row in rows}

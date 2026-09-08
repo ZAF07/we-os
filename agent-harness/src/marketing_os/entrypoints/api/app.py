@@ -3,7 +3,7 @@
 Endpoints:
   GET  /health                          -> liveness; the only unauthenticated route
   GET  /me                              -> the verified identity and its tenant
-  GET  /usage                           -> spend against allowance, per tenant and campaign
+  GET  /usage                           -> spend against credits, per tenant and campaign
   GET  /questionnaire                   -> the published question set
   GET  /brand-dna                       -> the tenant's answers and rendered markdown
   GET  /brand-dna/completeness          -> what still stands between them and a run
@@ -601,9 +601,9 @@ def me(identity: Identity) -> dict[str, object]:
 
 @app.get("/usage")
 def usage(identity: Identity, slug: str | None = None) -> dict[str, object]:
-    """Report the tenant's spend against their allowance, and where it went.
+    """Report the tenant's spend against their credits, and where it went.
 
-    The read behind "how much of my allowance have I used?" — so a business
+    The read behind "how much of my credits have I used?" — so a business
     owner is not surprised by work stopping — and behind the platform's
     unit-economics question, since the per-campaign breakdown is the same rows
     totalled more finely (ADR-0020).
@@ -619,13 +619,13 @@ def usage(identity: Identity, slug: str | None = None) -> dict[str, object]:
             the tenant has spent.
 
     Returns:
-        The spend, the allowance, what remains, and the per-campaign breakdown.
+        The spend, the credits, what remains, and the per-campaign breakdown.
         Another tenant's spend is never included.
     """
     report: Consumption = get_usage_ledger().consumption(identity.tenant_id, slug)
     return {
         "used": report.used,
-        "allowance": report.allowance,
+        "credits": report.credits,
         "remaining": report.remaining,
         "exhausted": report.exhausted,
         "campaigns": [
@@ -1442,7 +1442,7 @@ async def run(slug: str, body: RunCampaign, identity: Identity) -> dict[str, obj
         The new run's id, slug, stage, and initial ``running`` status.
 
     Raises:
-        HTTPException: 402 if the tenant's allowance is spent; 409 if the gate
+        HTTPException: 402 if the tenant's credits are spent; 409 if the gate
             failed, the slug already has an active run, or the campaign has been
             run its allowed number of times.
     """
@@ -1560,7 +1560,7 @@ async def reopen_stage(
 
     Raises:
         HTTPException: 404 if the caller's tenant has no such stage deliverable;
-            402 if the tenant's allowance is spent; 409 if the gate fails, the
+            402 if the tenant's credits are spent; 409 if the gate fails, the
             campaign already has an active run, or a cap is spent; 422 if the
             feedback is empty.
     """
@@ -1841,7 +1841,7 @@ async def revise_stage(run_id: str, body: ReviseStage, identity: Identity) -> di
 
     Raises:
         HTTPException: 404 if the caller has no such run; 402 if the tenant's
-            allowance is spent; 409 if the named stage is not awaiting approval,
+            credits are spent; 409 if the named stage is not awaiting approval,
             or its revision cap is spent; 422 if the feedback is empty — a
             refusal with nothing to act on would re-run the stage identically
             and charge for it.
@@ -1870,7 +1870,7 @@ def _refuse_when_quota_spent(tenant: str) -> None:
         tenant: The tenant the caller acts for.
 
     Raises:
-        HTTPException: 402 once the allowance is spent.
+        HTTPException: 402 once the credits are spent.
     """
     try:
         get_usage_ledger().check(tenant)

@@ -597,13 +597,13 @@ export interface CampaignUsage {
 
 export interface UsageReport {
   used: number;
-  allowance: number;
+  credits: number;
   remaining: number;
   exhausted: boolean;
   campaigns: CampaignUsage[];
 }
 
-/** Reports what the tenant has spent against their allowance, and where. */
+/** Reports what the tenant has spent against their credits, and where. */
 export function getUsage(): Promise<UsageReport> {
   return engineFetch<UsageReport>("/usage");
 }

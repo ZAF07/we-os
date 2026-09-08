@@ -165,7 +165,7 @@ async function changeCampaign(
  *
  * Returns:
  *   Nothing on success, or the engine's reason for refusing — an incomplete
- *   Brand DNA, a spent allowance, a run already in flight.
+ *   Brand DNA, spent credits, a run already in flight.
  */
 export async function startRunAction(
   slug: string,

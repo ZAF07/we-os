@@ -77,7 +77,7 @@ export default async function HomePage() {
           <InProgress campaigns={active} />
         </div>
         <div className="flex flex-col gap-5">
-          <AllowanceCard usage={usage} />
+          <CreditsCard usage={usage} />
           <Portfolio campaigns={campaigns} />
         </div>
       </div>
@@ -197,16 +197,16 @@ function InProgress({
 }
 
 /**
- * Renders what the business has spent against its allowance.
+ * Renders what the business has spent against its credits.
  *
  * Args:
  *   usage: The spend report, or null when it could not be read.
  */
-function AllowanceCard({ usage }: { usage: UsageReport | null }) {
+function CreditsCard({ usage }: { usage: UsageReport | null }) {
   if (usage === null) {
     return (
       <Card className="px-[18px] py-4">
-        <div className="text-sm font-bold">Allowance</div>
+        <div className="text-sm font-bold">Credits</div>
         <p className="mt-1 text-[12.5px] text-muted-foreground">
           Could not read your usage just now. Everything else on this page is
           current.
@@ -215,15 +215,15 @@ function AllowanceCard({ usage }: { usage: UsageReport | null }) {
     );
   }
 
-  const unlimited = usage.allowance <= 0;
+  const unlimited = usage.credits <= 0;
   const spent = unlimited
     ? 0
-    : Math.min(100, Math.round((usage.used / usage.allowance) * 100));
+    : Math.min(100, Math.round((usage.used / usage.credits) * 100));
 
   return (
     <Card className="px-[18px] py-4">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-bold">Allowance</div>
+        <div className="text-sm font-bold">Credits</div>
         {usage.exhausted && <StatusPill status="Needs attention" />}
       </div>
       {unlimited ? (

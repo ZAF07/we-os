@@ -546,7 +546,7 @@ async def arun_campaign(
         usage_ledger: The Usage Ledger every model call is checked against and
             charged to, or ``None`` to run uncharged. Checking inside the graph
             is what stops a run already in flight from spending past an
-            allowance it was within when it started (ADR-0020).
+            credits it was within when it started (ADR-0020).
         questionnaire: The published question set the Stage 0 gate enforces, so
             the graph gates on the same rule as the entrypoint that launched it
             (ADR-0026). ``None`` falls back to the code-shipped seed set, which
@@ -568,7 +568,7 @@ async def arun_campaign(
         GateError: If the run halted on the Stage 0 gate.
         PipelineError: If a prerequisite was missing or a deliverable never saved.
         GuardrailError: If a deliverable failed QA within the revision budget.
-        QuotaExhaustedError: If the tenant's allowance ran out mid-run.
+        QuotaExhaustedError: If the tenant's credits ran out mid-run.
     """
     trace = _open_trace(settings, tenant, slug, run_id or new_run_id())
     run_log = _rel_log(settings, trace)

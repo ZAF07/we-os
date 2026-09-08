@@ -7,7 +7,7 @@ thing standing between a runaway loop and a real bill, so "both stores refuse at
 the same point" is a property worth pinning rather than assuming.
 
 The behaviour pinned here is what an owner and the platform admin can observe:
-spend accumulates, an exhausted allowance refuses the next call, one tenant's
+spend accumulates, an exhausted credits refuses the next call, one tenant's
 spend is invisible to another, and the same rows total per campaign as well as
 per tenant.
 
@@ -33,16 +33,16 @@ RATE = 0.001
 THOUSAND = Usage(input_tokens=600, output_tokens=400)
 
 
-def _settings(allowance: float = 10.0) -> Settings:
-    """Build settings with a round token rate and a known allowance.
+def _settings(credits: float = 10.0) -> Settings:
+    """Build settings with a round token rate and a known credits.
 
     Args:
-        allowance: The platform-wide allowance every tenant gets.
+        credits: The platform-wide credits every tenant gets.
 
     Returns:
         Settings the ledger prices calls and refuses them against.
     """
-    return Settings(usage_allowance=allowance, token_rates={MODEL: RATE})
+    return Settings(usage_credits=credits, token_rates={MODEL: RATE})
 
 
 LedgerFactory = Callable[[Settings], Any]
@@ -63,7 +63,7 @@ def postgres_ledger(postgres_pool: Any) -> Iterator[LedgerFactory]:
     """Return a factory building the Postgres ledger over a truncated database.
 
     Both tenants are registered first, because a business exists in the
-    directory before it can spend anything — and a per-tenant allowance is
+    directory before it can spend anything — and a per-tenant credits value is
     recorded *on* that row, so a ledger over an unregistered tenant would have
     nowhere to write one.
 
@@ -115,7 +115,7 @@ def ledger(ledger_factory: LedgerFactory) -> Any:
         ledger_factory: The parametrised adapter factory.
 
     Returns:
-        A ledger with a 10.0 allowance and a 0.001 token rate.
+        A ledger with a 10.0 credits and a 0.001 token rate.
     """
     return ledger_factory(_settings())
 
@@ -159,38 +159,38 @@ def test_spend_accumulates_across_calls(ledger: Any) -> None:
     assert ledger.consumption(TENANT).used == pytest.approx(2.0)
 
 
-def test_consumption_reports_what_is_left_of_the_allowance(ledger: Any) -> None:
+def test_consumption_reports_what_is_left_of_the_credits(ledger: Any) -> None:
     ledger.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
 
     report = ledger.consumption(TENANT)
 
-    assert report.allowance == pytest.approx(10.0)
+    assert report.credits == pytest.approx(10.0)
     assert report.remaining == pytest.approx(9.0)
     assert not report.exhausted
 
 
-def test_a_tenant_within_their_allowance_may_make_another_call(ledger: Any) -> None:
+def test_a_tenant_within_their_credits_may_make_another_call(ledger: Any) -> None:
     ledger.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
 
     ledger.check(TENANT)
 
 
-def test_an_exhausted_allowance_refuses_the_next_call(ledger_factory: LedgerFactory) -> None:
-    spent = ledger_factory(_settings(allowance=1.0))
+def test_an_exhausted_credits_refuses_the_next_call(ledger_factory: LedgerFactory) -> None:
+    spent = ledger_factory(_settings(credits=1.0))
     spent.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
 
     with pytest.raises(QuotaExhaustedError) as raised:
         spent.check(TENANT)
 
     assert raised.value.used == pytest.approx(1.0)
-    assert raised.value.allowance == pytest.approx(1.0)
+    assert raised.value.credits == pytest.approx(1.0)
     assert raised.value.http_status == 402
 
 
 def test_an_overspent_tenant_has_no_negative_balance_to_explain(
     ledger_factory: LedgerFactory,
 ) -> None:
-    spent = ledger_factory(_settings(allowance=0.5))
+    spent = ledger_factory(_settings(credits=0.5))
     spent.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
 
     assert spent.consumption(TENANT).remaining == 0.0
@@ -211,10 +211,10 @@ def test_one_tenants_spend_is_invisible_to_another(ledger: Any) -> None:
     assert ledger.entries(OTHER_TENANT) == []
 
 
-def test_one_tenant_exhausting_their_allowance_does_not_block_another(
+def test_one_tenant_exhausting_their_credits_does_not_block_another(
     ledger_factory: LedgerFactory,
 ) -> None:
-    shared = ledger_factory(_settings(allowance=1.0))
+    shared = ledger_factory(_settings(credits=1.0))
     shared.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
 
     shared.check(OTHER_TENANT)
@@ -259,7 +259,7 @@ def test_entries_come_back_newest_first(ledger: Any) -> None:
     assert [entry.slug for entry in ledger.entries(TENANT)] == ["second", "first"]
 
 
-def test_a_call_not_tied_to_a_campaign_still_counts_against_the_allowance(ledger: Any) -> None:
+def test_a_call_not_tied_to_a_campaign_still_counts_against_the_credits(ledger: Any) -> None:
     """It is omitted from the per-campaign breakdown, not from the tenant total."""
     ledger.record(TENANT, model=MODEL, usage=THOUSAND)
 
@@ -269,9 +269,9 @@ def test_a_call_not_tied_to_a_campaign_still_counts_against_the_allowance(ledger
     assert report.campaigns == []
 
 
-def test_a_tenants_own_allowance_overrides_the_platform_default(ledger: Any) -> None:
+def test_a_tenants_own_credits_overrides_the_platform_default(ledger: Any) -> None:
     """Raising one design partner's cap is a row, not a deploy (ADR-0020)."""
-    ledger.set_allowance(TENANT, 1.0)
+    ledger.set_credits(TENANT, 1.0)
     ledger.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
 
     with pytest.raises(QuotaExhaustedError):
@@ -280,10 +280,10 @@ def test_a_tenants_own_allowance_overrides_the_platform_default(ledger: Any) -> 
 
 
 def test_clearing_an_override_falls_back_to_the_platform_default(ledger: Any) -> None:
-    ledger.set_allowance(TENANT, 1.0)
+    ledger.set_credits(TENANT, 1.0)
     ledger.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
 
-    ledger.set_allowance(TENANT, None)
+    ledger.set_credits(TENANT, None)
 
     ledger.check(TENANT)
-    assert ledger.consumption(TENANT).allowance == pytest.approx(10.0)
+    assert ledger.consumption(TENANT).credits == pytest.approx(10.0)

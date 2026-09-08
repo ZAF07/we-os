@@ -15,7 +15,7 @@ test("home renders its sections", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await expect(page.getByText("Action queue")).toBeVisible();
   await expect(page.getByText("In progress now")).toBeVisible();
-  await expect(page.getByText("Allowance", { exact: true })).toBeVisible();
+  await expect(page.getByText("Credits", { exact: true })).toBeVisible();
   await expect(page.getByText("Portfolio")).toBeVisible();
 });
 

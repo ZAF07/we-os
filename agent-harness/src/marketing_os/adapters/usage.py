@@ -10,10 +10,10 @@ Costing lives here rather than in each adapter, so a call is priced identically
 whichever store is behind the port, and no caller can record a call at a price of
 its own choosing.
 
-The allowance resolves in two steps: the platform-wide default from settings,
-overridden by a per-tenant allowance when the directory holds one. Raising one
+The credits resolves in two steps: the platform-wide default from settings,
+overridden by a per-tenant credits when the directory holds one. Raising one
 design partner's cap is therefore a row rather than a deploy, while the decision
-about how an allowance is *presented* — credits, fair use, metered billing —
+about how credits are *presented* — credits, fair use, metered billing —
 stays deferred.
 """
 
@@ -162,64 +162,65 @@ def build_entry(
 
 
 def refuse_when_exhausted(consumption: Consumption) -> None:
-    """Raise the typed quota failure when a tenant's allowance is spent.
+    """Raise the typed quota failure when a tenant's credits are spent.
 
     Shared by every adapter so both stores refuse at exactly the same point,
     rather than one of them being a rounding error more generous.
 
     Args:
-        consumption: The tenant's spend against their allowance.
+        consumption: The tenant's spend against their credits.
 
     Raises:
-        QuotaExhaustedError: If the allowance is used up.
+        QuotaExhaustedError: If the credits are used up.
     """
     if consumption.exhausted:
-        raise QuotaExhaustedError(consumption.used, consumption.allowance)
+        raise QuotaExhaustedError(consumption.used, consumption.credits)
 
 
-class AllowanceResolver:
+class CreditsResolver:
     """Answers what one tenant is allowed to spend.
 
     A separate object because the answer comes from two places and the
-    precedence matters: a tenant's own allowance wins over the platform-wide
+    precedence matters: a tenant's own credits wins over the platform-wide
     default, so raising one business's cap does not move everybody's. Sharing it
     between adapters keeps that precedence from being re-decided per backend.
     """
 
-    def __init__(self, settings: Settings, allowances: dict[str, float] | None = None) -> None:
+    def __init__(self, settings: Settings, overrides: dict[str, float] | None = None) -> None:
         """Initialise the resolver.
 
         Args:
             settings: The harness settings holding the platform-wide default.
-            allowances: Per-tenant overrides, or ``None`` when there are none.
+            overrides: Per-tenant credits overrides, or ``None`` when there are
+                none.
         """
         self._settings = settings
-        self._overrides = dict(allowances or {})
+        self._overrides = dict(overrides or {})
 
-    def set_override(self, tenant: str, allowance: float | None) -> None:
-        """Record or clear one tenant's own allowance.
+    def set_override(self, tenant: str, credits: float | None) -> None:
+        """Record or clear one tenant's own credits.
 
         Args:
-            tenant: The tenant whose allowance to set.
-            allowance: What they may spend, or ``None`` to fall back to the
+            tenant: The tenant whose credits to set.
+            credits: What they may spend, or ``None`` to fall back to the
                 platform default.
         """
-        if allowance is None:
+        if credits is None:
             self._overrides.pop(tenant, None)
             return
-        self._overrides[tenant] = allowance
+        self._overrides[tenant] = credits
 
-    def allowance_for(self, tenant: str) -> float:
+    def credits_for(self, tenant: str) -> float:
         """Return what a tenant may spend.
 
         Args:
-            tenant: The tenant to resolve an allowance for.
+            tenant: The tenant to resolve credits for.
 
         Returns:
-            The tenant's own allowance when they have one, otherwise the
-            platform-wide default.
+            The tenant's own credits when they have an override, otherwise
+            the platform-wide default.
         """
-        return self._overrides.get(tenant, self._settings.usage_allowance)
+        return self._overrides.get(tenant, self._settings.usage_credits)
 
 
 class InMemoryUsageLedger:
@@ -231,35 +232,35 @@ class InMemoryUsageLedger:
     without a database.
     """
 
-    def __init__(self, settings: Settings, allowances: dict[str, float] | None = None) -> None:
+    def __init__(self, settings: Settings, overrides: dict[str, float] | None = None) -> None:
         """Initialise the empty ledger.
 
         Args:
             settings: The harness settings holding the rates and the default
-                allowance.
-            allowances: Per-tenant allowance overrides, or ``None`` for none.
+                credits.
+            overrides: Per-tenant credits overrides, or ``None`` for none.
         """
         self._settings = settings
-        self._allowances = AllowanceResolver(settings, allowances)
+        self._credits = CreditsResolver(settings, overrides)
         self._entries: list[LedgerEntry] = []
 
-    def set_allowance(self, tenant: str, allowance: float | None) -> None:
-        """Record or clear one tenant's own allowance.
+    def set_credits(self, tenant: str, credits: float | None) -> None:
+        """Record or clear one tenant's own credits.
 
         Args:
-            tenant: The tenant whose allowance to set.
-            allowance: What they may spend, or ``None`` for the platform default.
+            tenant: The tenant whose credits to set.
+            credits: What they may spend, or ``None`` for the platform default.
         """
-        self._allowances.set_override(validate_tenant_id(tenant), allowance)
+        self._credits.set_override(validate_tenant_id(tenant), credits)
 
     def check(self, tenant: str) -> None:
-        """Refuse the next billable call if the tenant's allowance is spent.
+        """Refuse the next billable call if the tenant's credits are spent.
 
         Args:
             tenant: The tenant about to be charged.
 
         Raises:
-            QuotaExhaustedError: If the tenant has used their whole allowance.
+            QuotaExhaustedError: If the tenant has used their whole credit balance.
         """
         refuse_when_exhausted(self.consumption(tenant))
 
@@ -291,7 +292,7 @@ class InMemoryUsageLedger:
         return entry
 
     def consumption(self, tenant: str, slug: str | None = None) -> Consumption:
-        """Report a tenant's spend against their allowance.
+        """Report a tenant's spend against their credits.
 
         Args:
             tenant: The tenant whose consumption to total.
@@ -307,7 +308,7 @@ class InMemoryUsageLedger:
         return Consumption(
             tenant_id=scoped,
             used=total_of(counted),
-            allowance=self._allowances.allowance_for(scoped),
+            credits=self._credits.credits_for(scoped),
             campaigns=per_campaign(owned),
         )
 

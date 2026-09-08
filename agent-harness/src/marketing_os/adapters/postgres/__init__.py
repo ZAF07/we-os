@@ -59,7 +59,7 @@ class PostgresBackend:
         Args:
             dsn: The Postgres connection string.
             settings: The harness settings the usage ledger prices calls and
-                resolves the default allowance from; built from the environment
+                resolves the default credits from; built from the environment
                 when ``None``.
         """
         self.dsn = dsn

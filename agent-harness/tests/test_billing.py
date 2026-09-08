@@ -36,22 +36,22 @@ def _state() -> CampaignState:
     return {"tenant": TENANT, "slug": SLUG}  # type: ignore[typeddict-item]
 
 
-def _ledger(allowance: float) -> InMemoryUsageLedger:
+def _ledger(credits: float) -> InMemoryUsageLedger:
     """Build a ledger pricing the scripted model at a round rate.
 
     Args:
-        allowance: What the tenant may spend before work is refused.
+        credits: What the tenant may spend before work is refused.
 
     Returns:
         The ledger under test.
     """
-    settings = Settings(token_rates={MODEL: RATE}, usage_allowance=allowance)
+    settings = Settings(token_rates={MODEL: RATE}, usage_credits=credits)
     return InMemoryUsageLedger(settings)
 
 
 async def test_an_exhausted_tenant_is_refused_before_the_call_is_made() -> None:
-    """The check precedes the call, so no model runs on a spent allowance."""
-    ledger = _ledger(allowance=1.0)
+    """The check precedes the call, so no model runs on a spent credits."""
+    ledger = _ledger(credits=1.0)
     ledger.record(
         TENANT,
         slug=SLUG,
@@ -59,7 +59,7 @@ async def test_an_exhausted_tenant_is_refused_before_the_call_is_made() -> None:
         model=MODEL,
         usage=Usage(input_tokens=2000),
     )
-    assert ledger.consumption(TENANT).exhausted, "the fixture did not spend the allowance"
+    assert ledger.consumption(TENANT).exhausted, "the fixture did not spend the credits"
     called = False
 
     async def call() -> str:
@@ -75,7 +75,7 @@ async def test_an_exhausted_tenant_is_refused_before_the_call_is_made() -> None:
 
 async def test_a_call_that_raises_is_still_charged() -> None:
     """The charge runs in a ``finally``: a failed call still consumed tokens."""
-    ledger = _ledger(allowance=100.0)
+    ledger = _ledger(credits=100.0)
 
     async def call() -> str:
         raise RuntimeError("provider exploded")
@@ -88,7 +88,7 @@ async def test_a_call_that_raises_is_still_charged() -> None:
 
 async def test_a_cancelled_call_is_still_charged() -> None:
     """Cancelling must not be a way to consume tokens for free."""
-    ledger = _ledger(allowance=100.0)
+    ledger = _ledger(credits=100.0)
     entered = asyncio.Event()
 
     async def call() -> str:
@@ -107,7 +107,7 @@ async def test_a_cancelled_call_is_still_charged() -> None:
 
 async def test_a_successful_call_returns_its_result_and_its_usage() -> None:
     """The caller gets back what it awaited, plus what the call cost."""
-    ledger = _ledger(allowance=100.0)
+    ledger = _ledger(credits=100.0)
 
     async def call() -> str:
         return "the verdict"

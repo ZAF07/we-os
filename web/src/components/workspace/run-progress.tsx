@@ -22,7 +22,7 @@ const EVENT_SENTENCES: Record<string, (event: RunEvent) => string> = {
   "stage.revision_requested": (event) => `Revising ${named(event)}.`,
   "stage.blocked": (event) => `${named(event)} is waiting on an earlier stage.`,
   "stage.failed": (event) => `${named(event)} could not be completed.`,
-  "stage.quota_exhausted": () => "Stopped: your allowance is spent.",
+  "stage.quota_exhausted": () => "Stopped: your credits are spent.",
 };
 
 /**

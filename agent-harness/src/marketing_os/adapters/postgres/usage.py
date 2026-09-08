@@ -8,7 +8,7 @@ summed by the database rather than by pulling every row into the process — whi
 matters because the ledger grows for the life of the account while the answer it
 gives is one number.
 
-The per-tenant allowance lives on the ``tenants`` row rather than in a table of
+The per-tenant credits lives on the ``tenants`` row rather than in a table of
 its own: it is a fact about the business, of which there is exactly one.
 
 Every operation opens one transaction and sets the tenant for it before
@@ -55,7 +55,7 @@ def _to_entry(row: tuple[Any, ...]) -> LedgerEntry:
 
 
 class PostgresUsageLedger:
-    """Serves each tenant's spend from ``usage_ledger``, and their allowance from ``tenants``."""
+    """Serves each tenant's spend from ``usage_ledger``, and their credits from ``tenants``."""
 
     def __init__(self, pool: Any, settings: Settings) -> None:
         """Initialise the ledger.
@@ -64,7 +64,7 @@ class PostgresUsageLedger:
             pool: A ``psycopg_pool.ConnectionPool`` whose connections belong to
                 the application role (not a superuser, which bypasses RLS).
             settings: The harness settings holding the per-model token rates and
-                the platform-wide default allowance.
+                the platform-wide default credits.
         """
         self._pool = pool
         self._settings = settings
@@ -87,32 +87,32 @@ class PostgresUsageLedger:
             connection.execute("SELECT set_config(%s, %s, true)", (TENANT_SETTING, scoped_tenant))
             yield connection, scoped_tenant
 
-    def set_allowance(self, tenant: str, allowance: float | None) -> None:
-        """Record or clear one tenant's own allowance.
+    def set_credits(self, tenant: str, credits: float | None) -> None:
+        """Record or clear one tenant's own credits.
 
         Writes onto the tenant's existing row, so a tenant the directory has not
         registered is left alone rather than conjured into existence by a
         billing operation.
 
         Args:
-            tenant: The tenant whose allowance to set.
-            allowance: What they may spend, or ``None`` to fall back to the
+            tenant: The tenant whose credits to set.
+            credits: What they may spend, or ``None`` to fall back to the
                 platform-wide default.
         """
         with self._scoped_to(tenant) as (connection, scoped):
             connection.execute(
-                "UPDATE tenants SET allowance = %s WHERE tenant_id = %s",
-                (allowance, scoped),
+                "UPDATE tenants SET credits = %s WHERE tenant_id = %s",
+                (credits, scoped),
             )
 
     def check(self, tenant: str) -> None:
-        """Refuse the next billable call if the tenant's allowance is spent.
+        """Refuse the next billable call if the tenant's credits are spent.
 
         Args:
             tenant: The tenant about to be charged.
 
         Raises:
-            QuotaExhaustedError: If the tenant has used their whole allowance.
+            QuotaExhaustedError: If the tenant has used their whole credit balance.
         """
         refuse_when_exhausted(self.consumption(tenant))
 
@@ -156,7 +156,7 @@ class PostgresUsageLedger:
         return _to_entry(row)
 
     def consumption(self, tenant: str, slug: str | None = None) -> Consumption:
-        """Report a tenant's spend against their allowance.
+        """Report a tenant's spend against their credits.
 
         The totals are summed in the database rather than over fetched rows: the
         ledger grows for the life of the account, and the answer is one number.
@@ -187,16 +187,16 @@ class PostgresUsageLedger:
                 (scoped,),
             ).fetchall()
             override = connection.execute(
-                "SELECT allowance FROM tenants WHERE tenant_id = %s",
+                "SELECT credits FROM tenants WHERE tenant_id = %s",
                 (scoped,),
             ).fetchone()
-        allowance = self._settings.usage_allowance
+        credits = self._settings.usage_credits
         if override is not None and override[0] is not None:
-            allowance = float(override[0])
+            credits = float(override[0])
         return Consumption(
             tenant_id=scoped,
             used=float(used),
-            allowance=allowance,
+            credits=credits,
             campaigns=rank_campaigns({str(row[0]): float(row[1]) for row in breakdown}),
         )
 
