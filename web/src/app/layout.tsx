@@ -31,7 +31,7 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={instrumentSans.variable}>
+      <html lang="en" className={`${instrumentSans.variable} scroll-smooth`}>
         <body className="antialiased">{children}</body>
       </html>
     </ClerkProvider>

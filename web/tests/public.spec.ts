@@ -34,12 +34,16 @@ test("Get started and Sign in open the sign-up and sign-in flows", async ({
     .getByRole("link", { name: "Get started" })
     .click();
   await expect(page).toHaveURL(/\/sign-up/);
-  await expect(page.getByRole("heading", { name: "We-OS" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "We-OS", exact: true }),
+  ).toBeVisible();
 
   await page.goto("/");
   await page.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/sign-in/);
-  await expect(page.getByRole("heading", { name: "We-OS" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "We-OS", exact: true }),
+  ).toBeVisible();
 });
 
 test("Home without a session is sent to sign-in, and remembers where to return", async ({
@@ -51,19 +55,19 @@ test("Home without a session is sent to sign-in, and remembers where to return",
   expect(decodeURIComponent(page.url())).toContain("/home");
 });
 
-test("the Landing stacks at a phone width without horizontal scroll", async ({
+test("the public pages stack at a phone width without horizontal scroll", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 720 });
-  await page.goto("/");
 
-  await expect(
-    page.getByRole("heading", { name: "Strategy before content. Always." }),
-  ).toBeVisible();
-  const overflowX = await page.evaluate(
-    () => document.documentElement.scrollWidth > window.innerWidth,
-  );
-  expect(overflowX).toBe(false);
+  for (const path of ["/", "/pricing"]) {
+    await page.goto(path);
+    await expect(page.getByRole("contentinfo")).toBeVisible();
+    const overflowX = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    );
+    expect(overflowX, `horizontal scroll on ${path}`).toBe(false);
+  }
 });
 
 const TIERS = [
@@ -121,4 +125,77 @@ test("the Landing shows the same three tiers, and Pricing is one link away", asy
   await expect(
     page.getByRole("contentinfo").getByRole("link", { name: "Pricing" }),
   ).toHaveAttribute("href", "/pricing");
+});
+
+const FAQ_QUESTIONS = [
+  "What is a credit?",
+  "Do I need marketing knowledge?",
+  "Does We-OS post for me?",
+  "Is my data private?",
+  "What happens when credits run out?",
+];
+
+test("the Landing tells its story in order, from the hero to the final call", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("img", { name: /approval gate/i })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText([
+    "The work runs. You decide.",
+    "Three steps. Your judgement at each one.",
+    "Five specialists. One brief. Your sign-off.",
+    "Not a content generator.",
+    "The whole product, on every tier.",
+    "The ones people ask before paying.",
+    "Answer the questions. Approve what runs.",
+  ]);
+  await expect(page.getByRole("contentinfo")).toBeVisible();
+});
+
+test("See how it works reaches the three steps", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "See how it works" }).click();
+
+  await expect(page).toHaveURL(/#how$/);
+  await expect(page.locator("#how")).toBeInViewport();
+  await expect(
+    page.locator("#how").getByRole("heading", { level: 3 }),
+  ).toHaveText([
+    "Answer what only you know",
+    "Research, positioning and planning run in order",
+    "Approve each decision as it lands",
+  ]);
+});
+
+test("the FAQ answers the same five questions on the Landing and on Pricing", async ({
+  page,
+}) => {
+  for (const path of ["/", "/pricing"]) {
+    await page.goto(path);
+    for (const question of FAQ_QUESTIONS) {
+      await expect(
+        page.getByText(question),
+        `${question} on ${path}`,
+      ).toBeVisible();
+    }
+  }
+
+  // Honest about what does not exist yet: nothing is posted anywhere.
+  await page.getByText("Does We-OS post for me?").click();
+  await expect(page.getByText("Not yet.")).toBeVisible();
+});
+
+test("the copy keeps the voice: no first-person we, no promise the product cannot keep", async ({
+  page,
+}) => {
+  for (const path of ["/", "/pricing"]) {
+    await page.goto(path);
+    const text = (await page.locator("body").innerText()).replace(/We-OS/g, "");
+
+    expect(text, `first-person "we" on ${path}`).not.toMatch(/\bwe\b/i);
+    expect(text, `an unkeepable promise on ${path}`).not.toMatch(
+      /free trial|refund|cancel anytime|money.back|testimonial/i,
+    );
+  }
 });

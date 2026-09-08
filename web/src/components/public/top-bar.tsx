@@ -22,6 +22,9 @@ export function PublicTopBar() {
           <BrandMark size="large" />
         </Link>
         <div className="hidden gap-7 text-[14.5px] font-medium text-slate-600 md:flex">
+          <Link href="/#how" className="hover:text-foreground">
+            How it works
+          </Link>
           <Link href="/pricing" className="hover:text-foreground">
             Pricing
           </Link>

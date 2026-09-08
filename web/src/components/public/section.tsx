@@ -55,3 +55,24 @@ export function SectionHeading({
     </h2>
   );
 }
+
+/**
+ * Renders the centred column every public section lays out in.
+ *
+ * Args:
+ *   children: The section's content.
+ *   className: Optional extra classes, usually vertical padding.
+ */
+export function Container({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("mx-auto max-w-[1180px] px-5 md:px-10", className)}>
+      {children}
+    </div>
+  );
+}
