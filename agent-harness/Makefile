@@ -11,7 +11,8 @@ test:
 	uv run pytest -q
 
 # The Postgres suite starts its own throwaway container per run (testcontainers),
-# so it needs Docker but no setup. Use this in CI.
+# so it needs Docker but no setup. There is no CI: this is the pre-push gate,
+# run it by hand alongside `make check` before pushing.
 test-postgres:
 	MARKETING_OS_TEST_POSTGRES=1 uv run pytest -q
 

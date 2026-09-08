@@ -101,6 +101,7 @@ Every piece of work — feature, refactor, or bug — gets an issue file in `.sc
 
 - **Start**: run `/triage` ("show me what needs attention") to re-orient on in-flight work. When the user asks "what's in flight?" or "where were we?", this is the answer.
 - **End, work complete**: `/post-implement`, then the user commits the `.scratch/` status change (commit message convention: "updated tasks status").
+- **Before pushing**: run the full suite — `make check` **and** `make test-postgres`. There is no CI for `agent-harness/`; this manual run is the only gate.
 - **End, mid-task**: append a status note under `## Comments` in the active issue file — where things stand, what's next, any open questions.
 
 ---
@@ -110,7 +111,12 @@ Every piece of work — feature, refactor, or bug — gets an issue file in `.sc
 A task is done when:
 
 1. Code compiles / imports, and the change is **verified in the running app** (via `/verify` or `/run`) — not just green in tests.
-2. `uv run ruff check .`, `uv run ruff format`, `uv run mypy src`, and `uv run pytest` all pass.
+2. `make check` passes (ruff, ruff format, mypy, and the fast `pytest`), **and**
+   `make test-postgres` passes (needs Docker; starts its own throwaway container).
+   A green bare `uv run pytest` is **not** sufficient — the whole Postgres suite
+   is marked `slow` and skips silently unless `MARKETING_OS_TEST_POSTGRES=1` is
+   set, so durable checkpointing goes unverified. `make test-postgres` is the
+   only run that covers it.
 3. New behavior has tests; for a bug fix, a test that was red before the fix and is green after.
 4. Acceptance criteria on the issue are checked off with evidence, and you've reported what you changed and any caveats plainly.
 
