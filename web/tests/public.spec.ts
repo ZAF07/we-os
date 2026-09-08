@@ -65,3 +65,60 @@ test("the Landing stacks at a phone width without horizontal scroll", async ({
   );
   expect(overflowX).toBe(false);
 });
+
+const TIERS = [
+  { name: "Operator", price: "$59", credits: "6,000", param: "operator" },
+  { name: "Strategist", price: "$89", credits: "10,000", param: "strategist" },
+  { name: "Command", price: "$115", credits: "20,000", param: "command" },
+];
+
+test("Pricing shows the three tiers, each linking to sign-up with the tier remembered", async ({
+  page,
+}) => {
+  const response = await page.goto("/pricing");
+  expect(response?.status()).toBe(200);
+
+  for (const { name, price, credits, param } of TIERS) {
+    const card = page.getByRole("article", { name });
+    await expect(card.getByText(price)).toBeVisible();
+    await expect(card.getByText(credits)).toBeVisible();
+    await expect(
+      card.getByRole("link", { name: "Get started" }),
+    ).toHaveAttribute("href", `/sign-up?tier=${param}`);
+  }
+
+  // Strategist is the default for someone unsure; the other two are not.
+  await expect(
+    page.getByRole("article", { name: "Strategist" }).getByText("Most chosen"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("article", { name: "Operator" }).getByText("Most chosen"),
+  ).toHaveCount(0);
+
+  await expect(
+    page.getByText("Every tier includes the whole product"),
+  ).toBeVisible();
+});
+
+test("the Landing shows the same three tiers, and Pricing is one link away", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const pricing = page.locator("#pricing");
+  for (const { name, price, credits, param } of TIERS) {
+    const card = pricing.getByRole("article", { name });
+    await expect(card.getByText(price)).toBeVisible();
+    await expect(card.getByText(credits)).toBeVisible();
+    await expect(
+      card.getByRole("link", { name: "Get started" }),
+    ).toHaveAttribute("href", `/sign-up?tier=${param}`);
+  }
+
+  await expect(
+    page.getByRole("banner").getByRole("link", { name: "Pricing" }),
+  ).toHaveAttribute("href", "/pricing");
+  await expect(
+    page.getByRole("contentinfo").getByRole("link", { name: "Pricing" }),
+  ).toHaveAttribute("href", "/pricing");
+});

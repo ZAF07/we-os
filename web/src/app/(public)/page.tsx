@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { Eyebrow, SectionHeading } from "@/components/public/section";
+import { TierCards } from "@/components/public/tier-card";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -15,6 +17,7 @@ export default function LandingPage() {
   return (
     <main>
       <Hero />
+      <Pricing />
     </main>
   );
 }
@@ -50,6 +53,31 @@ function Hero() {
             </Button>
           </div>
         </div>
+      </div>
+    </section>
+  );
+}
+
+/** Renders the three tiers, from the same cards the Pricing page shows. */
+function Pricing() {
+  return (
+    <section
+      id="pricing"
+      aria-labelledby="pricing-heading"
+      className="border-y bg-background"
+    >
+      <div className="mx-auto max-w-[1180px] px-5 py-20 md:px-10 md:py-24">
+        <div className="max-w-[640px]">
+          <Eyebrow>Pricing</Eyebrow>
+          <SectionHeading id="pricing-heading">
+            The whole product, on every tier.
+          </SectionHeading>
+          <p className="mt-4 text-[16.5px] leading-relaxed text-slate-600">
+            Tiers differ only in monthly credits. A credit is what your business
+            spends on generation, and every tier grants a fresh set each month.
+          </p>
+        </div>
+        <TierCards />
       </div>
     </section>
   );

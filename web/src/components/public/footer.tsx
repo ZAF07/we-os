@@ -15,6 +15,9 @@ export function PublicFooter() {
         <Link href="/" className="text-foreground">
           <BrandMark />
         </Link>
+        <Link href="/pricing" className="hover:text-foreground">
+          Pricing
+        </Link>
         <Link href="/sign-in" className="hover:text-foreground">
           Sign in
         </Link>

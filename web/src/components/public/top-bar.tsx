@@ -4,7 +4,8 @@ import { BrandMark } from "@/components/ui/brand-mark";
 import { Button } from "@/components/ui/button";
 
 /**
- * Renders the public top bar: the brand mark and the one way in.
+ * Renders the public top bar: the brand mark, the section links, and the one
+ * way in.
  *
  * Sticky and translucent so it stays in reach as the Landing scrolls. Every
  * link is absolute, so the bar works from any public page, not only the
@@ -20,6 +21,11 @@ export function PublicTopBar() {
         <Link href="/" className="text-foreground">
           <BrandMark size="large" />
         </Link>
+        <div className="hidden gap-7 text-[14.5px] font-medium text-slate-600 md:flex">
+          <Link href="/pricing" className="hover:text-foreground">
+            Pricing
+          </Link>
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <Button asChild variant="outline">
             <Link href="/sign-in">Sign in</Link>
