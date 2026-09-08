@@ -2,7 +2,17 @@ import Link from "next/link";
 
 import { Card, CardHeader } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status-pill";
-import { isBullet, plainText, toSections } from "@/lib/deliverable";
+import {
+  isBullet,
+  kpiTier,
+  planPart,
+  plainText,
+  toSections,
+  withoutTierLabel,
+  type DeliverableSection,
+  type KpiTierName,
+  type PlanPart,
+} from "@/lib/deliverable";
 import { engineErrorMessage } from "@/lib/engine";
 
 import { loadPerformance, type PerformancePlanView } from "./actions";
@@ -108,38 +118,232 @@ function PlanCard({ plan }: { plan: PerformancePlanView }) {
         className="flex flex-col gap-4 px-[18px] pb-4"
       >
         {toSections(plan.content).map((section, index) => (
-          <section key={`${section.heading}-${index}`}>
-            {section.heading !== "" && (
-              <h3 className="mb-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
-                {section.heading}
-              </h3>
-            )}
-            {section.lines.every(isBullet) && section.lines.length > 0 ? (
-              <ul className="flex flex-col gap-1">
-                {section.lines.map((line, position) => (
-                  <li
-                    key={position}
-                    className="flex gap-2 text-[13.5px] text-slate-800"
-                  >
-                    <span className="text-primary">·</span>
-                    <span>{plainText(line)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              section.lines.map((line, position) => (
-                <p
-                  key={position}
-                  className="text-[13.5px] leading-relaxed text-slate-800"
-                >
-                  {plainText(line)}
-                </p>
-              ))
-            )}
-          </section>
+          <PlanSection key={`${section.heading}-${index}`} section={section} />
         ))}
       </article>
     </Card>
+  );
+}
+
+const PART_LABELS: Record<PlanPart, string> = {
+  channels: "Channel mix",
+  spend: "Spend allocation",
+  placements: "Placements · format specs",
+  kpis: "KPI targets · all three tiers",
+};
+
+const KPI_TIERS: readonly KpiTierName[] = ["Business", "Marketing", "Creative"];
+
+/**
+ * Renders one section of a plan, with the treatment its part deserves.
+ *
+ * The screen is a reader, not a check: identifying a section lets it say which
+ * of the plan's four parts it is showing instead of laying them all out alike.
+ * A heading it does not recognise is not a problem to report — it renders the
+ * way every section did before, since whether the plan is complete was settled
+ * upstream by the guardrail and the reviewer that scores against it.
+ *
+ * Args:
+ *   section: One heading and the lines the specialist wrote beneath it.
+ */
+function PlanSection({ section }: { section: DeliverableSection }) {
+  const part = planPart(section.heading);
+
+  return (
+    <section aria-label={part ? PART_LABELS[part] : undefined}>
+      {section.heading !== "" && (
+        <SectionHeading heading={section.heading} part={part} />
+      )}
+      {part === "kpis" ? (
+        <KpiTiers lines={section.lines} />
+      ) : part === "placements" ? (
+        <PlacementSpecs lines={section.lines} />
+      ) : (
+        <PlainLines lines={section.lines} emphasised={part === "spend"} />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Reports whether a heading already tells the reader which part it is.
+ *
+ * A heading reading "Budget allocation" is the spend allocation in the reader's
+ * own words, so labelling it again adds a chip and no information. The label is
+ * for the heading that matched on one word — "Media split", say — where naming
+ * the part is the whole point of identifying it.
+ *
+ * Args:
+ *   heading: The heading as the specialist wrote it.
+ *   part: The plan part it was identified as.
+ *
+ * Returns:
+ *   Whether the heading carries the words the label would add.
+ */
+function namesPart(heading: string, part: PlanPart): boolean {
+  const written = heading.toLowerCase();
+  return PART_LABELS[part]
+    .split("·")[0]
+    .trim()
+    .toLowerCase()
+    .split(" ")
+    .every((word) => written.includes(word));
+}
+
+/**
+ * Renders a section's heading, naming the part when the heading is one.
+ *
+ * Args:
+ *   heading: The heading as the specialist wrote it.
+ *   part: The plan part it names, or null when it names none.
+ */
+function SectionHeading({
+  heading,
+  part,
+}: {
+  heading: string;
+  part: PlanPart | null;
+}) {
+  return (
+    <h3 className="mb-1.5 flex items-baseline gap-2 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
+      <span className={part ? "text-slate-700" : undefined}>{heading}</span>
+      {part && !namesPart(heading, part) && (
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold tracking-normal text-slate-600 normal-case">
+          {PART_LABELS[part]}
+        </span>
+      )}
+    </h3>
+  );
+}
+
+/**
+ * Renders the KPI section grouped by the three tiers a campaign must define.
+ *
+ * Lines that name no tier keep their place beneath the grouped ones rather than
+ * being dropped — the specialist wrote them, and the screen shows what is there.
+ *
+ * A tier with no line under this heading gets an empty slot rather than a
+ * warning. Three slots is what the tiers *are*, so leaving one out would
+ * misdescribe the layout; saying the plan is incomplete is the guardrail's job,
+ * not this screen's.
+ *
+ * Args:
+ *   lines: The KPI section's lines.
+ */
+function KpiTiers({ lines }: { lines: string[] }) {
+  const ungrouped = lines.filter((line) => kpiTier(line) === null);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid gap-2 sm:grid-cols-3">
+        {KPI_TIERS.map((tier) => {
+          const stated = lines.filter((line) => kpiTier(line) === tier);
+          return (
+            <div key={tier} className="rounded-[10px] border bg-card px-3 py-2">
+              <div className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                {tier}
+              </div>
+              {stated.length === 0 ? (
+                <div className="mt-0.5 text-[13px] text-muted-foreground">
+                  —
+                </div>
+              ) : (
+                stated.map((line, position) => (
+                  <div
+                    key={position}
+                    className="mt-0.5 text-[13px] text-slate-800"
+                  >
+                    {withoutTierLabel(line, tier)}
+                  </div>
+                ))
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <PlainLines lines={ungrouped} emphasised={false} />
+    </div>
+  );
+}
+
+/**
+ * Renders the placements section as the specs creative has to satisfy.
+ *
+ * Each bullet is laid out as its own spec row — the plan writes one per
+ * placement, and reading them side by side is what makes them usable by whoever
+ * builds the creative. No spec is parsed out of the prose; the screen shows the
+ * line the specialist wrote, in a place that says what it is.
+ *
+ * Args:
+ *   lines: The placements section's lines.
+ */
+function PlacementSpecs({ lines }: { lines: string[] }) {
+  const specs = lines.filter(isBullet);
+  const prose = lines.filter((line) => !isBullet(line));
+
+  if (specs.length === 0)
+    return <PlainLines lines={lines} emphasised={false} />;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <PlainLines lines={prose} emphasised={false} />
+      <ul className="grid gap-1.5 sm:grid-cols-2">
+        {specs.map((line, position) => (
+          <li
+            key={position}
+            className="rounded-[10px] border bg-card px-3 py-2 text-[13px] text-slate-800"
+          >
+            {plainText(line)}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Renders a section's lines the way every section rendered before this screen
+ * identified any of them — bullets as a list, prose as paragraphs.
+ *
+ * Args:
+ *   lines: The section's lines.
+ *   emphasised: Whether to give the lines the weight the spend allocation wants,
+ *     it being the decision a reader scans for first.
+ */
+function PlainLines({
+  lines,
+  emphasised,
+}: {
+  lines: string[];
+  emphasised: boolean;
+}) {
+  if (lines.length === 0) return null;
+
+  const text = emphasised
+    ? "text-[14px] font-semibold text-slate-900"
+    : "text-[13.5px] text-slate-800";
+
+  if (lines.every(isBullet)) {
+    return (
+      <ul className="flex flex-col gap-1">
+        {lines.map((line, position) => (
+          <li key={position} className={`flex gap-2 ${text}`}>
+            <span className="text-primary">·</span>
+            <span>{plainText(line)}</span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return (
+    <>
+      {lines.map((line, position) => (
+        <p key={position} className={`leading-relaxed ${text}`}>
+          {plainText(line)}
+        </p>
+      ))}
+    </>
   );
 }
 
