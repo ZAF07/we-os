@@ -161,9 +161,19 @@ either advances, loops back for a revision, or fails once the QA budget is spent
 
 ```bash
 uv run pytest          # offline; scripted fake chat model + fake reviewer (no network)
+                       # excludes the Postgres suite — see `make test-postgres` below
 uv run ruff format
 uv run ruff check .
 uv run mypy src
+```
+
+The bare `uv run pytest` above **skips the whole Postgres suite** — everything in
+`tests/test_postgres.py` is marked `slow` and only runs when
+`MARKETING_OS_TEST_POSTGRES=1` is set. Those are the only tests covering durable
+checkpointing, so run them before pushing:
+
+```bash
+make test-postgres     # needs Docker; starts its own throwaway container
 ```
 
 `tests/test_graph.py` exercises the full graph: gate halt, the QA revise loop,

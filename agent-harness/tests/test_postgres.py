@@ -32,6 +32,7 @@ from conftest import (
     SLUG,
     TENANT,
     install_scripted_graph,
+    prototype_adapters,
     write_all_agent_specs,
 )
 from marketing_os.adapters.deliverables import InMemoryDeliverableStore
@@ -362,7 +363,8 @@ async def test_a_run_checkpoint_outlives_the_process_that_wrote_it(
 
     async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as writer:
         await writer.setup()
-        await arun_campaign(settings, TENANT, SLUG, stage="research", checkpointer=writer)
+        adapters = {**prototype_adapters(settings.root), "checkpointer": writer}
+        await arun_campaign(settings, TENANT, SLUG, stage="research", **adapters)
 
     async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as reader:
         stored = await reader.aget_tuple(thread)
@@ -388,12 +390,11 @@ async def test_a_run_halted_at_a_gate_is_approvable_after_a_restart(
     write_all_agent_specs(settings)
     install_scripted_graph(monkeypatch)
     versions = InMemoryDeliverableStore()
+    adapters = {**prototype_adapters(settings.root), "deliverable_store": versions}
 
     async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as first:
         await first.setup()
-        halted = await arun_campaign(
-            settings, TENANT, SLUG, checkpointer=first, deliverable_store=versions
-        )
+        halted = await arun_campaign(settings, TENANT, SLUG, **{**adapters, "checkpointer": first})
     assert halted.awaiting_approval_stage == "brand-strategy"
 
     async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as second:
@@ -403,8 +404,7 @@ async def test_a_run_halted_at_a_gate_is_approvable_after_a_restart(
             settings,
             TENANT,
             SLUG,
-            checkpointer=second,
-            deliverable_store=versions,
+            **{**adapters, "checkpointer": second},
             resume=Command(resume={"stage_key": "brand-strategy", "approved": True}),
         )
 
@@ -425,7 +425,8 @@ async def test_clearing_a_campaigns_threads_removes_its_durable_state(
 
     async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as saver:
         await saver.setup()
-        await arun_campaign(settings, TENANT, SLUG, stage="research", checkpointer=saver)
+        adapters = {**prototype_adapters(settings.root), "checkpointer": saver}
+        await arun_campaign(settings, TENANT, SLUG, stage="research", **adapters)
         assert await saver.aget_tuple(thread) is not None
 
         await clear_campaign_threads(saver, TENANT, SLUG)
