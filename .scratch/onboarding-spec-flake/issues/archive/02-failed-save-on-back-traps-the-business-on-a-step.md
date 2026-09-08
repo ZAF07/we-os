@@ -1,6 +1,6 @@
 # 02 — A failed save on Back traps the business on the step they were leaving
 
-Status: ready-for-human
+Status: completed
 Type: bug
 
 ## Symptom
@@ -125,14 +125,39 @@ were confirmed and fixed:
    failure. It now fills its own way to step 2, types an answer there, and
    asserts that answer survives.
 
-Also noted and deliberately not changed: on **step 0** with the engine down,
-Back is hidden and Next is blocked by the failing save. That is not the trap
-this issue describes — step 0 has nowhere back to go — but it does mean a
-business cannot progress at all while the engine is unreachable. Forward
-blocking on an unwritten step is the rule 01 established and the Decision above
-kept, so relaxing it is a separate product call.
+### Step 1, where Back does not exist
+
+The review also found the criterion unmet on **step 1**: Back is hidden there,
+so a failing save left the primary button as the only control, and it neither
+moved the business nor said why. Taken literally the criterion forbids that,
+and it was fixed rather than deferred.
+
+Not by advancing optimistically — carrying unwritten answers forward is the
+rule [01](archive/01-onboarding-spec-depends-on-run-order.md) established and
+the Decision above keeps. The escape already existed: clicking again retries
+the write, because the in-flight guard clears in a `finally`. What was missing
+was any sign of it. So the primary button now reads **Try again** while a save
+has failed, on every step rather than only the last, and the message names the
+retry and says going back will not lose the answers.
+
+`WizardShell` gained an optional `retryLabel` for this, which overrides the
+per-step label on any step. The campaigns wizard does not pass it and is
+unaffected — its save cannot fail.
 
 ### Gate output
 
 `pnpm typecheck`, `pnpm lint`, `pnpm format:check` clean; `pnpm test:unit`
-55 passed; `make test-e2e` 47 passed.
+55 passed; `make test-e2e` 48 passed.
+
+Both e2e tests were verified red against the unfixed code with the container
+rebuilt on it, and green after:
+
+- `Back still goes back when the save is failing, and keeps the answer` — fails
+  on `main`'s transition, waiting for `Step 1 of 5` that never arrives.
+- `step 1 offers a way out while the save is failing` — fails without the retry
+  label, waiting for a `Try again` button that is never rendered.
+
+## Completion
+
+- Completed: 2026-09-08
+- Commit: <to be filled in manually>

@@ -47,6 +47,9 @@ export function WizardProgress({
  *   current: Index of the active step.
  *   error: Optional validation message shown above the footer.
  *   nextLabel: Label for the primary action on the final step.
+ *   retryLabel: Optional label that replaces the primary action's label on
+ *     every step, for when the last attempt failed and clicking again
+ *     retries it rather than moving on.
  *   busy: Whether a transition's save is in flight, which disables both
  *     buttons so a second save can never race the first.
  *   onBack: Called when Back is clicked (hidden on the first step).
@@ -64,6 +67,7 @@ export function WizardShell({
   current,
   error,
   nextLabel,
+  retryLabel,
   busy,
   onBack,
   onNext,
@@ -76,6 +80,7 @@ export function WizardShell({
   current: number;
   error?: string;
   nextLabel: string;
+  retryLabel?: string;
   busy: boolean;
   onBack: () => void;
   onNext: () => void;
@@ -123,7 +128,7 @@ export function WizardShell({
             disabled={busy}
             className="cursor-pointer rounded-lg bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isLast ? nextLabel : "Next →"}
+            {retryLabel ?? (isLast ? nextLabel : "Next →")}
           </button>
         </div>
       </div>

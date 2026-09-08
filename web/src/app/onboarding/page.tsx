@@ -125,8 +125,9 @@ export default function OnboardingPage() {
       return true;
     } catch {
       setFailure(
-        "We could not save your answers. Check your connection — what you " +
-          "have typed is still here, and we will save it on the next try.",
+        "We could not save your answers — check your connection and try " +
+          "again. What you have typed is still here, and going back to an " +
+          "earlier step will not lose it.",
       );
       return false;
     }
@@ -201,6 +202,7 @@ export default function OnboardingPage() {
           : undefined)
       }
       nextLabel={busy ? "Saving…" : "Finish onboarding"}
+      retryLabel={!busy && failure ? "Try again" : undefined}
       busy={busy}
       onBack={() => void backAndClearFailure()}
       onNext={next}

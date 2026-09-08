@@ -171,6 +171,37 @@ test("Back still goes back when the save is failing, and keeps the answer", asyn
   await expect(stepTwoField).toHaveValue(strandedAnswer);
 });
 
+// Step 1 has nothing behind it, so Back is hidden and only the primary button
+// can move anyone. This covers the other half of the criterion the fix serves:
+// no step may leave the business with nothing that moves them.
+test("step 1 offers a way out while the save is failing", async ({ page }) => {
+  await page.goto("/onboarding");
+
+  await expect(page.getByText("Step 1 of 5")).toBeVisible();
+  for (const question of FIRST_STEP_QUESTIONS) {
+    await fillAndConfirm(page.getByLabel(question), "Answered on step 1");
+  }
+
+  await page.route("**/onboarding", async (route, request) => {
+    if (request.method() === "POST") return route.abort();
+    return route.continue();
+  });
+
+  await page.getByRole("button", { name: "Next →" }).click();
+  await expect(page.getByText(/could not save your answers/)).toBeVisible();
+  // Back is hidden here, so the primary button is the only way out — and it
+  // says it is a retry rather than repeating an offer to move on that it has
+  // just refused.
+  await expect(page.getByRole("button", { name: "← Back" })).toHaveCount(0);
+  const retry = page.getByRole("button", { name: "Try again" });
+  await expect(retry).toBeVisible();
+
+  // The engine comes back and the same button, clicked again, moves them on.
+  await page.unrouteAll();
+  await retry.click();
+  await expect(page.getByText("Step 2 of 5")).toBeVisible();
+});
+
 // Last, because it completes the Brand DNA and leaves nothing for the gating
 // spec above to block on until the seed re-blanks the tenant.
 test("completing the questionnaire lands on the Brand screen with the answers", async ({
