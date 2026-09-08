@@ -11,8 +11,8 @@ import { cn } from "@/lib/utils";
  * a recommendation is the product's to make, while popularity would be a
  * claim about other businesses that nothing backs yet.
  *
- * The one component both the Landing's pricing section and the Pricing page
- * use, so the two can never show different tiers.
+ * The one component that renders a tier, so every place that shows one
+ * agrees. Today that is the Pricing page alone.
  *
  * Args:
  *   tier: The tier to show.

@@ -104,20 +104,14 @@ test("Pricing shows the three tiers, each linking to sign-up with the tier remem
   ).toBeVisible();
 });
 
-test("the Landing shows the same three tiers, and Pricing is one link away", async ({
+test("the tiers live on Pricing, one link away from the Landing", async ({
   page,
 }) => {
   await page.goto("/");
 
-  const pricing = page.locator("#pricing");
-  for (const { name, price, credits, param } of TIERS) {
-    const card = pricing.getByRole("article", { name });
-    await expect(card.getByText(price)).toBeVisible();
-    await expect(card.getByText(credits)).toBeVisible();
-    await expect(
-      card.getByRole("link", { name: "Get started" }),
-    ).toHaveAttribute("href", `/sign-up?tier=${param}`);
-  }
+  // The Landing tells the story and answers the questions; what it costs is
+  // the Pricing page's job, so no tier card appears here.
+  await expect(page.getByRole("article")).toHaveCount(0);
 
   await expect(
     page.getByRole("banner").getByRole("link", { name: "Pricing" }),
@@ -146,7 +140,6 @@ test("the Landing tells its story in order, from the hero to the final call", as
     "Three steps. Your judgement at each one.",
     "Five specialists. One brief. Your sign-off.",
     "Not a content generator.",
-    "The whole product, on every tier.",
     "The ones people ask before paying.",
     "Answer the questions. Approve what runs.",
   ]);
