@@ -75,13 +75,13 @@ export function toQueue(campaigns: CampaignSummary[]): QueueItem[] {
 /**
  * Summarises the tenant's position in the three numbers Home leads with.
  *
- * Allowance is one of them because work stops when it runs out, and a business
+ * Credits are one of them because work stops when they run out, and a business
  * owner should learn that from their own screen rather than from a refusal
  * (ADR-0020).
  *
  * Args:
  *   campaigns: The tenant's active campaigns.
- *   usage: What the tenant has spent against their allowance.
+ *   usage: What the tenant has spent against their credits.
  *
  * Returns:
  *   The stat tiles, in the order Home shows them.
@@ -108,8 +108,8 @@ export function toStats(
 
   if (usage !== null) {
     stats.push({
-      label: "Allowance used",
-      value: formatAllowance(usage),
+      label: "Credits used",
+      value: formatCredits(usage),
       tone: usage.exhausted ? "destructive" : "default",
     });
   }
@@ -117,18 +117,19 @@ export function toStats(
 }
 
 /**
- * Says how much of the allowance is gone, in the plainest terms available.
+ * Says how many credits are gone, in the plainest terms available.
  *
  * Args:
  *   usage: The tenant's spend report.
  *
  * Returns:
- *   A percentage when there is an allowance to be a fraction of, and the raw
- *   spend when there is not — an unlimited allowance has no percentage.
+ *   A percentage when there are credits to be a fraction of, and the raw
+ *   spend when there are not — unlimited credits have no percentage. Whole
+ *   credits either way: a fraction of a credit is display noise.
  */
-function formatAllowance(usage: UsageReport): string {
-  if (usage.allowance <= 0) return `${usage.used.toFixed(2)}`;
-  return `${Math.round((usage.used / usage.allowance) * 100)}%`;
+function formatCredits(usage: UsageReport): string {
+  if (usage.credits <= 0) return `${Math.round(usage.used)}`;
+  return `${Math.round((usage.used / usage.credits) * 100)}%`;
 }
 
 /**

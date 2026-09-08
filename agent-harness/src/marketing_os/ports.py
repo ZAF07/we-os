@@ -13,7 +13,7 @@ spans workers, and the :class:`TokenVerifier`, which establishes who a caller is
 (ADR-0013), the :class:`QuestionnaireStore` and :class:`AnswerStore`, which
 hold the admin-curated question set and each business's answers to it
 (ADR-0018), and the :class:`UsageLedger`, which records what every billable call
-cost its tenant and refuses the next one when their allowance is spent
+cost its tenant and refuses the next one when their credits are spent
 (ADR-0020), and the :class:`StorageBackend`, which owns the whole set as one
 lifetime because storage is one durability decision (ADR-0014). Tests substitute
 all of them with hermetic fakes.
@@ -544,10 +544,10 @@ class AnswerStore(Protocol):
 
 @runtime_checkable
 class UsageLedger(Protocol):
-    """Tenant-scoped record of every billable call, and the allowance it counts against.
+    """Tenant-scoped record of every billable call, and the credits it counts against.
 
     Two halves that must not drift apart (ADR-0020). :meth:`check` runs
-    **before** a billable call and refuses it when the allowance is spent;
+    **before** a billable call and refuses it when the credits are spent;
     :meth:`record` runs after and appends what the call actually cost. Ordering
     them that way is the whole point: recording without checking observes an
     overspend rather than preventing one, and a runaway agentic loop can spend a
@@ -560,13 +560,13 @@ class UsageLedger(Protocol):
     """
 
     def check(self, tenant: str) -> None:
-        """Refuse the next billable call if the tenant's allowance is spent.
+        """Refuse the next billable call if the tenant's credits are spent.
 
         Args:
             tenant: The tenant about to be charged.
 
         Raises:
-            QuotaExhaustedError: If the tenant has used their whole allowance.
+            QuotaExhaustedError: If the tenant has spent all their credits.
         """
         ...
 
@@ -600,7 +600,7 @@ class UsageLedger(Protocol):
         ...
 
     def consumption(self, tenant: str, slug: str | None = None) -> Consumption:
-        """Report a tenant's spend against their allowance.
+        """Report a tenant's spend against their credits.
 
         Args:
             tenant: The tenant whose consumption to total.

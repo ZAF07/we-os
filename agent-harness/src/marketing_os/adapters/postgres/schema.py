@@ -64,10 +64,12 @@ Seven tables (ADR-0014, ADR-0015, ADR-0018, ADR-0020):
     related reason: the ledger is the unit-economics dataset, so "what did this
     campaign cost?" must be a sum over rows nothing rewrote. ``slug`` is
     nullable because not every billable call belongs to a campaign, and such a
-    call still counts against the allowance. The tenant's *allowance* is
-    deliberately not here — it is a fact about the business, of which there is
-    one, so it lives as a nullable column on ``tenants`` where ``NULL`` means
-    "use the platform-wide default".
+    call still counts against the tenant's credits. Those *credits* are
+    deliberately not here — they are a fact about the business, of which there is
+    one, so they live as a nullable column on ``tenants`` where ``NULL`` means
+    "use the platform-wide default". That column was once called ``allowance``;
+    a guarded ``RENAME COLUMN`` carries a database provisioned under the old name
+    across, and is a no-op on a fresh database or a second start.
 
 **Creating the schema is an operator step, not a boot step.** The service
 connects as an ordinary role that deliberately has no rights to create tables —
@@ -107,10 +109,24 @@ CREATE TABLE IF NOT EXISTS tenants (
     name             text NOT NULL,
     external_auth_id text NOT NULL UNIQUE,
     created_at       timestamptz NOT NULL DEFAULT now(),
-    allowance        double precision
+    credits          double precision
 );
 
-ALTER TABLE tenants ADD COLUMN IF NOT EXISTS allowance double precision;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tenants' AND column_name = 'allowance'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tenants' AND column_name = 'credits'
+    ) THEN
+        ALTER TABLE tenants RENAME COLUMN allowance TO credits;
+    END IF;
+END
+$$;
+
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS credits double precision;
 
 CREATE TABLE IF NOT EXISTS documents (
     tenant_id  text NOT NULL,

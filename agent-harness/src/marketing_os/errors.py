@@ -153,7 +153,7 @@ class StageNotAwaitingApprovalError(MarketingOSError):
 class RevisionLimitError(MarketingOSError):
     """One deliverable has been sent back as many times as it is allowed to be.
 
-    The cap exists so a single item cannot burn a whole allowance: without it, an
+    The cap exists so a single item cannot burn all a tenant's credits: without it, an
     owner dissatisfied with one brand strategy could spend everything they have
     revising it (ADR-0015, ADR-0020).
     """
@@ -180,13 +180,13 @@ class RevisionLimitError(MarketingOSError):
 
 
 class QuotaExhaustedError(MarketingOSError):
-    """The tenant's allowance is spent, so billable work is refused before it starts.
+    """The tenant's credits are spent, so billable work is refused before it starts.
 
     Checked **before** a billable call rather than after (ADR-0020), which is
     what makes this a refusal rather than a report of an overspend that already
     happened. It is a first-class failure on every operation that can trigger
     work — starting a run, revising a stage, re-opening one — so the frontend
-    handles "you are out of allowance" properly instead of showing a generic
+    handles "you are out of credits" properly instead of showing a generic
     error, and adding it later would have meant changing those contracts.
 
     Carries what was used and what was allowed, so the message can say how far
@@ -196,23 +196,23 @@ class QuotaExhaustedError(MarketingOSError):
     http_status = 402
     error_type = "quota_exhausted"
 
-    def __init__(self, used: float, allowance: float) -> None:
+    def __init__(self, used: float, credits: float) -> None:
         """Initialise the error.
 
         Args:
             used: What the tenant has spent.
-            allowance: What the tenant was allowed to spend.
+            credits: What the tenant was allowed to spend.
         """
-        message = "Your allowance is used up. Work resumes when it renews."
+        message = "Your credits are used up. Work resumes when they renew."
         super().__init__(message)
         self.used = used
-        self.allowance = allowance
+        self.credits = credits
         self.detail = {
             "type": self.error_type,
             "status": self.http_status,
             "message": message,
             "used": used,
-            "allowance": allowance,
+            "credits": credits,
         }
 
 
@@ -221,7 +221,7 @@ class RunLimitError(MarketingOSError):
 
     The companion cap to :class:`RevisionLimitError`: that one bounds how often a
     single deliverable can be sent back, this one bounds how often a whole
-    campaign can be re-run. Both exist because the allowance alone is too coarse
+    campaign can be re-run. Both exist because credits alone are too coarse
     a guard — a runaway loop should be stopped by the thing it is looping on,
     not only by eventually exhausting the budget (ADR-0020).
     """
@@ -361,10 +361,10 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
         detail = {"message": message, "limit": limit}
     elif kind == "quota":
         used = float(error.get("used", 0.0))
-        allowance = float(error.get("allowance", 0.0))
-        exc = QuotaExhaustedError(used, allowance)
+        credits = float(error.get("credits", 0.0))
+        exc = QuotaExhaustedError(used, credits)
         message = str(exc)
-        detail = {"message": message, "used": used, "allowance": allowance}
+        detail = {"message": message, "used": used, "credits": credits}
     elif kind == "guardrail":
         message = f"Stage '{stage}' failed QA and could not be reconciled."
         exc = GuardrailError(message, discrepancies=error.get("discrepancies", []))

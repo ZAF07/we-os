@@ -273,7 +273,7 @@ def test_a_failed_gate_names_the_fields_so_the_message_can_be_actionable(
 def test_clearing_a_stale_stage_runs_that_stage_alone(client: TestClient) -> None:
     """The button says "Re-run this stage", so it must not redo the whole pipeline.
 
-    Re-running everything would spend the tenant's allowance redoing work nobody
+    Re-running everything would spend the tenant's credits redoing work nobody
     asked to have redone, which is the thing ADR-0015 refuses to do on its own.
     What is pinned here is that a stage-scoped start is honoured: the run the
     interface asks for names one stage, and the engine runs that one.

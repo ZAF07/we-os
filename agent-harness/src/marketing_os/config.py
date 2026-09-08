@@ -253,16 +253,19 @@ class Settings:
             data, so tightening or loosening the gates is a configuration change
             rather than a rewrite (ADR-0015).
         max_revisions: How many times one deliverable may be sent back with
-            written feedback, so a single item cannot burn a whole allowance.
+            written feedback, so a single item cannot burn all a tenant's credits.
         max_runs_per_campaign: How many runs one campaign may accumulate. The
             companion cap to ``max_revisions``: that bounds re-working one
             deliverable, this bounds re-running the whole campaign (ADR-0020).
-        usage_allowance: What a tenant may spend before billable work is
-            refused, in the platform's accounting currency. The platform-wide
-            default; a tenant may carry its own override, so raising one
-            business's cap is a row rather than a deploy. How the allowance is
-            *presented* — credits, fair use, metered billing — is deliberately
-            not decided here (ADR-0020).
+        usage_credits: What a tenant may spend before billable work is
+            refused, in credits. The platform-wide default; a tenant may carry
+            its own override, so raising one business's cap is a row rather than
+            a deploy (ADR-0020).
+        credit_rate: How many credits one unit of recorded cost burns. The one
+            place the exchange between real model cost and the number a business
+            sees is set, so the tiers and the pages that show them never move
+            when it changes. At the default of 1 a credit is a unit of cost; at
+            100, a call costing 0.03 burns 3 credits.
         token_rates: The price per token per model the Usage Ledger costs calls
             with, from ``MARKETING_OS_TOKEN_RATES`` as ``model=price`` pairs. A
             model with no configured rate is costed at the default rate.
@@ -319,8 +322,11 @@ class Settings:
     max_runs_per_campaign: int = field(
         default_factory=lambda: int(os.environ.get("MARKETING_OS_MAX_RUNS", "20"))
     )
-    usage_allowance: float = field(
-        default_factory=lambda: float(os.environ.get("MARKETING_OS_ALLOWANCE", "25"))
+    usage_credits: float = field(
+        default_factory=lambda: float(os.environ.get("MARKETING_OS_CREDITS", "25"))
+    )
+    credit_rate: float = field(
+        default_factory=lambda: float(os.environ.get("MARKETING_OS_CREDIT_RATE", "1"))
     )
     token_rates: dict[str, float] = field(
         default_factory=lambda: _parse_token_rates(os.environ.get("MARKETING_OS_TOKEN_RATES", ""))

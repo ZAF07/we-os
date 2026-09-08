@@ -152,7 +152,7 @@ class LedgerEntry(BaseModel):
     """One billable call, recorded against the tenant that caused it.
 
     The unit of the Usage Ledger (ADR-0020). Written *after* a call the
-    allowance was already checked for, so the ledger is a record of what was
+    credits were already checked for, so the ledger is a record of what was
     spent rather than a running estimate of what might be. Every entry names the
     campaign it was spent on, which is what makes "what did this campaign cost?"
     answerable alongside "what has this business used?".
@@ -195,19 +195,19 @@ class CampaignConsumption(BaseModel):
 
 
 class Consumption(BaseModel):
-    """A tenant's spend against their allowance, and where it went.
+    """A tenant's spend against their credits, and where it went.
 
-    The report behind "how much of my allowance have I used?" and the platform's
+    The report behind "how much of my credits have I used?" and the platform's
     unit-economics question "what does a campaign actually cost?" — one query,
     because they are the same numbers read at two granularities (ADR-0020).
 
-    ``allowance`` is the mechanism, not the presentation: whether it is shown as
-    credits, fair use, or metered billing stays a later decision.
+    Every number here is in credits — what a business buys and sees — derived
+    from the cost the ledger records at one platform-set rate (ADR-0020).
 
     Attributes:
         tenant_id: The tenant the report is for.
         used: Everything the tenant has spent.
-        allowance: What the tenant is allowed to spend.
+        credits: What the tenant is allowed to spend.
         remaining: What is left, never below zero — an overspent tenant has
             nothing left rather than a negative balance to explain.
         campaigns: Per-campaign totals, highest spend first.
@@ -215,18 +215,18 @@ class Consumption(BaseModel):
 
     tenant_id: str
     used: float = 0.0
-    allowance: float = 0.0
+    credits: float = 0.0
     campaigns: list[CampaignConsumption] = Field(default_factory=list)
 
     @property
     def remaining(self) -> float:
-        """Return what is left of the allowance, floored at zero."""
-        return max(self.allowance - self.used, 0.0)
+        """Return what is left of the credits, floored at zero."""
+        return max(self.credits - self.used, 0.0)
 
     @property
     def exhausted(self) -> bool:
-        """Return whether the allowance is spent and billable work must be refused."""
-        return self.used >= self.allowance
+        """Return whether the credits are spent and billable work must be refused."""
+        return self.used >= self.credits
 
 
 class StageResult(BaseModel):
@@ -321,7 +321,7 @@ def human_revisions_used(versions: list[DeliverableVersion]) -> int:
 
     The revision cap counts a *person's* refusals, not every version: the QA
     reviewer's own revision rounds are already bounded by its own budget, and
-    charging them against the owner's allowance would refuse their first real
+    charging them against the owner's credits would refuse their first real
     revision (ADR-0015). Counting here rather than at each call site is what
     keeps the number the gate reports and the number the cap enforces identical.
 

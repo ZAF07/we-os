@@ -4,7 +4,7 @@ Each stage contributes four nodes wired by :mod:`marketing_os.graph.graph`:
 
 * ``<stage>__enter`` validates the prerequisite, resets the per-stage working
   state, and seeds the task (with the Brand DNA) as the first message.
-* ``<stage>__specialist`` checks the tenant's allowance, runs the specialist
+* ``<stage>__specialist`` checks the tenant's credits, runs the specialist
   agent's tool-use loop, and records what it cost.
 * ``<stage>__review`` verifies the deliverable was saved (forcing a save-retry if
   not), scores it against the rubric, records the version it produced, and sets
@@ -12,10 +12,10 @@ Each stage contributes four nodes wired by :mod:`marketing_os.graph.graph`:
 * ``<stage>__approval`` halts a ``human``-policy stage on a LangGraph
   ``interrupt()`` until a person approves it or sends it back with feedback.
 
-The allowance is checked in these nodes rather than only at the HTTP edge,
+The credits are checked in these nodes rather than only at the HTTP edge,
 because they are where the billable call actually happens: an endpoint is not
 the only thing that can drive the graph, and a run already in flight can exhaust
-an allowance it was within when it started. Recording happens immediately after
+credits it was within when it started. Recording happens immediately after
 each call, so a run cancelled mid-pipeline is still charged for the work it did
 (ADR-0020).
 
@@ -138,7 +138,7 @@ def _format_event(data: dict[str, Any]) -> str:
 
 
 def _quota_halt(exc: QuotaExhaustedError, stage: Stage, slug: str) -> dict[str, Any]:
-    """Halt the run because the tenant's allowance is spent.
+    """Halt the run because the tenant's credits are spent.
 
     Recorded as a halting state error rather than raised, so it travels the same
     path every other halt does and reaches the caller as the typed 402 through
@@ -158,7 +158,7 @@ def _quota_halt(exc: QuotaExhaustedError, stage: Stage, slug: str) -> dict[str, 
             "type": "quota",
             "stage": stage.key,
             "used": exc.used,
-            "allowance": exc.allowance,
+            "credits": exc.credits,
         },
         "halt": True,
         "route": "fail",
@@ -421,11 +421,11 @@ def make_specialist_node(
         settings: The harness settings (for the recursion budget).
         stage: The pipeline stage this node runs.
         agent: The compiled specialist agent for the stage.
-        ledger: The Usage Ledger the tenant's allowance is checked against and
+        ledger: The Usage Ledger the tenant's credits are checked against and
             the call is charged to, or ``None`` to run uncharged.
 
     Returns:
-        A node that checks the allowance, runs the specialist's tool-use loop,
+        A node that checks the credits, runs the specialist's tool-use loop,
         charges what it cost, and folds in token usage.
     """
     recursion_limit = 2 * settings.max_steps + 1
@@ -433,7 +433,7 @@ def make_specialist_node(
     async def specialist_node(state: CampaignState) -> dict[str, Any]:
         """Run the specialist agent over the current stage conversation.
 
-        The allowance is checked **before** the agent is invoked, so an exhausted
+        The credits are checked **before** the agent is invoked, so an exhausted
         tenant makes no model call at all rather than one the ledger reports
         afterwards (ADR-0020). The agent's tool-use loop is awaited (``ainvoke``)
         so every LLM call runs on the event loop; cancelling the run's task
@@ -447,7 +447,7 @@ def make_specialist_node(
 
         Returns:
             A state update with the specialist's new messages and token usage, or
-            a halt when the tenant's allowance is spent.
+            a halt when the tenant's credits are spent.
         """
         inbound = list(state["messages"])
 
@@ -487,10 +487,10 @@ def make_review_node(
         reviewer: The QA reviewer scoring the deliverable.
         store: The document store the deliverable resolves through.
         deliverables: The store each passing deliverable is versioned into.
-        ledger: The Usage Ledger the tenant's allowance is checked against and
+        ledger: The Usage Ledger the tenant's credits are checked against and
             the review call is charged to, or ``None`` to run uncharged. The
             reviewer is a model call like any other, so it is billable too —
-            exempting it would let the QA loop spend beyond the allowance.
+            exempting it would let the QA loop spend beyond the credits.
 
     Returns:
         A node that verifies the save, scores the deliverable, records its
@@ -502,7 +502,7 @@ def make_review_node(
         """Verify the deliverable was saved, score it, and set the route.
 
         The reviewer's LLM call is awaited (per ADR-0009) so it aborts if the
-        run's task is cancelled mid-review, and the allowance is checked before
+        run's task is cancelled mid-review, and the credits are checked before
         it for the same reason the specialist's is: the review is a billable call.
 
         Args:

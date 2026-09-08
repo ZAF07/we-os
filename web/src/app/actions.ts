@@ -17,9 +17,9 @@ export interface HomeData {
  * Loads what Home renders: the tenant's campaigns and their spend.
  *
  * Usage is loaded alongside rather than separately because Home is where a
- * business owner should learn their allowance is running down — before work
+ * business owner should learn their credits are running down — before work
  * stops, not when a run is refused (ADR-0020). It is optional: a usage read
- * that fails should cost the allowance tile, not the whole screen.
+ * that fails should cost the credits tile, not the whole screen.
  *
  * Returns:
  *   The campaigns and the usage report, the latter null when it could not be

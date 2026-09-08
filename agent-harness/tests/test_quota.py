@@ -2,12 +2,12 @@
 
 The behaviour a business owner and the platform admin can observe through the
 API (ADR-0020): spend accrues as the pipeline runs, `GET /usage` reports it
-against the allowance, and once the allowance is gone every operation that would
+against the credits, and once the credits are gone every operation that would
 trigger billable work answers 402 with a message that says why. The load-bearing
 assertion is :func:`test_an_exhausted_tenant_makes_no_model_call_at_all` — a
 ledger that merely *reported* an overspend would pass every other test here.
 
-The caps sit alongside the allowance: a campaign cannot be re-run without limit,
+The caps sit alongside the credits: a campaign cannot be re-run without limit,
 and re-opening a stage is a run and is bounded too.
 
 Everything is hermetic — a scripted chat model, a fake reviewer, an overridden
@@ -113,7 +113,7 @@ def _wait_for_status(client: TestClient, run_id: str, target: str) -> dict:
 def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """Yield a hermetic API client whose model calls each cost a known amount.
 
-    The token rate and the allowance are set through the same environment
+    The token rate and the credits are set through the same environment
     variables an operator would use, so the test exercises the configured
     mechanism rather than a path only tests can reach.
 
@@ -126,7 +126,7 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     monkeypatch.setenv("MARKETING_OS_TOKEN_RATES", f"{MODEL}=  {RATE}")
-    monkeypatch.setenv("MARKETING_OS_ALLOWANCE", "1000")
+    monkeypatch.setenv("MARKETING_OS_CREDITS", "1000")
     write_all_agent_specs(Settings(root=repo))
     install_scripted_graph(monkeypatch, handler=_counting_handler)
     from marketing_os.entrypoints.api.app import get_settings
@@ -138,7 +138,7 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 
 
 def _exhaust(client: TestClient, tenant: str = TENANT) -> None:
-    """Spend a tenant's whole allowance, without running the pipeline to do it.
+    """Spend all a tenant's credits, without running the pipeline to do it.
 
     Charging the ledger directly keeps each test about *what an exhausted tenant
     is refused* rather than about how many model calls it takes to get there,
@@ -151,9 +151,9 @@ def _exhaust(client: TestClient, tenant: str = TENANT) -> None:
     from marketing_os.entrypoints.api.app import get_settings, get_usage_ledger
 
     ledger = get_usage_ledger()
-    allowance = get_settings().usage_allowance
-    ledger.record(tenant, slug=SLUG, model=MODEL, usage=_usage(round(allowance / RATE)))
-    assert ledger.consumption(tenant).exhausted, "the fixture failed to spend the allowance"
+    credits = get_settings().usage_credits
+    ledger.record(tenant, slug=SLUG, model=MODEL, usage=_usage(round(credits / RATE)))
+    assert ledger.consumption(tenant).exhausted, "the fixture failed to spend the credits"
 
 
 def _scaffold_campaign(repo: Path, tenant: str, slug: str) -> None:
@@ -191,11 +191,11 @@ def _usage(tokens: int) -> Usage:
     return Usage(input_tokens=tokens)
 
 
-def test_a_fresh_tenant_has_spent_nothing_of_their_allowance(client: TestClient) -> None:
+def test_a_fresh_tenant_has_spent_nothing_of_their_credits(client: TestClient) -> None:
     body = client.get("/usage").json()
 
     assert body["used"] == 0
-    assert body["allowance"] == pytest.approx(1000.0)
+    assert body["credits"] == pytest.approx(1000.0)
     assert body["remaining"] == pytest.approx(1000.0)
     assert body["exhausted"] is False
 
@@ -208,7 +208,7 @@ def test_running_the_pipeline_records_spend_against_the_tenant(client: TestClien
     body = client.get("/usage").json()
 
     assert body["used"] > 0
-    assert body["remaining"] < body["allowance"]
+    assert body["remaining"] < body["credits"]
 
 
 def test_spend_is_attributed_to_the_campaign_it_was_spent_on(client: TestClient) -> None:
@@ -256,17 +256,17 @@ def test_an_exhausted_tenant_is_refused_a_run_with_the_typed_402(client: TestCli
     assert response.status_code == 402
     body = response.json()
     assert body["type"] == "quota_exhausted"
-    assert body["allowance"] == pytest.approx(1000.0)
-    assert "allowance" in body["message"]
+    assert body["credits"] == pytest.approx(1000.0)
+    assert "credits" in body["message"]
     # The interface says how far past the line the business is, so both numbers
     # have to be on the refusal — not only the ceiling they hit.
-    assert body["used"] >= body["allowance"]
+    assert body["used"] >= body["credits"]
 
 
 def test_an_exhausted_tenant_makes_no_model_call_at_all(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The allowance is checked *before* the call, so a refusal costs nothing.
+    """The credits are checked *before* the call, so a refusal costs nothing.
 
     A ledger that only recorded spend after the fact would satisfy every other
     assertion in this file and still let a runaway loop overspend, so this is the
@@ -340,7 +340,7 @@ def test_approving_is_not_refused_for_quota(client: TestClient) -> None:
     assert response.status_code == 200
 
 
-def test_an_exhausted_allowance_does_not_hide_a_failing_gate(client: TestClient) -> None:
+def test_exhausted_credits_do_not_hide_a_failing_gate(client: TestClient) -> None:
     """The gate is about incomplete governance inputs, and is reported as such."""
     _exhaust(client)
 
@@ -350,14 +350,14 @@ def test_an_exhausted_allowance_does_not_hide_a_failing_gate(client: TestClient)
     assert response.json()["type"] == "gate_failed"
 
 
-def test_one_tenants_exhausted_allowance_does_not_refuse_another(
+def test_one_tenants_exhausted_credits_do_not_refuse_another(
     client: TestClient, repo: Path
 ) -> None:
-    """An allowance is a fact about one business, so exhausting it isolates to it.
+    """Credits are a fact about one business, so exhausting it isolates to it.
 
     The two tenants run *different* campaigns on purpose: sharing a slug would
     make the second request a ``run_conflict`` over a claimed campaign, and the
-    409 would hide whether the allowance was consulted at all.
+    409 would hide whether the credits were consulted at all.
     """
     from marketing_os.entrypoints.api.app import app
 
@@ -438,12 +438,12 @@ def test_the_run_cap_is_per_campaign_not_per_tenant(
     assert client.post("/campaigns/second/run", json={"stage": "research"}).status_code == 202
 
 
-async def test_a_run_in_flight_halts_when_the_allowance_runs_out(
+async def test_a_run_in_flight_halts_when_the_credits_run_out(
     settings: Settings, repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The cap binds the graph, not only the HTTP edge (ADR-0020).
 
-    An endpoint check alone would let a run that was within its allowance when
+    An endpoint check alone would let a run that was within its credits when
     it started spend arbitrarily far past it, because nothing re-asks once the
     pipeline is moving. Driven through the runner rather than over HTTP so the
     halt is observable without a round trip per stage.
@@ -453,7 +453,7 @@ async def test_a_run_in_flight_halts_when_the_allowance_runs_out(
     from marketing_os.graph.runner import arun_campaign
 
     settings.token_rates = {MODEL: RATE}
-    settings.usage_allowance = 1.0
+    settings.usage_credits = 1.0
     write_all_agent_specs(settings)
     install_scripted_graph(monkeypatch, handler=_counting_handler)
     ledger = InMemoryUsageLedger(settings)
@@ -469,7 +469,7 @@ async def test_a_run_in_flight_halts_when_the_allowance_runs_out(
     assert raised.value.http_status == 402
     assert ledger.consumption(TENANT).exhausted
     produced = settings.tenant_dir(TENANT) / "campaigns" / SLUG
-    assert not (produced / "asset-prompts.md").is_file(), "the run spent past its allowance"
+    assert not (produced / "asset-prompts.md").is_file(), "the run spent past its credits"
 
 
 async def test_work_already_done_is_still_charged_when_a_run_halts(
@@ -481,7 +481,7 @@ async def test_work_already_done_is_still_charged_when_a_run_halts(
     from marketing_os.graph.runner import arun_campaign
 
     settings.token_rates = {MODEL: RATE}
-    settings.usage_allowance = 1.0
+    settings.usage_credits = 1.0
     write_all_agent_specs(settings)
     install_scripted_graph(monkeypatch, handler=_counting_handler)
     ledger = InMemoryUsageLedger(settings)
@@ -499,7 +499,7 @@ async def test_work_already_done_is_still_charged_when_a_run_halts(
     assert all(entry.slug == SLUG for entry in charged)
 
 
-async def test_a_run_within_its_allowance_completes_uninterrupted(
+async def test_a_run_within_its_credits_completes_uninterrupted(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The check must not refuse work a tenant can afford."""
@@ -507,7 +507,7 @@ async def test_a_run_within_its_allowance_completes_uninterrupted(
     from marketing_os.graph.runner import arun_campaign
 
     settings.token_rates = {MODEL: RATE}
-    settings.usage_allowance = 1000.0
+    settings.usage_credits = 1000.0
     write_all_agent_specs(settings)
     install_scripted_graph(monkeypatch, handler=_counting_handler)
     ledger = InMemoryUsageLedger(settings)
@@ -591,7 +591,7 @@ async def test_a_deliverable_written_before_the_halt_is_not_lost(
     from marketing_os.graph.runner import arun_campaign
 
     settings.token_rates = {MODEL: RATE}
-    settings.usage_allowance = 1.0
+    settings.usage_credits = 1.0
     write_all_agent_specs(settings)
     install_scripted_graph(monkeypatch, handler=_counting_handler)
     ledger = InMemoryUsageLedger(settings)
@@ -606,3 +606,83 @@ async def test_a_deliverable_written_before_the_halt_is_not_lost(
 
     research = settings.tenant_dir(TENANT) / "campaigns" / SLUG / "research.md"
     assert research.is_file(), "the stage that completed before the halt lost its deliverable"
+
+
+@pytest.fixture
+def rated_client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """Yield a client where one unit of cost burns 100 credits.
+
+    The rate is set through the same environment variable an operator would use,
+    so the exchange the business sees is the one the platform configured.
+
+    Args:
+        repo: The hermetic repository root fixture.
+        monkeypatch: The pytest monkeypatch fixture.
+
+    Yields:
+        An entered FastAPI test client with a 300-credit ceiling.
+    """
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    monkeypatch.setenv("MARKETING_OS_TOKEN_RATES", f"{MODEL}=  {RATE}")
+    monkeypatch.setenv("MARKETING_OS_CREDITS", "300")
+    monkeypatch.setenv("MARKETING_OS_CREDIT_RATE", "100")
+    write_all_agent_specs(Settings(root=repo))
+    install_scripted_graph(monkeypatch, handler=_counting_handler)
+    from marketing_os.entrypoints.api.app import get_settings
+
+    with _make_client(repo) as entered:
+        yield entered
+    get_settings.cache_clear()
+    clear_prototype_adapters()
+
+
+def test_credits_are_spent_at_the_platform_rate_and_then_refused(
+    rated_client: TestClient,
+) -> None:
+    """Three calls costing 1.00 fit in 300 credits at rate 100; the fourth is refused."""
+    from marketing_os.entrypoints.api.app import get_usage_ledger
+
+    ledger = get_usage_ledger()
+    for _ in range(3):
+        ledger.check(TENANT)
+        ledger.record(TENANT, slug=SLUG, model=MODEL, usage=_usage(1000))
+
+    body = rated_client.get("/usage").json()
+    assert body["used"] == 300
+    assert body["credits"] == 300
+    assert body["remaining"] == 0
+    assert body["exhausted"] is True
+
+    assert [entry.cost for entry in ledger.entries(TENANT)] == [
+        pytest.approx(1.0),
+        pytest.approx(1.0),
+        pytest.approx(1.0),
+    ]
+
+    response = rated_client.post(f"/campaigns/{SLUG}/run", json={"stage": "research"})
+    assert response.status_code == 402
+    assert response.json()["type"] == "quota_exhausted"
+    assert response.json()["credits"] == pytest.approx(300.0)
+    assert response.json()["used"] == pytest.approx(300.0)
+
+
+def test_the_usage_report_shows_credits_as_whole_numbers(
+    rated_client: TestClient,
+) -> None:
+    """Assert a fractional credit is rounded away rather than shown.
+
+    Six tokens at 0.001 a token is a cost of 0.006, which at rate 100 is 0.6
+    credits — an amount no business should be shown to one decimal place.
+
+    Args:
+        rated_client: The client whose platform rate is 100 credits per unit.
+    """
+    from marketing_os.entrypoints.api.app import get_usage_ledger
+
+    get_usage_ledger().record(TENANT, slug=SLUG, model=MODEL, usage=_usage(6))
+
+    body = rated_client.get("/usage").json()
+
+    assert body["used"] == 1
+    assert body["campaigns"][0]["used"] == 1
+    assert body["remaining"] == 299

@@ -10,9 +10,11 @@ import { EngineError } from "@/lib/engine-error";
  *
  * - A failed **DNA Gate** says only that the gate failed; what the person needs
  *   is the list of fields it named.
- * - An **exhausted allowance** says work has stopped; what they need is how far
+ * - **Exhausted credits** say work has stopped; what they need is how far
  *   past the line they are, since that is what tells them whether to wait for a
- *   renewal or ask for more (ADR-0020).
+ *   renewal or ask for more (ADR-0020). The refusal carries exact credits, since
+ *   the engine raises it where rounding would be a display decision made too
+ *   early; they are rounded to whole credits here, matching what `/usage` shows.
  *
  * Args:
  *   error: The failure raised while calling the engine.
@@ -27,9 +29,9 @@ export function refusalMessage(error: unknown): string {
   if (!(error instanceof EngineError)) throw error;
 
   if (error.type === "quota_exhausted") {
-    const { used, allowance } = error.detail;
-    if (typeof used === "number" && typeof allowance === "number") {
-      return `${error.message} You have used ${used.toFixed(2)} of ${allowance.toFixed(2)}.`;
+    const { used, credits } = error.detail;
+    if (typeof used === "number" && typeof credits === "number") {
+      return `${error.message} You have used ${Math.round(used)} of ${Math.round(credits)} credits.`;
     }
     return error.message;
   }

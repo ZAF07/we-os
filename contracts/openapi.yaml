@@ -37,9 +37,9 @@ info:
     Every error is a typed object carrying its own HTTP status and structured
     detail. Notable variants: `gate_failed` (409) names every missing Required
     field; `quota_exhausted` (402) is returned by any operation that would
-    trigger billable work once the tenant's allowance is spent; `run_conflict`
+    trigger billable work once the tenant's credits are spent; `run_conflict`
     (409) carries the id of the run already in flight. Two hard caps sit
-    alongside the allowance and both answer 409:
+    alongside the credits and both answer 409:
     `revision_limit_reached` bounds how often one deliverable may be sent back,
     and `run_limit_reached` bounds how often one campaign may be run.
 servers:
@@ -63,7 +63,7 @@ tags:
   - name: deliverables
     description: Stage deliverables — content, versions, staleness.
   - name: usage
-    description: Generation cost — what the business has spent against its allowance.
+    description: Generation cost — what the business has spent against its credits.
 
 paths:
   /health:
@@ -111,11 +111,17 @@ paths:
   /usage:
     get:
       operationId: getUsage
-      summary: Spend against allowance
+      summary: Spend against credits
       description: |
-        What the business has used of its allowance, and which campaigns it went
+        What the business has used of its credits, and which campaigns it went
         on. Read by the interface so consumption is visible before work stops,
         and by the platform to answer what a campaign actually cost.
+
+        Credits are derived from the recorded model cost at one platform-set
+        rate, so the rate can change without touching the tiers or the pages
+        that show them. Every number here is whole credits: the quota check
+        compares the unrounded value, so what is shown never decides when work
+        is refused.
 
         This is **generation cost** — what the platform spent on models — and is
         deliberately distinct from the campaign budget, which is the business's
@@ -130,21 +136,21 @@ paths:
             type: string
       responses:
         "200":
-          description: The tenant's spend against its allowance.
+          description: The tenant's spend against its credits.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UsageReport"
               example:
-                used: 4.2
-                allowance: 25
-                remaining: 20.8
+                used: 420
+                credits: 2500
+                remaining: 2080
                 exhausted: false
                 campaigns:
                   - slug: spring
-                    used: 3.1
+                    used: 310
                   - slug: autumn
-                    used: 1.1
+                    used: 110
         "401":
           $ref: "#/components/responses/Unauthenticated"
 
@@ -512,7 +518,7 @@ paths:
         Refused with `gate_failed` (naming every missing Required field) when
         the Brand DNA or campaign goal is incomplete, with `run_conflict` when
         the campaign already has an active run, and with `quota_exhausted` when
-        the tenant's allowance is spent. The run executes detached: close the
+        the tenant's credits are spent. The run executes detached: close the
         tab and come back, or a deploy restarts the service, and the run is
         still there.
       tags: [runs]
@@ -748,7 +754,7 @@ paths:
         Produces a **new version** of the deliverable carrying this feedback;
         the prior version is preserved, never overwritten. Refused with
         `revision_limit_reached` once the per-deliverable cap is hit and with
-        `quota_exhausted` when the allowance is spent.
+        `quota_exhausted` when the credits are spent.
       tags: [runs]
       parameters:
         - $ref: "#/components/parameters/RunId"
@@ -1071,7 +1077,7 @@ components:
             status: 422
             message: "kpis.creative is required: every campaign defines all three KPI tiers."
     QuotaExhausted:
-      description: The tenant's allowance is spent; billable work is refused before it starts.
+      description: The tenant's credits are spent; billable work is refused before it starts.
       content:
         application/json:
           schema:
@@ -1079,9 +1085,9 @@ components:
           example:
             type: quota_exhausted
             status: 402
-            message: Your allowance is used up. Work resumes when it renews.
+            message: Your credits are used up. Work resumes when they renew.
             used: 100
-            allowance: 100
+            credits: 100
 
   schemas:
     Me:
@@ -1586,21 +1592,21 @@ components:
           description: The campaign slug, which is what the engine speaks. `CONTEXT.md` makes the slug the canonical identifier for a campaign.
         used:
           type: number
-          description: What this campaign has cost in generation, dearest first.
+          description: What this campaign has cost, in whole credits, dearest first.
 
     UsageReport:
       type: object
-      required: [used, allowance, remaining, exhausted]
+      required: [used, credits, remaining, exhausted]
       properties:
         used:
           type: number
-          description: Everything the business has spent.
-        allowance:
+          description: Everything the business has spent, in whole credits.
+        credits:
           type: number
-          description: What the business may spend. How this is presented — credits, fair use, metered billing — is a later decision.
+          description: What the business may spend, in whole credits.
         remaining:
           type: number
-          description: What is left, never below zero.
+          description: What is left, in whole credits, never below zero.
         exhausted:
           type: boolean
           description: Whether billable work is now refused with `quota_exhausted`.
@@ -1649,11 +1655,11 @@ components:
       allOf:
         - $ref: "#/components/schemas/Error"
         - type: object
-          required: [used, allowance]
+          required: [used, credits]
           properties:
             used:
               type: number
-            allowance:
+            credits:
               type: number
 
     RunConflictError:

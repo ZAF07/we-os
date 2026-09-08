@@ -78,7 +78,7 @@ describe("toQueue", () => {
 describe("toStats", () => {
   const usage: UsageReport = {
     used: 25,
-    allowance: 100,
+    credits: 100,
     remaining: 75,
     exhausted: false,
     campaigns: [],
@@ -101,7 +101,7 @@ describe("toStats", () => {
     expect(stats[1]).toMatchObject({ label: "In progress", value: "1" });
   });
 
-  it("shows allowance as a percentage, flagged once it is spent", () => {
+  it("shows credits as a percentage, flagged once it is spent", () => {
     const healthy = toStats([], usage);
     expect(healthy[2]).toMatchObject({ value: "25%", tone: "default" });
 
@@ -114,12 +114,17 @@ describe("toStats", () => {
     expect(spent[2]).toMatchObject({ value: "100%", tone: "destructive" });
   });
 
-  it("reports raw spend when the allowance is unlimited", () => {
-    const stats = toStats([], { ...usage, allowance: 0 });
-    expect(stats[2].value).toBe("25.00");
+  it("reports raw spend when credits are unlimited", () => {
+    const stats = toStats([], { ...usage, credits: 0 });
+    expect(stats[2].value).toBe("25");
   });
 
-  it("omits the allowance tile when usage could not be read", () => {
+  it("shows credits as whole numbers, never to two decimals", () => {
+    const stats = toStats([], { ...usage, used: 25.4, credits: 0 });
+    expect(stats[2].value).toBe("25");
+  });
+
+  it("omits the credits tile when usage could not be read", () => {
     expect(toStats([campaign("a")], null)).toHaveLength(2);
   });
 });
