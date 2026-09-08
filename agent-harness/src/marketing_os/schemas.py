@@ -8,7 +8,7 @@ output the QA reviewer is asked to return.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class VerifiedClaims(BaseModel):
@@ -458,10 +458,10 @@ class Questionnaire(BaseModel):
 class DnaAnswer(BaseModel):
     """One business owner's answer to one questionnaire question.
 
-    An answer always carries content: withdrawing one is its own operation, so a
-    blank string is never a way to express it. Refusing blanks here refuses them
-    on every path into a store, and keeps the markdown projection free of the
-    empty placeholder lines the Brand DNA rule prohibits.
+    Also the shape a stored answer is read back as, which is why the "an answer
+    is never blank" rule lives on the way in (:class:`DnaAnswersUpsert`) rather
+    than here: blank rows written before that rule exist, and a business's whole
+    Brand DNA — and the gate with it — must not become unreadable because of one.
 
     Attributes:
         question_id: The question this answers.
@@ -470,24 +470,6 @@ class DnaAnswer(BaseModel):
 
     question_id: str
     answer: str
-
-    @field_validator("answer")
-    @classmethod
-    def _reject_blank(cls, answer: str) -> str:
-        """Refuse an answer that is empty or only whitespace.
-
-        Args:
-            answer: The answer text as submitted.
-
-        Returns:
-            The answer unchanged.
-
-        Raises:
-            ValueError: If the answer holds no non-whitespace character.
-        """
-        if not answer.strip():
-            raise ValueError("An answer cannot be blank; delete it instead.")
-        return answer
 
 
 class BrandDnaRecord(BaseModel):

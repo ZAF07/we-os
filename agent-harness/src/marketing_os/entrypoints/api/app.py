@@ -49,7 +49,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from pydantic import Field as PydanticField
 
 from marketing_os.adapters.auth import JwksTokenVerifier
@@ -493,10 +493,37 @@ class DnaAnswersUpsert(BaseModel):
     single answer can be edited later without resending the rest.
 
     Attributes:
-        answers: The answers to save; at least one.
+        answers: The answers to save; at least one, each carrying content.
     """
 
     answers: list[DnaAnswer]
+
+    @field_validator("answers")
+    @classmethod
+    def _require_non_blank(cls, answers: list[DnaAnswer]) -> list[DnaAnswer]:
+        """Refuse a save carrying an answer that is empty or only whitespace.
+
+        Withdrawing an answer is its own operation, so a blank is never a way to
+        express one — it would leave a row the completeness report counts as
+        answered and the projection renders as an empty label. Refusing it on the
+        way in covers every save without making an already-stored blank row
+        unreadable, which validating :class:`DnaAnswer` itself would.
+
+        Args:
+            answers: The answers as submitted.
+
+        Returns:
+            The answers unchanged.
+
+        Raises:
+            ValueError: If any answer holds no non-whitespace character.
+        """
+        blank = [answer.question_id for answer in answers if not answer.answer.strip()]
+        if blank:
+            raise ValueError(
+                f"An answer cannot be blank; delete it instead: {', '.join(sorted(blank))}."
+            )
+        return answers
 
 
 class CreateCampaign(BaseModel):

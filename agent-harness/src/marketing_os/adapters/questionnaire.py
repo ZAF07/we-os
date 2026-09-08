@@ -173,7 +173,7 @@ class InMemoryAnswerStore:
             return existing
         record = BrandDnaRecord(
             questionnaire_version=existing.questionnaire_version,
-            updated_at=now_iso(),
+            updated_at=existing.updated_at,
             answers=kept,
         )
         self._records[tenant] = record

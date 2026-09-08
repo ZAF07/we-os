@@ -517,6 +517,45 @@ def test_removing_an_answer_leaves_the_rest_and_is_scoped_to_one_tenant(
     assert store.read(OTHER_TENANT).answer_for("q_price_point") == "$120"
 
 
+def test_removal_does_not_advance_the_last_saved_time(postgres_pool: Any) -> None:
+    # The same contract the in-memory store keeps: a removal writes nothing, so
+    # it must not read as a save.
+    store = PostgresAnswerStore(postgres_pool)
+    store.upsert(
+        TENANT,
+        version=1,
+        answers=[
+            DnaAnswer(question_id="q_business_name", answer="Acme"),
+            DnaAnswer(question_id="q_price_point", answer="$90"),
+        ],
+    )
+    saved_at = store.read(TENANT).updated_at
+
+    assert store.remove(TENANT, question_id="q_price_point").updated_at == saved_at
+
+
+def test_a_blank_answer_row_written_before_the_rule_is_still_readable(
+    postgres_pool: Any,
+) -> None:
+    # The shipped code could store a blank answer, so rows like this exist. The
+    # rule refusing new ones must not make an existing one unreadable: that
+    # would take the whole Brand DNA — and the gate with it — down for that
+    # business, which is worse than the blank it was meant to prevent.
+    from marketing_os.adapters.postgres.schema import TENANT_SETTING
+
+    with postgres_pool.connection() as connection:
+        connection.execute("SELECT set_config(%s, %s, true)", (TENANT_SETTING, TENANT))
+        connection.execute(
+            "INSERT INTO dna_answers "
+            "(tenant_id, question_id, answer, questionnaire_version) VALUES (%s, %s, %s, %s)",
+            (TENANT, "q_price_point", "   ", 1),
+        )
+
+    record = PostgresAnswerStore(postgres_pool).read(TENANT)
+
+    assert record.answer_for("q_price_point") == "   "
+
+
 def test_removing_an_unanswered_question_changes_nothing(postgres_pool: Any) -> None:
     store = PostgresAnswerStore(postgres_pool)
     store.upsert(TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$90")])

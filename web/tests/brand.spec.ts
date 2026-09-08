@@ -102,11 +102,45 @@ test("an answer can be deleted, and the question goes back to unanswered", async
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText(rival)).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("button", { name: `Edit: ${question}` }).click();
   await page
     .getByRole("button", { name: "Delete answer: Competitors" })
     .click();
 
   await expect(page.getByText(rival)).toBeHidden({ timeout: 30_000 });
   await expect(page.getByText("Not answered yet.").first()).toBeVisible();
+});
+
+test("deleting a Required answer flips the banner to name what is now owed", async ({
+  page,
+}) => {
+  // Takes out a Required answer and puts it straight back, so the shared test
+  // tenant ends as it started and no other spec finds the gate closed.
+  await page.goto("/brand");
+
+  const index = page.getByRole("navigation", { name: "Brand sections" });
+  await index.getByRole("button", { name: /Reach/ }).click();
+
+  await expect(page.getByText(/Every Required answer is in/)).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "Delete answer: Language(s)" })
+    .click();
+
+  await expect(
+    page.getByText(/Required answers are in\. Campaigns cannot run/),
+  ).toBeVisible({ timeout: 30_000 });
+
+  await page
+    .getByRole("button", {
+      name: "Edit: What languages do your customers speak?",
+    })
+    .click();
+  await page
+    .getByLabel("What languages do your customers speak?")
+    .fill("English");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect(page.getByText(/Every Required answer is in/)).toBeVisible({
+    timeout: 30_000,
+  });
 });

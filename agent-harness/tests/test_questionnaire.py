@@ -9,7 +9,6 @@ render to, and what the completeness report names as missing.
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError as PydanticValidationError
 
 from conftest import OTHER_TENANT, TENANT
 from marketing_os.adapters.questionnaire import (
@@ -126,14 +125,12 @@ def test_completeness_names_exactly_the_missing_required_fields():
 
 
 def test_completeness_treats_a_blank_answer_as_unanswered():
-    # `DnaAnswer` refuses a blank answer now, so this can only reach the report
-    # from a row stored before that rule — which is exactly what it must survive.
+    # A save refuses a blank now, so this only reaches the report from a row
+    # stored before that rule — which is exactly what it must survive.
     record = answers_for(SEED_QUESTIONNAIRE)
     price = next(q for q in SEED_QUESTIONNAIRE.questions if q.field == "Price point")
     record.answers = [
-        DnaAnswer.model_construct(question_id=a.question_id, answer="   ")
-        if a.question_id == price.id
-        else a
+        DnaAnswer(question_id=a.question_id, answer="   ") if a.question_id == price.id else a
         for a in record.answers
     ]
     report = completeness(SEED_QUESTIONNAIRE, record)
@@ -246,6 +243,23 @@ def test_answer_store_removes_one_answer_and_leaves_the_rest():
     assert record.answer_for("q_business_name") == "Acme"
 
 
+def test_answer_store_removal_does_not_advance_the_last_saved_time():
+    # `updated_at` says when an answer was last saved. A removal writes nothing,
+    # so it must not read as a save — and both adapters must agree on that.
+    store = InMemoryAnswerStore()
+    store.upsert(
+        TENANT,
+        version=1,
+        answers=[
+            DnaAnswer(question_id="q_business_name", answer="Acme"),
+            DnaAnswer(question_id="q_price_point", answer="$50"),
+        ],
+    )
+    saved_at = store.read(TENANT).updated_at
+
+    assert store.remove(TENANT, question_id="q_price_point").updated_at == saved_at
+
+
 def test_answer_store_removing_an_unanswered_question_changes_nothing():
     store = InMemoryAnswerStore()
     store.upsert(TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$50")])
@@ -267,11 +281,15 @@ def test_answer_store_removal_is_scoped_to_one_tenant():
     assert store.read(TENANT).answer_for("q_price_point") == "$50"
 
 
-def test_an_answer_cannot_be_blank():
-    # Removing an answer is its own operation, so a blank string is never a way
-    # to express one. Refusing it in the schema blocks every path into a store.
-    with pytest.raises(PydanticValidationError):
-        DnaAnswer(question_id="q_price_point", answer="   ")
+def test_a_stored_blank_answer_is_still_readable():
+    # The shipped code could store a blank answer, so such rows exist. Reading
+    # one back must keep working — the rule refusing new blanks belongs on the
+    # way in, not on the shape a stored answer is read as.
+    record = BrandDnaRecord(
+        questionnaire_version=SEED_QUESTIONNAIRE.version,
+        answers=[DnaAnswer(question_id="q_price_point", answer="   ")],
+    )
+    assert record.answer_for("q_price_point") == "   "
 
 
 def test_answer_store_records_the_version_answers_were_given_against():

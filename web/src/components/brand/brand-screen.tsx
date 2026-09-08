@@ -47,12 +47,16 @@ export function BrandScreen({
   const [error, setError] = useState<string | null>(null);
   const [pending, startSaving] = useTransition();
 
+  // Saving and deleting both answer with the updated report, so the banner
+  // moves with the write that changed it rather than waiting on a second read.
+  // The server's own report wins again whenever the page reloads.
+  const [report, setReport] = useState(completeness);
+  const shown = pending ? report : completeness;
+
   const answers = new Map(
     dna.answers.map((answer) => [answer.question_id, answer.answer]),
   );
-  const missing = new Set(
-    completeness.missing.map((field) => field.question_id),
-  );
+  const missing = new Set(shown.missing.map((field) => field.question_id));
   const section = sections[selected] ?? sections[0];
 
   const save = (questionId: string) => {
@@ -66,7 +70,7 @@ export function BrandScreen({
     setError(null);
     startSaving(async () => {
       try {
-        await saveAnswers([{ question_id: questionId, answer }]);
+        setReport(await saveAnswers([{ question_id: questionId, answer }]));
         setEditing(null);
         router.refresh();
       } catch {
@@ -79,7 +83,7 @@ export function BrandScreen({
     setError(null);
     startSaving(async () => {
       try {
-        await deleteAnswer(questionId);
+        setReport(await deleteAnswer(questionId));
         setEditing(null);
         router.refresh();
       } catch {
@@ -140,14 +144,12 @@ export function BrandScreen({
         <div className="max-w-[680px]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-bold tracking-tight">{section.name}</h1>
-            <StatusPill
-              status={completeness.complete ? "Approved" : "Needs input"}
-            />
+            <StatusPill status={shown.complete ? "Approved" : "Needs input"} />
           </div>
           <p className="mt-1.5 mb-[18px] text-[13px] text-muted-foreground">
-            {completeness.complete
-              ? `Every Required answer is in — ${completeness.required_answered} of ${completeness.required_total}. Campaigns can run.`
-              : `${completeness.required_answered} of ${completeness.required_total} Required answers are in. Campaigns cannot run until the rest are.`}
+            {shown.complete
+              ? `Every Required answer is in — ${shown.required_answered} of ${shown.required_total}. Campaigns can run.`
+              : `${shown.required_answered} of ${shown.required_total} Required answers are in. Campaigns cannot run until the rest are.`}
           </p>
 
           {error && (
@@ -270,23 +272,7 @@ function AnswerCard({
             >
               Cancel
             </button>
-            {answered && (
-              <button
-                onClick={onDelete}
-                disabled={pending}
-                aria-label={`Delete answer: ${question.field}`}
-                className="cursor-pointer rounded-lg border border-red-200 bg-card px-3 py-1.5 text-[12.5px] font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Delete
-              </button>
-            )}
           </div>
-          {answered && question.required && (
-            <p className="mt-2 text-[11.5px] text-muted-foreground">
-              This is a Required answer. Deleting it re-opens the DNA Gate, and
-              campaigns cannot run until it is answered again.
-            </p>
-          )}
         </div>
       ) : (
         <div className="mt-1.5 flex items-start gap-2">
@@ -306,7 +292,23 @@ function AnswerCard({
           >
             Edit
           </button>
+          {answered && (
+            <button
+              onClick={onDelete}
+              disabled={pending}
+              aria-label={`Delete answer: ${question.field}`}
+              className="shrink-0 cursor-pointer rounded-md px-2 py-1 text-[12.5px] font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Delete
+            </button>
+          )}
         </div>
+      )}
+      {answered && question.required && !editing && (
+        <p className="mt-2 text-[11.5px] text-muted-foreground">
+          Deleting this Required answer re-opens the DNA Gate, and campaigns
+          cannot run until it is answered again.
+        </p>
       )}
     </div>
   );

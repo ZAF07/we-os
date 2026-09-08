@@ -536,7 +536,8 @@ class AnswerStore(Protocol):
         Returns:
             The business's full record after the removal. Removing an answer the
             business never gave is not an error: the outcome asked for already
-            holds.
+            holds. ``updated_at`` reports when a surviving answer was last saved,
+            so a removal does not advance it — nothing was written.
         """
         ...
 
