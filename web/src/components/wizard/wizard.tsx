@@ -47,6 +47,8 @@ export function WizardProgress({
  *   current: Index of the active step.
  *   error: Optional validation message shown above the footer.
  *   nextLabel: Label for the primary action on the final step.
+ *   busy: Whether a transition's save is in flight, which disables both
+ *     buttons so a second save can never race the first.
  *   onBack: Called when Back is clicked (hidden on the first step).
  *   onNext: Called when Next / the final action is clicked.
  *   children: The active step's fields.
@@ -62,6 +64,7 @@ export function WizardShell({
   current,
   error,
   nextLabel,
+  busy,
   onBack,
   onNext,
   children,
@@ -73,6 +76,7 @@ export function WizardShell({
   current: number;
   error?: string;
   nextLabel: string;
+  busy?: boolean;
   onBack: () => void;
   onNext: () => void;
   children: React.ReactNode;
@@ -106,7 +110,8 @@ export function WizardShell({
           {current > 0 ? (
             <button
               onClick={onBack}
-              className="cursor-pointer rounded-lg border bg-card px-3.5 py-2 text-[13px] font-semibold hover:bg-slate-50"
+              disabled={busy}
+              className="cursor-pointer rounded-lg border bg-card px-3.5 py-2 text-[13px] font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               ← Back
             </button>
@@ -115,7 +120,8 @@ export function WizardShell({
           )}
           <button
             onClick={onNext}
-            className="cursor-pointer rounded-lg bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground hover:bg-indigo-700"
+            disabled={busy}
+            className="cursor-pointer rounded-lg bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isLast ? nextLabel : "Next →"}
           </button>

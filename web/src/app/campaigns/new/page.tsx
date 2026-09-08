@@ -109,9 +109,12 @@ export default function NewCampaignPage() {
 
   const stepIncomplete = (step: number) => REQUIRED_BY_STEP[step].some(missing);
 
-  const { step, attempted, back, next } = useWizard({
+  const { step, attempted, busy, back, next } = useWizard({
     stepCount: STEPS.length,
     isStepIncomplete: stepIncomplete,
+    // The goal is submitted once at the end, so there is nothing to write
+    // between steps and every transition is free to proceed.
+    save: async () => true,
     onFinish: () => {
       setSubmitting(true);
       void createCampaignAction(toGoal(draft)).then(({ campaign, error }) => {
@@ -160,6 +163,7 @@ export default function NewCampaignPage() {
           : undefined)
       }
       nextLabel={submitting ? "Creating…" : "Create campaign"}
+      busy={busy || submitting}
       onBack={back}
       onNext={next}
     >

@@ -1,0 +1,63 @@
+/** Which way the wizard is being asked to move. */
+export type TransitionDirection = "forward" | "back";
+
+export interface TransitionRequest {
+  direction: TransitionDirection;
+  step: number;
+  stepCount: number;
+  isStepIncomplete: (step: number) => boolean;
+  save: () => Promise<boolean>;
+}
+
+export interface TransitionOutcome {
+  step: number;
+  attempted: boolean;
+  finished: boolean;
+}
+
+/**
+ * Decides where a wizard transition lands, saving before it moves.
+ *
+ * The save is awaited and its result decides the move, so a step is never
+ * left before its answers are written. Optimistic advancement is what let
+ * two saves run at once and the staler one overwrite the fresher, which is
+ * the bug this rule exists to prevent.
+ *
+ * A step whose Required fields are missing is not saved and not left; it
+ * only raises the attempted flag that reveals the field errors. Moving back
+ * saves whatever has been entered — blanks are dropped by the payload
+ * builder, so a half-filled step writes only its real answers.
+ *
+ * Args:
+ *   direction: Whether the wizard is moving forward or back.
+ *   step: The step the wizard is on.
+ *   stepCount: Total number of steps.
+ *   isStepIncomplete: Returns true when a step's Required inputs are missing.
+ *   save: Writes the answers entered so far, returning whether it succeeded.
+ *
+ * Returns:
+ *   The step to land on, whether to reveal required-field errors, and
+ *   whether the wizard has finished its last step.
+ */
+export async function resolveTransition({
+  direction,
+  step,
+  stepCount,
+  isStepIncomplete,
+  save,
+}: TransitionRequest): Promise<TransitionOutcome> {
+  const stay = { step, attempted: false, finished: false };
+
+  if (direction === "forward" && isStepIncomplete(step)) {
+    return { step, attempted: true, finished: false };
+  }
+  if (!(await save())) return stay;
+
+  if (direction === "back") {
+    return { ...stay, step: Math.max(0, step - 1) };
+  }
+  if (step < stepCount - 1) {
+    return { ...stay, step: step + 1 };
+  }
+  return { ...stay, finished: true };
+}

@@ -105,14 +105,39 @@ requires every field, blocks advancing on any blank, and submits the goal once
 at the end — no partial saves, no merge, nothing blank on the wire. It needs no
 change.
 
+## Correction — the cause above is also wrong
+
+The concurrent-save diagnosis was measured and fixed, and it was a real defect.
+It was **not** what makes this spec flake. Probes on a failing run showed:
+
+    PROBE load    {"question_id":"q_business_name","answer":"Acme Coffee"}
+    PROBE field value before click: Acme Coffee
+    PROBE persist {"question_id":"q_business_name","answer":"Acme Coffee"} size 4
+
+The *first* save already carries the stale name, and every row in
+`dna_answers` shares one `updated_at` — one write per step, no race left. The
+same probe on a passing run reads `Peakline Roasters` at all three points.
+
+The field itself holds the wrong value **before anything is saved**. The
+wizard's inputs are controlled by React state, so a Playwright `fill()` that
+lands before the page is interactive sets the DOM value and is then discarded
+by the next render. The field snaps back to what was loaded — which for a
+question the business has answered before is the previous answer, and for the
+rest is blank, so their later fills stick. That is exactly why only
+`q_business_name` was ever wrong.
+
+Fixed in the spec: each fill is retried until the value holds
+(`fillAndConfirm`), so the spec asserts its own answers rather than a stale one
+that happens to still be there.
+
 ## Acceptance criteria
 
-- [ ] Finish issues exactly one `POST /brand-dna/answers`, not two.
-- [ ] `Next`, `Back` and Finish await their save; the primary button is disabled
+- [x] Finish issues exactly one `POST /brand-dna/answers`, not two.
+- [x] `Next`, `Back` and Finish await their save; the primary button is disabled
       while it is in flight.
-- [ ] A save that fails leaves the wizard on its current step and shows the
+- [x] A save that fails leaves the wizard on its current step and shows the
       error, rather than advancing.
-- [ ] A question the business has not answered is still absent from the payload
+- [x] A question the business has not answered is still absent from the payload
       — no empty-string answers are sent.
-- [ ] `make test-e2e` passes on three consecutive clean runs.
-- [ ] The spec does not depend on any other spec having run first.
+- [x] `make test-e2e` passes on three consecutive clean runs.
+- [x] The spec does not depend on any other spec having run first.

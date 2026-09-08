@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 // These specs share one mutable fixture — a tenant that starts blank and ends
 // filled in — so they must run in declaration order, not merely one at a time.
@@ -32,6 +32,27 @@ const CRAFTED_ARTIFACT_QUESTIONS = [
   "Brand personality",
   "Tone of voice",
 ];
+
+/**
+ * Types a value into a wizard field and waits for it to hold.
+ *
+ * These inputs are controlled by React state. A fill that lands before the
+ * page is interactive sets the DOM value and is then discarded by the next
+ * render, silently leaving the field on whatever was loaded — which for a
+ * question the business has answered before is the *previous* answer, not a
+ * blank. Retrying until the value sticks makes the spec assert what it came
+ * to assert rather than a stale answer that happens to still be there.
+ *
+ * Args:
+ *   field: The input to fill.
+ *   value: The answer to type.
+ */
+async function fillAndConfirm(field: Locator, value: string) {
+  await expect(async () => {
+    await field.fill(value);
+    expect(await field.inputValue()).toBe(value);
+  }).toPass({ timeout: 10_000 });
+}
 
 test("the wizard renders the published questions, each explaining itself", async ({
   page,
@@ -131,12 +152,17 @@ test("completing the questionnaire lands on the Brand screen with the answers", 
     "What must never appear in your marketing?": "No health claims.",
   };
 
+  // Each step's save is awaited before the wizard advances, so the spec waits
+  // for the next step to actually render rather than firing all four clicks at
+  // once. Clicking blind outruns the save the wizard is still doing — which is
+  // exactly the impatience the disabled button exists to refuse.
   for (let step = 1; step <= 4; step += 1) {
     for (const [label, value] of Object.entries(answers)) {
       const field = page.getByLabel(label);
-      if (await field.count()) await field.fill(value);
+      if (await field.count()) await fillAndConfirm(field, value);
     }
     await page.getByRole("button", { name: "Next →" }).click();
+    await expect(page.getByText(`Step ${step + 1} of 5`)).toBeVisible();
   }
   await page.getByRole("button", { name: "Finish onboarding" }).click();
 
