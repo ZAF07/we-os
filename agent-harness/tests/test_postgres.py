@@ -390,11 +390,11 @@ async def test_a_run_halted_at_a_gate_is_approvable_after_a_restart(
     write_all_agent_specs(settings)
     install_scripted_graph(monkeypatch)
     versions = InMemoryDeliverableStore()
-    stores = {**prototype_adapters(settings.root), "deliverable_store": versions}
+    adapters = {**prototype_adapters(settings.root), "deliverable_store": versions}
 
     async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as first:
         await first.setup()
-        halted = await arun_campaign(settings, TENANT, SLUG, **stores | {"checkpointer": first})
+        halted = await arun_campaign(settings, TENANT, SLUG, **{**adapters, "checkpointer": first})
     assert halted.awaiting_approval_stage == "brand-strategy"
 
     async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as second:
@@ -404,7 +404,7 @@ async def test_a_run_halted_at_a_gate_is_approvable_after_a_restart(
             settings,
             TENANT,
             SLUG,
-            **stores | {"checkpointer": second},
+            **{**adapters, "checkpointer": second},
             resume=Command(resume={"stage_key": "brand-strategy", "approved": True}),
         )
 
