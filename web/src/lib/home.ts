@@ -124,10 +124,11 @@ export function toStats(
  *
  * Returns:
  *   A percentage when there are credits to be a fraction of, and the raw
- *   spend when there are not — unlimited credits have no percentage.
+ *   spend when there are not — unlimited credits have no percentage. Whole
+ *   credits either way: a fraction of a credit is display noise.
  */
 function formatCredits(usage: UsageReport): string {
-  if (usage.credits <= 0) return `${usage.used.toFixed(2)}`;
+  if (usage.credits <= 0) return `${Math.round(usage.used)}`;
   return `${Math.round((usage.used / usage.credits) * 100)}%`;
 }
 

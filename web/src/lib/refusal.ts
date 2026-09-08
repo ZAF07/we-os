@@ -29,7 +29,7 @@ export function refusalMessage(error: unknown): string {
   if (error.type === "quota_exhausted") {
     const { used, credits } = error.detail;
     if (typeof used === "number" && typeof credits === "number") {
-      return `${error.message} You have used ${used.toFixed(2)} of ${credits.toFixed(2)}.`;
+      return `${error.message} You have used ${Math.round(used)} of ${Math.round(credits)} credits.`;
     }
     return error.message;
   }

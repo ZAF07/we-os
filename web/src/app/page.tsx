@@ -228,8 +228,8 @@ function CreditsCard({ usage }: { usage: UsageReport | null }) {
       </div>
       {unlimited ? (
         <p className="mt-2 text-[12.5px] text-muted-foreground">
-          Spent {usage.used.toFixed(2)} so far. No ceiling is set on this
-          business.
+          Spent {Math.round(usage.used)} credits so far. No ceiling is set on
+          this business.
         </p>
       ) : (
         <>
@@ -245,7 +245,7 @@ function CreditsCard({ usage }: { usage: UsageReport | null }) {
           <p className="mt-2 text-[12.5px] text-muted-foreground">
             {usage.exhausted
               ? "Spent. Billable work is refused until it is raised or renewed."
-              : `${spent}% used — ${usage.remaining.toFixed(2)} left.`}
+              : `${spent}% used — ${Math.round(usage.remaining)} credits left.`}
           </p>
         </>
       )}

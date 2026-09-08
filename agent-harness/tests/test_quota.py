@@ -606,3 +606,78 @@ async def test_a_deliverable_written_before_the_halt_is_not_lost(
 
     research = settings.tenant_dir(TENANT) / "campaigns" / SLUG / "research.md"
     assert research.is_file(), "the stage that completed before the halt lost its deliverable"
+
+
+@pytest.fixture
+def rated_client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """Yield a client where one unit of cost burns 100 credits.
+
+    The rate is set through the same environment variable an operator would use,
+    so the exchange the business sees is the one the platform configured.
+
+    Args:
+        repo: The hermetic repository root fixture.
+        monkeypatch: The pytest monkeypatch fixture.
+
+    Yields:
+        An entered FastAPI test client with a 300-credit ceiling.
+    """
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    monkeypatch.setenv("MARKETING_OS_TOKEN_RATES", f"{MODEL}=  {RATE}")
+    monkeypatch.setenv("MARKETING_OS_CREDITS", "300")
+    monkeypatch.setenv("MARKETING_OS_CREDIT_RATE", "100")
+    write_all_agent_specs(Settings(root=repo))
+    install_scripted_graph(monkeypatch, handler=_counting_handler)
+    from marketing_os.entrypoints.api.app import get_settings
+
+    with _make_client(repo) as entered:
+        yield entered
+    get_settings.cache_clear()
+    clear_prototype_adapters()
+
+
+def test_credits_are_spent_at_the_platform_rate_and_then_refused(
+    rated_client: TestClient,
+) -> None:
+    """Three calls costing 1.00 fit in 300 credits at rate 100; the fourth is refused."""
+    from marketing_os.entrypoints.api.app import get_usage_ledger
+
+    ledger = get_usage_ledger()
+    for _ in range(3):
+        ledger.check(TENANT)
+        ledger.record(TENANT, slug=SLUG, model=MODEL, usage=_usage(1000))
+
+    body = rated_client.get("/usage").json()
+    assert body["used"] == 300
+    assert body["credits"] == 300
+    assert body["remaining"] == 0
+    assert body["exhausted"] is True
+
+    assert [entry.cost for entry in ledger.entries(TENANT)] == [
+        pytest.approx(1.0),
+        pytest.approx(1.0),
+        pytest.approx(1.0),
+    ]
+
+    response = rated_client.post(f"/campaigns/{SLUG}/run", json={"stage": "research"})
+    assert response.status_code == 402
+    assert response.json()["type"] == "quota_exhausted"
+    assert response.json()["credits"] == pytest.approx(300.0)
+    assert response.json()["used"] == pytest.approx(300.0)
+
+
+def test_the_usage_report_shows_credits_as_whole_numbers(
+    rated_client: TestClient,
+) -> None:
+    """A fractional credit is display noise, so the report rounds it away."""
+    from marketing_os.entrypoints.api.app import get_usage_ledger
+
+    # 6 tokens at 0.001 a token is a cost of 0.006, which at rate 100 is 0.6
+    # credits — an amount no business should be shown to one decimal place.
+    get_usage_ledger().record(TENANT, slug=SLUG, model=MODEL, usage=_usage(6))
+
+    body = rated_client.get("/usage").json()
+
+    assert body["used"] == 1
+    assert body["campaigns"][0]["used"] == 1
+    assert body["remaining"] == 299

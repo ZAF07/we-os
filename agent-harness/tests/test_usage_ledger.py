@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 
 from conftest import OTHER_TENANT, SLUG, TENANT
-from marketing_os.adapters.usage import InMemoryUsageLedger
+from marketing_os.adapters.usage import InMemoryUsageLedger, whole_credits
 from marketing_os.config import Settings
 from marketing_os.errors import QuotaExhaustedError
 from marketing_os.schemas import Usage
@@ -33,16 +33,17 @@ RATE = 0.001
 THOUSAND = Usage(input_tokens=600, output_tokens=400)
 
 
-def _settings(credits: float = 10.0) -> Settings:
-    """Build settings with a round token rate and a known credits.
+def _settings(credits: float = 10.0, credit_rate: float = 1.0) -> Settings:
+    """Build settings with a round token rate and a known credits balance.
 
     Args:
         credits: The platform-wide credits every tenant gets.
+        credit_rate: How many credits one unit of recorded cost burns.
 
     Returns:
         Settings the ledger prices calls and refuses them against.
     """
-    return Settings(usage_credits=credits, token_rates={MODEL: RATE})
+    return Settings(usage_credits=credits, credit_rate=credit_rate, token_rates={MODEL: RATE})
 
 
 LedgerFactory = Callable[[Settings], Any]
@@ -287,3 +288,81 @@ def test_clearing_an_override_falls_back_to_the_platform_default(ledger: Any) ->
 
     ledger.check(TENANT)
     assert ledger.consumption(TENANT).credits == pytest.approx(10.0)
+
+
+def test_with_no_rate_set_one_unit_of_cost_is_one_credit(ledger: Any) -> None:
+    """The default rate of 1 leaves the numbers exactly as they were."""
+    ledger.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
+
+    report = ledger.consumption(TENANT)
+
+    assert report.used == pytest.approx(1.0)
+    assert report.credits == pytest.approx(10.0)
+
+
+def test_credits_are_derived_from_cost_at_the_platform_rate(
+    ledger_factory: LedgerFactory,
+) -> None:
+    """Rate 100 means a call costing 1.00 burns 100 credits, not 1."""
+    ledger = ledger_factory(_settings(credits=300.0, credit_rate=100.0))
+    ledger.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
+
+    report = ledger.consumption(TENANT)
+
+    assert report.used == pytest.approx(100.0)
+    assert report.credits == pytest.approx(300.0)
+    assert report.remaining == pytest.approx(200.0)
+    assert not report.exhausted
+
+
+def test_the_ledger_still_records_real_cost_not_credits(
+    ledger_factory: LedgerFactory,
+) -> None:
+    """The rate converts for display and enforcement; the dataset keeps cost."""
+    ledger = ledger_factory(_settings(credits=300.0, credit_rate=100.0))
+
+    entry = ledger.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
+
+    assert entry.cost == pytest.approx(1.0)
+    assert ledger.entries(TENANT)[0].cost == pytest.approx(1.0)
+
+
+def test_a_tenant_is_refused_once_their_credits_are_spent_at_the_rate(
+    ledger_factory: LedgerFactory,
+) -> None:
+    """Three calls at 100 credits each fit in 300; the fourth does not."""
+    ledger = ledger_factory(_settings(credits=300.0, credit_rate=100.0))
+    for _ in range(3):
+        ledger.check(TENANT)
+        ledger.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
+
+    report = ledger.consumption(TENANT)
+    assert report.used == pytest.approx(300.0)
+    assert report.remaining == pytest.approx(0.0)
+    assert report.exhausted
+
+    with pytest.raises(QuotaExhaustedError) as raised:
+        ledger.check(TENANT)
+    assert raised.value.used == pytest.approx(300.0)
+    assert raised.value.credits == pytest.approx(300.0)
+
+
+def test_the_per_campaign_breakdown_is_in_credits_too(
+    ledger_factory: LedgerFactory,
+) -> None:
+    """A breakdown in cost beside a total in credits would not add up."""
+    ledger = ledger_factory(_settings(credits=300.0, credit_rate=100.0))
+    ledger.record(TENANT, slug=SLUG, model=MODEL, usage=THOUSAND)
+
+    report = ledger.consumption(TENANT)
+
+    assert [campaign.used for campaign in report.campaigns] == [pytest.approx(100.0)]
+
+
+@pytest.mark.parametrize(
+    ("credits", "shown"),
+    [(0.4, 0), (0.5, 1), (1.5, 2), (2.5, 3), (299.5, 300), (300.0, 300)],
+)
+def test_credits_are_shown_rounded_half_up(credits: float, shown: int) -> None:
+    """Half up, not banker's rounding: 2.5 credits reads as 3, never as 2."""
+    assert whole_credits(credits) == shown

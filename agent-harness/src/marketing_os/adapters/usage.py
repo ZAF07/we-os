@@ -20,6 +20,7 @@ stays deferred.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP, Decimal
 
 from marketing_os.adapters.documents import validate_tenant_id
 from marketing_os.config import Settings
@@ -72,6 +73,46 @@ def cost_of(settings: Settings, model: str, usage: Usage | None) -> float:
     return billable_tokens(usage) * settings.token_rate(model)
 
 
+def credits_of(settings: Settings, cost: float) -> float:
+    """Convert recorded cost into the credits a business is charged for it.
+
+    The ledger records real model cost, because that is the unit-economics
+    dataset. Credits are what a business buys and sees, and the two are not the
+    same scale — a tier grants thousands of credits for tens of dollars — so the
+    exchange happens here, in the one place ADR-0020 puts it. At the default rate
+    of 1 a credit is a unit of cost and nothing changes; at 100, a call costing
+    0.03 burns 3 credits.
+
+    Args:
+        settings: The harness settings holding the platform-wide credit rate.
+        cost: Recorded cost, in the platform's accounting currency.
+
+    Returns:
+        What that cost burns in credits, unrounded — the quota check compares
+        this value, so a tenant is never refused a hair early or late because of
+        display rounding.
+    """
+    return cost * settings.credit_rate
+
+
+def whole_credits(credits: float) -> int:
+    """Round a credit amount to the whole number a business is shown.
+
+    A business buys credits in thousands, so a fractional one is display noise.
+    Rounding half up rather than with Python's banker's rounding is what makes
+    the shown number match what someone reaches for a calculator to check.
+    Only the *report* rounds: the quota check compares the unrounded value, so
+    nobody is refused a hair early or late because of how a number is displayed.
+
+    Args:
+        credits: An unrounded credit amount.
+
+    Returns:
+        The credits to show, rounded half up.
+    """
+    return int(Decimal(str(credits)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
 def total_of(entries: list[LedgerEntry]) -> float:
     """Return the total cost of a set of ledger entries.
 
@@ -102,8 +143,8 @@ def rank_campaigns(totals: dict[str, float]) -> list[CampaignConsumption]:
     return [CampaignConsumption(slug=slug, used=used) for slug, used in ranked]
 
 
-def per_campaign(entries: list[LedgerEntry]) -> list[CampaignConsumption]:
-    """Total a set of entries by the campaign they were spent on, dearest first.
+def cost_per_campaign(entries: list[LedgerEntry]) -> dict[str, float]:
+    """Total a set of entries by the campaign they were spent on.
 
     Entries not tied to a campaign are omitted rather than grouped under a
     placeholder slug: the breakdown answers "what did each campaign cost?", and
@@ -115,14 +156,50 @@ def per_campaign(entries: list[LedgerEntry]) -> list[CampaignConsumption]:
         entries: The entries to group.
 
     Returns:
-        One total per campaign, highest spend first.
+        The recorded cost per campaign slug.
     """
     totals: dict[str, float] = {}
     for entry in entries:
         if entry.slug is None:
             continue
         totals[entry.slug] = totals.get(entry.slug, 0.0) + entry.cost
-    return rank_campaigns(totals)
+    return totals
+
+
+def build_consumption(
+    settings: Settings,
+    tenant: str,
+    *,
+    cost: float,
+    per_campaign_cost: dict[str, float],
+    credits: float,
+) -> Consumption:
+    """Assemble a tenant's report, converting recorded cost into credits.
+
+    Both adapters arrive at the same three numbers — a total cost, a cost per
+    campaign, and a credits ceiling — one by summing entries in the process, the
+    other from a ``GROUP BY``. Building the report here is what keeps the
+    conversion in a single place, so the two stores can never disagree about
+    what a tenant has spent or when they are refused.
+
+    Args:
+        settings: The harness settings holding the platform-wide credit rate.
+        tenant: The tenant the report is for.
+        cost: Everything the tenant has spent, as recorded cost.
+        per_campaign_cost: The recorded cost per campaign slug.
+        credits: What the tenant is allowed to spend, already in credits.
+
+    Returns:
+        The report, in credits throughout, with the breakdown dearest first.
+    """
+    return Consumption(
+        tenant_id=tenant,
+        used=credits_of(settings, cost),
+        credits=credits,
+        campaigns=rank_campaigns(
+            {slug: credits_of(settings, spent) for slug, spent in per_campaign_cost.items()}
+        ),
+    )
 
 
 def build_entry(
@@ -305,11 +382,12 @@ class InMemoryUsageLedger:
         scoped = validate_tenant_id(tenant)
         owned = self._owned_by(scoped)
         counted = owned if slug is None else [entry for entry in owned if entry.slug == slug]
-        return Consumption(
-            tenant_id=scoped,
-            used=total_of(counted),
+        return build_consumption(
+            self._settings,
+            scoped,
+            cost=total_of(counted),
+            per_campaign_cost=cost_per_campaign(owned),
             credits=self._credits.credits_for(scoped),
-            campaigns=per_campaign(owned),
         )
 
     def entries(self, tenant: str, slug: str | None = None) -> list[LedgerEntry]:

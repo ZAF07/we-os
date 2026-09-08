@@ -116,7 +116,12 @@ describe("toStats", () => {
 
   it("reports raw spend when credits are unlimited", () => {
     const stats = toStats([], { ...usage, credits: 0 });
-    expect(stats[2].value).toBe("25.00");
+    expect(stats[2].value).toBe("25");
+  });
+
+  it("shows credits as whole numbers, never to two decimals", () => {
+    const stats = toStats([], { ...usage, used: 25.4, credits: 0 });
+    expect(stats[2].value).toBe("25");
   });
 
   it("omits the credits tile when usage could not be read", () => {

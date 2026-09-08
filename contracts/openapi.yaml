@@ -117,6 +117,12 @@ paths:
         on. Read by the interface so consumption is visible before work stops,
         and by the platform to answer what a campaign actually cost.
 
+        Credits are derived from the recorded model cost at one platform-set
+        rate, so the rate can change without touching the tiers or the pages
+        that show them. Every number here is whole credits: the quota check
+        compares the unrounded value, so what is shown never decides when work
+        is refused.
+
         This is **generation cost** — what the platform spent on models — and is
         deliberately distinct from the campaign budget, which is the business's
         own media spend allocated per channel by the Performance Plan.
@@ -1586,7 +1592,7 @@ components:
           description: The campaign slug, which is what the engine speaks. `CONTEXT.md` makes the slug the canonical identifier for a campaign.
         used:
           type: number
-          description: What this campaign has cost in generation, dearest first.
+          description: What this campaign has cost, in whole credits, dearest first.
 
     UsageReport:
       type: object
@@ -1594,13 +1600,13 @@ components:
       properties:
         used:
           type: number
-          description: Everything the business has spent.
+          description: Everything the business has spent, in whole credits.
         credits:
           type: number
-          description: What the business may spend, in credits.
+          description: What the business may spend, in whole credits.
         remaining:
           type: number
-          description: What is left, never below zero.
+          description: What is left, in whole credits, never below zero.
         exhausted:
           type: boolean
           description: Whether billable work is now refused with `quota_exhausted`.

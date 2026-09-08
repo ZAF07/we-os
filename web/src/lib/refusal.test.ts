@@ -29,8 +29,7 @@ describe("refusalMessage", () => {
     );
 
     expect(message).toContain("Your credits are used up.");
-    expect(message).toContain("1042.50");
-    expect(message).toContain("1000.00");
+    expect(message).toContain("You have used 1043 of 1000 credits.");
   });
 
   it("falls back to the engine's words when the numbers are missing", () => {

@@ -26,7 +26,11 @@ from typing import Any
 
 from marketing_os.adapters.documents import validate_tenant_id
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
-from marketing_os.adapters.usage import build_entry, rank_campaigns, refuse_when_exhausted
+from marketing_os.adapters.usage import (
+    build_consumption,
+    build_entry,
+    refuse_when_exhausted,
+)
 from marketing_os.config import Settings
 from marketing_os.schemas import Consumption, LedgerEntry, Usage
 
@@ -193,11 +197,12 @@ class PostgresUsageLedger:
         credits = self._settings.usage_credits
         if override is not None and override[0] is not None:
             credits = float(override[0])
-        return Consumption(
-            tenant_id=scoped,
-            used=float(used),
+        return build_consumption(
+            self._settings,
+            scoped,
+            cost=float(used),
+            per_campaign_cost={str(row[0]): float(row[1]) for row in breakdown},
             credits=credits,
-            campaigns=rank_campaigns({str(row[0]): float(row[1]) for row in breakdown}),
         )
 
     def entries(self, tenant: str, slug: str | None = None) -> list[LedgerEntry]:

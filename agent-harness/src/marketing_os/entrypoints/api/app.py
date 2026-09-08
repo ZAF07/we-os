@@ -63,6 +63,7 @@ from marketing_os.adapters.observability import (
     tail_trace,
 )
 from marketing_os.adapters.runs import AWAITING_APPROVAL, CANCELLED, RUNNING
+from marketing_os.adapters.usage import whole_credits
 from marketing_os.campaign import (
     Budget,
     CampaignGoal,
@@ -618,18 +619,24 @@ def usage(identity: Identity, slug: str | None = None) -> dict[str, object]:
         slug: One campaign to restrict the total to, or omitted for everything
             the tenant has spent.
 
+    Credits are derived from the recorded cost at the platform-wide rate and
+    reported as whole numbers, since a fractional credit is display noise. The
+    quota check compares the unrounded value, so what is shown never decides
+    when work is refused.
+
     Returns:
-        The spend, the credits, what remains, and the per-campaign breakdown.
-        Another tenant's spend is never included.
+        The spend, the credits, what remains, and the per-campaign breakdown,
+        all in whole credits. Another tenant's spend is never included.
     """
     report: Consumption = get_usage_ledger().consumption(identity.tenant_id, slug)
     return {
-        "used": report.used,
-        "credits": report.credits,
-        "remaining": report.remaining,
+        "used": whole_credits(report.used),
+        "credits": whole_credits(report.credits),
+        "remaining": whole_credits(report.remaining),
         "exhausted": report.exhausted,
         "campaigns": [
-            {"slug": campaign.slug, "used": campaign.used} for campaign in report.campaigns
+            {"slug": campaign.slug, "used": whole_credits(campaign.used)}
+            for campaign in report.campaigns
         ],
     }
 
