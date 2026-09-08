@@ -35,7 +35,7 @@ None - can start immediately (but see sequencing note above)
 ## Completion
 
 - Completed: 2026-09-08
-- Commit: `3992000` (implementation), `dbe76ff` (code-review fixes)
+- Commit: `3992000` (implementation), `dbe76ff` (code-review fixes), merged to main as `1ebf441`
 
 ### Evidence
 
@@ -44,4 +44,4 @@ None - can start immediately (but see sequencing note above)
 - **Criterion 3** — `config.py` reads `MARKETING_OS_CREDITS`; the old name is not read anywhere. Verified live: platform default 3.0 from the env var, tenant override of 7.0 winning over it.
 - **Criterion 4** — `/usage` returns `credits` (`app.py:634`); the 402 detail carries `credits` (`errors.py:215`). The contract example was cost-shaped (`used: 4.2`) and contradicted its own "whole credits" prose; fixed in `dbe76ff`.
 - **Criterion 5** — `CreditsCard` and the "Credits used" stat tile read `usage.credits`; the refusal message reads "Your credits are used up. Work resumes when they renew."
-- **Criterion 6** — engine `ruff check`, `ruff format --check`, `mypy src` all pass; `make test-postgres` 682 passed. Web `pnpm typecheck`, `lint`, `format:check`, `test:unit` (69) all pass. **`pnpm test` (Playwright) was not run** — the e2e compose stack needs `E2E_CLERK_ORG_ID` and related Clerk credentials that are absent from this environment. The one e2e spec this change touches (`home.spec.ts`, "Allowance" → "Credits") matches the label Home actually renders. The change *was* checked in the running app, against a real Postgres.
+- **Criterion 6** — engine `ruff check`, `ruff format --check`, `mypy src` all pass; `make test-postgres` 682 passed. Web `pnpm typecheck`, `lint`, `format:check`, `test:unit` (69) all pass. `pnpm test` (Playwright) run via `make test-e2e`: **45 passed, 3 failed**, and separately **47 passed, 1 failed** at `--workers=1`. The failures are pre-existing suite flakiness, not this change — pre-change `main` (`345ebbb`) fails the same count with a *different* set of specs, and every failing test passed on rerun. Filed as [e2e-suite-flake 01](../../../e2e-suite-flake/issues/01-campaign-creating-specs-fail-under-parallel-workers.md). The one spec line this change touches (`home.spec.ts:18`, "Allowance" → "Credits") passed in all four runs. The change was also checked in the running app against a real Postgres.

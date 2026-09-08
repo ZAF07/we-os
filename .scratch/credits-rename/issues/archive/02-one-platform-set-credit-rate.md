@@ -35,7 +35,7 @@ The OpenAPI contract's `/usage` description says credits are derived from record
 ## Completion
 
 - Completed: 2026-09-08
-- Commit: `903bfa6` (implementation), `dbe76ff` (code-review fixes)
+- Commit: `903bfa6` (implementation), `dbe76ff` (code-review fixes), merged to main as `1ebf441`
 
 ### Evidence
 
@@ -44,4 +44,4 @@ The OpenAPI contract's `/usage` description says credits are derived from record
 - **Criterion 3** — `build_entry` still records `cost_of(...)`, untouched by the rate. Pinned by `test_the_ledger_still_records_real_cost_not_credits`; live run confirmed the three stored rows each held cost `1.0`.
 - **Criterion 4** — the rate is read only in `config.py` (`MARKETING_OS_CREDIT_RATE`) and applied only in `credits_of`, called only from `build_consumption`, which both ledger adapters now go through. `billing.py` is unchanged in this commit, so check-then-charge ordering is untouched.
 - **Criterion 5** — `whole_credits` rounds half up via `Decimal` at the API boundary only; `refuse_when_exhausted` compares the unrounded `Consumption.used`. Home formats with `Math.round`. Pinned by `test_credits_are_shown_rounded_half_up` (parametrised, including the 2.5 → 3 case banker's rounding would get wrong) and `test_the_usage_report_shows_credits_as_whole_numbers`.
-- **Criterion 6** — same as issue 01: all engine and web gates pass; **`pnpm test` (Playwright) not run**, for the same missing-Clerk-credentials reason. Verified in the running app against a real Postgres.
+- **Criterion 6** — same as issue 01: all engine and web gates pass, and `pnpm test` (Playwright) was run via `make test-e2e` — 45 passed / 3 failed, and 47 passed / 1 failed at `--workers=1`. Those failures are pre-existing suite flakiness reproduced on pre-change `main`, filed as [e2e-suite-flake 01](../../../e2e-suite-flake/issues/01-campaign-creating-specs-fail-under-parallel-workers.md). Verified in the running app against a real Postgres.
