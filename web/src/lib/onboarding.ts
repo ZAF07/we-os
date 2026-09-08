@@ -41,34 +41,10 @@ export function questionSteps(questionnaire: Questionnaire): QuestionStep[] {
  * Returns:
  *   Answer text keyed by question id.
  */
-function answersById(answers: DnaAnswer[]): Record<string, string> {
+export function answersById(answers: DnaAnswer[]): Record<string, string> {
   return Object.fromEntries(
     answers.map((answer) => [answer.question_id, answer.answer]),
   );
-}
-
-/**
- * Merges the stored answers into what the wizard already holds, leaving
- * anything the business has typed untouched.
- *
- * The load runs in an effect that React invokes twice in development, so a
- * second, slower response can arrive after the business has started typing.
- * Seeding rather than replacing means that late response fills in only the
- * questions still untouched, instead of restoring stale text over fresh
- * edits and saving it as the answer.
- *
- * Args:
- *   current: The answers the wizard holds, keyed by question id.
- *   stored: The answers the engine has for the business.
- *
- * Returns:
- *   The stored answers, with anything already entered taking precedence.
- */
-export function seedAnswers(
-  current: Record<string, string>,
-  stored: DnaAnswer[],
-): Record<string, string> {
-  return { ...answersById(stored), ...current };
 }
 
 /**

@@ -9,8 +9,8 @@ import { useWizard } from "@/components/wizard/use-wizard";
 import { Field, WizardShell } from "@/components/wizard/wizard";
 import type { Question, Questionnaire } from "@/lib/engine";
 import {
+  answersById,
   questionSteps,
-  seedAnswers,
   toAnswerPayload,
   unansweredRequired,
   type QuestionStep,
@@ -89,7 +89,7 @@ export default function OnboardingPage() {
     loadOnboarding()
       .then(({ questionnaire: published, dna, completeness }) => {
         setQuestionnaire(published);
-        setAnswers((entered) => seedAnswers(entered, dna.answers));
+        setAnswers(answersById(dna.answers));
         setNewQuestions(completeness.unanswered_new_questions);
       })
       .catch(() =>

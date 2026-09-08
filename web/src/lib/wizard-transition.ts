@@ -1,6 +1,7 @@
 /** Which way the wizard is being asked to move. */
 export type TransitionDirection = "forward" | "back";
 
+/** What a transition needs to know to decide where the wizard lands. */
 export interface TransitionRequest {
   direction: TransitionDirection;
   step: number;
@@ -9,9 +10,16 @@ export interface TransitionRequest {
   save: () => Promise<boolean>;
 }
 
+/**
+ * Where a transition lands.
+ *
+ * `attempted` is null when the transition has nothing to say about the
+ * required-field errors, which leaves whatever the wizard was already
+ * showing in place.
+ */
 export interface TransitionOutcome {
   step: number;
-  attempted: boolean;
+  attempted: boolean | null;
   finished: boolean;
 }
 
@@ -28,6 +36,10 @@ export interface TransitionOutcome {
  * saves whatever has been entered — blanks are dropped by the payload
  * builder, so a half-filled step writes only its real answers.
  *
+ * A failed save leaves the attempted flag alone rather than lowering it, so
+ * a required-field error already on screen is not cleared by a write that
+ * never landed.
+ *
  * Args:
  *   direction: Whether the wizard is moving forward or back.
  *   step: The step the wizard is on.
@@ -36,8 +48,9 @@ export interface TransitionOutcome {
  *   save: Writes the answers entered so far, returning whether it succeeded.
  *
  * Returns:
- *   The step to land on, whether to reveal required-field errors, and
- *   whether the wizard has finished its last step.
+ *   The step to land on, whether to reveal required-field errors (null to
+ *   leave them as they are), and whether the wizard has finished its last
+ *   step.
  */
 export async function resolveTransition({
   direction,
@@ -46,18 +59,20 @@ export async function resolveTransition({
   isStepIncomplete,
   save,
 }: TransitionRequest): Promise<TransitionOutcome> {
-  const stay = { step, attempted: false, finished: false };
+  const moved = { step, attempted: false, finished: false };
 
   if (direction === "forward" && isStepIncomplete(step)) {
     return { step, attempted: true, finished: false };
   }
-  if (!(await save())) return stay;
+  if (!(await save())) {
+    return { step, attempted: null, finished: false };
+  }
 
   if (direction === "back") {
-    return { ...stay, step: Math.max(0, step - 1) };
+    return { ...moved, step: Math.max(0, step - 1) };
   }
   if (step < stepCount - 1) {
-    return { ...stay, step: step + 1 };
+    return { ...moved, step: step + 1 };
   }
-  return { ...stay, finished: true };
+  return { ...moved, finished: true };
 }

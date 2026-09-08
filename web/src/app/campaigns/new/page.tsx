@@ -83,7 +83,16 @@ function toGoal(draft: Draft): CampaignGoalInput {
   };
 }
 
-/** Renders the new-campaign wizard, which creates a real campaign. */
+/**
+ * Renders the new-campaign wizard, which creates a real campaign.
+ *
+ * The goal is submitted once at the end rather than saved step by step, so
+ * the wizard's per-transition save has nothing to write and every transition
+ * is free to proceed.
+ *
+ * Returns:
+ *   The wizard page element.
+ */
 export default function NewCampaignPage() {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -112,8 +121,6 @@ export default function NewCampaignPage() {
   const { step, attempted, busy, back, next } = useWizard({
     stepCount: STEPS.length,
     isStepIncomplete: stepIncomplete,
-    // The goal is submitted once at the end, so there is nothing to write
-    // between steps and every transition is free to proceed.
     save: async () => true,
     onFinish: () => {
       setSubmitting(true);

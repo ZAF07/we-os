@@ -1,4 +1,4 @@
-# 01 — Two concurrent saves race on Finish, so the wizard can restore a stale answer
+# 01 — The spec asks which fields exist before the wizard has loaded them
 
 Status: ready-for-agent
 Type: bug
@@ -105,30 +105,54 @@ requires every field, blocks advancing on any blank, and submits the goal once
 at the end — no partial saves, no merge, nothing blank on the wire. It needs no
 change.
 
-## Correction — the cause above is also wrong
+## Correction — the cause above is wrong
 
-The concurrent-save diagnosis was measured and fixed, and it was a real defect.
-It was **not** what makes this spec flake. Probes on a failing run showed:
+The concurrent-save diagnosis was real and is fixed, and it was worth fixing.
+It was **not** what makes this spec flake.
 
-    PROBE load    {"question_id":"q_business_name","answer":"Acme Coffee"}
-    PROBE field value before click: Acme Coffee
-    PROBE persist {"question_id":"q_business_name","answer":"Acme Coffee"} size 4
+Probes on a failing run showed the *first* save already carrying the stale
+name, and every row in `dna_answers` sharing one `updated_at` — one write per
+step, nothing racing. So the wrong value was in the field before anything was
+saved.
 
-The *first* save already carries the stale name, and every row in
-`dna_answers` shares one `updated_at` — one write per step, no race left. The
-same probe on a passing run reads `Peakline Roasters` at all three points.
+The next probe showed why. On a failing run there is no confirmation that any
+**step 1** field was ever filled; the first field the spec successfully fills
+is `Urban commuters`, on step 2. The step-1 loop ran and filled nothing.
 
-The field itself holds the wrong value **before anything is saved**. The
-wizard's inputs are controlled by React state, so a Playwright `fill()` that
-lands before the page is interactive sets the DOM value and is then discarded
-by the next render. The field snaps back to what was loaded — which for a
-question the business has answered before is the previous answer, and for the
-rest is blank, so their later fills stick. That is exactly why only
-`q_business_name` was ever wrong.
+The spec asks which fields are on screen with:
 
-Fixed in the spec: each fill is retried until the value holds
-(`fillAndConfirm`), so the spec asserts its own answers rather than a stale one
-that happens to still be there.
+    if (await field.count()) await field.fill(value);
+
+`count()` resolves **immediately**. Unlike `fill()`, `click()` and the
+`expect` locators, it does not auto-wait for the element. The wizard renders
+"Loading your questions…" until `loadOnboarding()` resolves, so when the spec
+asks during that window it is told there are no fields, fills none of the
+eleven, and clicks `Next`. Step 1 advances carrying the values it loaded. By
+step 2 the page has loaded, so every later fill works.
+
+That is the exact reported signature: the only visibly wrong field is
+`q_business_name`, the only one with an answer stored from the previous spec
+to be carried forward. Every other field had nothing stored, so its step-2+
+fill landed normally.
+
+Intermittent because it is a race between the spec's first `count()` and the
+wizard's initial load — lost only when the load is slow, which under parallel
+Playwright load against a compiling dev server is roughly one run in three.
+
+Fixed in the spec: each step waits for `Step N of 5` to render before asking
+which fields it has, and each fill is confirmed to have held.
+
+The wizard's load path is left exactly as it was. A guard against a second,
+slower load clobbering typed answers was written and then removed: probes
+showed a single load per visit, so it defended against nothing this bug
+involves.
+
+## Verified
+
+Six consecutive clean `make test-e2e` runs, 46 passed each, `docker compose
+down -v` between every one. Three runs was the acceptance bar but is weak
+evidence against a one-in-three failure rate — an earlier three-run pass on an
+unfixed tree turned out to be luck.
 
 ## Acceptance criteria
 
@@ -139,5 +163,5 @@ that happens to still be there.
       error, rather than advancing.
 - [x] A question the business has not answered is still absent from the payload
       — no empty-string answers are sent.
-- [x] `make test-e2e` passes on three consecutive clean runs.
+- [x] `make test-e2e` passes on three consecutive clean runs (six were run).
 - [x] The spec does not depend on any other spec having run first.

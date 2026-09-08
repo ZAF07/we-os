@@ -76,7 +76,7 @@ export function WizardShell({
   current: number;
   error?: string;
   nextLabel: string;
-  busy?: boolean;
+  busy: boolean;
   onBack: () => void;
   onNext: () => void;
   children: React.ReactNode;

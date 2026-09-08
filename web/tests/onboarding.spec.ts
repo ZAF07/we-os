@@ -36,6 +36,11 @@ const CRAFTED_ARTIFACT_QUESTIONS = [
 /**
  * Types a value into a wizard field and waits for it to hold.
  *
+ * Each step's save is awaited before the wizard advances, so a spec walking
+ * the wizard must wait for the next step to render rather than firing every
+ * click at once — clicking blind outruns the save still in flight, which is
+ * the impatience the disabled button exists to refuse.
+ *
  * These inputs are controlled by React state. A fill that lands before the
  * page is interactive sets the DOM value and is then discarded by the next
  * render, silently leaving the field on whatever was loaded — which for a
@@ -152,11 +157,13 @@ test("completing the questionnaire lands on the Brand screen with the answers", 
     "What must never appear in your marketing?": "No health claims.",
   };
 
-  // Each step's save is awaited before the wizard advances, so the spec waits
-  // for the next step to actually render rather than firing all four clicks at
-  // once. Clicking blind outruns the save the wizard is still doing — which is
-  // exactly the impatience the disabled button exists to refuse.
   for (let step = 1; step <= 4; step += 1) {
+    // `count()` resolves immediately, unlike the locators that auto-wait, so
+    // it must not be asked which fields are on screen until the step has
+    // actually rendered. Before that it answers "none", the loop fills
+    // nothing, and the wizard advances carrying whatever it loaded — which
+    // for a question answered on an earlier visit is the previous answer.
+    await expect(page.getByText(`Step ${step} of 5`)).toBeVisible();
     for (const [label, value] of Object.entries(answers)) {
       const field = page.getByLabel(label);
       if (await field.count()) await fillAndConfirm(field, value);

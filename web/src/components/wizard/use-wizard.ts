@@ -61,7 +61,7 @@ export function useWizard({
         isStepIncomplete,
         save,
       });
-      setAttempted(outcome.attempted);
+      if (outcome.attempted !== null) setAttempted(outcome.attempted);
       setStep(outcome.step);
       if (outcome.finished) onFinish();
     } finally {
