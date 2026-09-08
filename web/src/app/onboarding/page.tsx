@@ -107,8 +107,12 @@ export default function OnboardingPage() {
   /**
    * Writes the answers entered so far.
    *
+   * A failure is reported rather than thrown, and the answers stay in
+   * state, so the wizard can still go back and the next successful save
+   * writes them.
+   *
    * Returns:
-   *   Whether the wizard may move on — true when the save landed, or when
+   *   Whether the wizard may advance — true when the save landed, or when
    *   there was nothing yet to save.
    */
   const persist = async () => {
@@ -120,7 +124,11 @@ export default function OnboardingPage() {
       setFailure(null);
       return true;
     } catch {
-      setFailure("We could not save your answers. Check your connection.");
+      setFailure(
+        "We could not save your answers — check your connection and try " +
+          "again. What you have typed is still here, and going back to an " +
+          "earlier step will not lose it.",
+      );
       return false;
     }
   };
@@ -131,6 +139,21 @@ export default function OnboardingPage() {
     save: persist,
     onFinish: () => router.push("/brand"),
   });
+
+  /**
+   * Steps back, retiring any save failure once the move has settled.
+   *
+   * The message names a write for the step being left, so carrying it onto
+   * the previous step would report a failure about somewhere the business
+   * no longer is. Clearing it after the transition rather than before means
+   * a save that fails on the way out does not re-raise it. The answers it
+   * referred to are still in state, and the next save that lands writes
+   * them.
+   */
+  const backAndClearFailure = async () => {
+    await back();
+    setFailure(null);
+  };
 
   if (!questionnaire) {
     return (
@@ -179,8 +202,9 @@ export default function OnboardingPage() {
           : undefined)
       }
       nextLabel={busy ? "Saving…" : "Finish onboarding"}
+      retryLabel={!busy && failure ? "Try again" : undefined}
       busy={busy}
-      onBack={back}
+      onBack={() => void backAndClearFailure()}
       onNext={next}
     >
       {current.questions.map((question) => (

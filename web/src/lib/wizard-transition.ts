@@ -26,19 +26,28 @@ export interface TransitionOutcome {
 /**
  * Decides where a wizard transition lands, saving before it moves.
  *
- * The save is awaited and its result decides the move, so a step is never
- * left before its answers are written. Optimistic advancement is what let
- * two saves run at once and the staler one overwrite the fresher, which is
- * the bug this rule exists to prevent.
+ * The save is always awaited, so two saves are never in flight at once and
+ * the staler one can never overwrite the fresher — the race this rule
+ * exists to prevent.
  *
- * A step whose Required fields are missing is not saved and not left; it
- * only raises the attempted flag that reveals the field errors. Moving back
- * saves whatever has been entered — blanks are dropped by the payload
- * builder, so a half-filled step writes only its real answers.
+ * Going forward, the save's result decides the move: a step is never
+ * advanced past before its answers are written. A step whose Required
+ * fields are missing is not saved and not left; it only raises the
+ * attempted flag that reveals the field errors. A failed save leaves the
+ * attempted flag alone rather than lowering it, so a required-field error
+ * already on screen is not cleared by a write that never landed.
  *
- * A failed save leaves the attempted flag alone rather than lowering it, so
- * a required-field error already on screen is not cleared by a write that
- * never landed.
+ * Going back moves whether or not the save landed. Re-reading an earlier
+ * answer does not depend on the current step having been written, and a
+ * blocked Back leaves a business on a flaky connection with no button that
+ * moves them anywhere. The answers stay in state, so the next save that
+ * succeeds writes them. Moving back saves whatever has been entered —
+ * blanks are dropped by the payload builder, so a half-filled step writes
+ * only its real answers.
+ *
+ * Going back says nothing about the required-field errors either way. It
+ * neither reveals them, having demanded nothing, nor clears ones already on
+ * screen, which no unfilled field was filled to earn.
  *
  * Args:
  *   direction: Whether the wizard is moving forward or back.
@@ -59,20 +68,21 @@ export async function resolveTransition({
   isStepIncomplete,
   save,
 }: TransitionRequest): Promise<TransitionOutcome> {
-  const moved = { step, attempted: false, finished: false };
+  if (direction === "back") {
+    await save();
+    return { step: Math.max(0, step - 1), attempted: null, finished: false };
+  }
 
-  if (direction === "forward" && isStepIncomplete(step)) {
+  if (isStepIncomplete(step)) {
     return { step, attempted: true, finished: false };
   }
   if (!(await save())) {
     return { step, attempted: null, finished: false };
   }
 
-  if (direction === "back") {
-    return { ...moved, step: Math.max(0, step - 1) };
-  }
+  const saved = { step, attempted: false, finished: false };
   if (step < stepCount - 1) {
-    return { ...moved, step: step + 1 };
+    return { ...saved, step: step + 1 };
   }
-  return { ...moved, finished: true };
+  return { ...saved, finished: true };
 }
