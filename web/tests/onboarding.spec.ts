@@ -127,6 +127,31 @@ test("answers save partway and are still there on return", async ({ page }) => {
   await expect(page.getByText(/answered so far/)).toBeVisible();
 });
 
+// Declared after the partial-save spec, which leaves step 1 answered so this
+// one can reach step 2 before the saving stops working.
+test("Back still goes back when the save is failing", async ({ page }) => {
+  await page.goto("/onboarding");
+
+  await expect(page.getByText("Step 1 of 5")).toBeVisible();
+  await page.getByRole("button", { name: "Next →" }).click();
+  await expect(page.getByText("Step 2 of 5")).toBeVisible();
+
+  // Server actions POST to the page's own URL, so aborting those requests is
+  // the engine going unreachable as far as the wizard can tell — the same
+  // failure as stopping the engine container, without stopping it for the
+  // specs running beside this one.
+  await page.route("**/onboarding", async (route, request) => {
+    if (request.method() === "POST") return route.abort();
+    return route.continue();
+  });
+
+  await page.getByRole("button", { name: "← Back" }).click();
+  await expect(page.getByText("Step 1 of 5")).toBeVisible();
+  await expect(page.getByLabel("What is your business called?")).toHaveValue(
+    "Acme Coffee",
+  );
+});
+
 // Last, because it completes the Brand DNA and leaves nothing for the gating
 // spec above to block on until the seed re-blanks the tenant.
 test("completing the questionnaire lands on the Brand screen with the answers", async ({

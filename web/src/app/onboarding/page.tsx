@@ -107,8 +107,12 @@ export default function OnboardingPage() {
   /**
    * Writes the answers entered so far.
    *
+   * A failure is reported rather than thrown, and the answers stay in
+   * state, so the wizard can still go back and the next successful save
+   * writes them.
+   *
    * Returns:
-   *   Whether the wizard may move on — true when the save landed, or when
+   *   Whether the wizard may advance — true when the save landed, or when
    *   there was nothing yet to save.
    */
   const persist = async () => {
@@ -120,7 +124,10 @@ export default function OnboardingPage() {
       setFailure(null);
       return true;
     } catch {
-      setFailure("We could not save your answers. Check your connection.");
+      setFailure(
+        "We could not save your answers. Check your connection — what you " +
+          "have typed is still here, and we will save it on the next try.",
+      );
       return false;
     }
   };

@@ -1,6 +1,6 @@
 # 02 — A failed save on Back traps the business on the step they were leaving
 
-Status: needs-triage
+Status: ready-for-human
 Type: bug
 
 ## Symptom
@@ -79,3 +79,27 @@ in-flight guard already prevents on its own.
 - [ ] A test covers the fixed behaviour, red before and green after.
 - [ ] `pnpm typecheck`, `pnpm lint`, `pnpm format:check` and `pnpm test:unit`
       pass in `web/`, and `make test-e2e` passes.
+
+## Decision
+
+Option 1. `Back` fires the save and moves regardless of its result. The save is
+still awaited, so two writes are never in flight at once — the race the
+blocking rule was introduced for was between *concurrent* saves, and the
+in-flight guard in `useWizard` prevents that on its own. Forward is unchanged:
+it still refuses to advance past a step whose write did not land.
+
+The failure message now says the typed answers are still held, so the business
+can go back and return without fearing they have lost them.
+
+## Comments
+
+Implemented on `fix/back-never-blocks-on-failed-save`.
+
+- `web/src/lib/wizard-transition.ts` — back branch moved above the save check;
+  it awaits the save and then steps back either way.
+- `web/src/app/onboarding/page.tsx` — failure copy now says the answers are held.
+- Unit test `steps back even when the save fails, so a failing write is never a
+  trap` was red before the change, green after.
+- E2E `Back still goes back when the save is failing` aborts the server-action
+  POST to simulate an unreachable engine; verified red against the unfixed code
+  and green after.
