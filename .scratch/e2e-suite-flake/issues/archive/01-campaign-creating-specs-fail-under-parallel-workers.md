@@ -190,4 +190,4 @@ engine call behind it. That is the O(n) list cost, filed as issue 03; a fresh
 ## Completion
 
 - Completed: 2026-09-09
-- Commit: <to be filled in manually>
+- Commit: 3ba1410 (merged to main in e05c8f7)
