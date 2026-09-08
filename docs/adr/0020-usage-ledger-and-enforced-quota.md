@@ -10,3 +10,7 @@ Enforcement is built while pre-revenue, before there is pressure to ship without
 
 - The ledger doubles as the unit-economics dataset: what a campaign, a revision, and a tenant actually cost.
 - Distinct from campaign budget, which is the business's media/ad spend ([ADR-0016](0016-channel-planning-precedes-creative.md)).
+
+## Amendment (2026-09-08)
+
+The presentation is decided: the allowance is shown to a business as **credits**, granted per tier each month. The engine still meters real cost; the cost-to-credit rate is set in one place and is not yet fixed. The `allowance` identifier remains in code until a separate rename. See **Credits** and **Tier** in `CONTEXT.md`.

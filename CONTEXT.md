@@ -1,6 +1,6 @@
 # we-OS (Marketing OS)
 
-A SaaS agentic platform that gives a business a cheaper alternative to hiring a marketing team or retaining an agency. It is a **decision-making system**, not a content generator: it replicates the strategic process a professional marketer follows *before* assets are created, and content is a downstream tool, never the goal. Each tenant is one business marketing itself (see [ADR-0013](docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md)). The engine exists as the `agent-harness/` LangGraph application, with `.claude/` as its interactive development and authoring surface. See [docs/adr/](docs/adr/) for the decisions behind the current shape.
+An augmented agentic platform for digital marketing. Written **We-OS** wherever the public sees it (Landing, app shell, browser title); we-OS / weOS is the working name inside the repo and between the people and agents building it. It consolidates industry expert knowledge into one workflow that augments the work a marketer or business owner does — it never replaces them. It is a **decision-making system**, not a content generator: it replicates the strategic process a professional marketer follows *before* assets are created, and content is a downstream tool, never the goal. Each tenant is one business marketing itself (see [ADR-0013](docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md)). The engine exists as the `agent-harness/` LangGraph application, with `.claude/` as its interactive development and authoring surface. See [docs/adr/](docs/adr/) for the decisions behind the current shape.
 
 ## Language
 
@@ -31,6 +31,14 @@ _Avoid_: using "customer" for the tenant, the business, or the platform's own us
 **Audience Segment**:
 One named group of the tenant's customers, defined inside the Brand DNA and ranked by strategic priority. A campaign targets exactly one segment — which is what makes a campaign specific rather than generic.
 _Avoid_: persona, audience, target market, cohort.
+
+**Landing**:
+The public page at the root of we-OS, shown to anyone who is not signed in: what the product does, how it works, what it costs, and the way in (sign up / sign in). A signed-in person who opens the root is sent to **Home** instead. Landing and Home are two different pages for two different audiences — a visitor deciding, and a business owner working.
+_Avoid_: home page (for the public page), marketing site, website.
+
+**Home**:
+The first signed-in screen — what needs the business owner right now (decisions waiting, work under way, credits left). Only reachable with a signed-in session whose business is a tenant.
+_Avoid_: dashboard, landing (for the signed-in screen).
 
 **Questionnaire**:
 The admin-curated set of questions a business answers to author its Brand DNA. It asks only for **facts the business owner uniquely knows** — never for crafted artifacts like positioning or channel choice, which the pipeline produces. One artifact drives three things: the onboarding wizard, the shape of the DNA, and what the DNA Gate enforces as Required.
@@ -136,9 +144,13 @@ _Avoid_: budget (unqualified), spend, cost.
 The per-tenant record of every billable model call — tokens and image generations — with its cost. Append-only, so it doubles as the unit-economics dataset: what a campaign, a revision, and a business actually cost. Checked before a billable call and written after, so quota is enforced rather than merely observed (see [ADR-0020](docs/adr/0020-usage-ledger-and-enforced-quota.md)).
 _Avoid_: metering, billing, telemetry.
 
-**Allowance**:
-What one business may spend on generation before billable work is refused. Resolves from the platform-wide default (`MARKETING_OS_ALLOWANCE`) unless the business carries its own override, so raising one design partner's ceiling is a row rather than a deploy. How an allowance is *presented* — credits, fair use, metered billing — is deliberately undecided; the enforcement mechanism is not. Exhausting it raises the typed `quota_exhausted` failure, surfaced as **402**.
-_Avoid_: quota (for the number itself — quota is the enforcement, the allowance is the amount), credits, plan, limit.
+**Credits**:
+What one business may spend on generation before billable work is refused, and the unit it sees that in. Every tier grants a number of credits a month; the engine meters the real model cost underneath and converts it at one platform-set rate, so the rate can change without touching the tiers or the pages that show them. Resolves from the platform-wide default (`MARKETING_OS_ALLOWANCE`) unless the business carries its own override, so raising one design partner's ceiling is a row rather than a deploy. Exhausting them raises the typed `quota_exhausted` failure, surfaced as **402**. Code still carries the older identifier `allowance` for the same thing; new code and all copy say credits.
+_Avoid_: allowance (in copy and new code), quota (for the number itself — quota is the enforcement, credits are the amount), tokens, limit.
+
+**Tier**:
+One of the subscriptions a business picks at sign-up — **Operator**, **Strategist**, or **Command**. Tiers differ only in the credits they grant each month; every tier gets the whole product. Prices and credit amounts are placeholders until pricing is decided, so they live in one place and nowhere else.
+_Avoid_: plan (taken by the Performance Plan), package, subscription level, seat.
 
 **Web Backend**:
 The pluggable live-web capability (`WebSearchTool` port) granting the specialists that declare it — market-research and performance-marketing — `web_search`/`web_fetch` tools. Adapters: the default **NoopWebSearch**, which returns an honest "web search is not configured" message so runs stay grounded in the Brand DNA; **TavilyWebSearch**, the primary backend calling Tavily's JSON API (`/search` + `/extract`) over plain HTTP with no browser (see [ADR-0011](docs/adr/0011-tavily-primary-web-backend.md)); **PlaywrightWebSearch**, a browser-driven backend scraping DuckDuckGo (see [ADR-0007](docs/adr/0007-thread-confined-sync-playwright-backend.md)); and **GoogleWebSearch**, which subclasses it to scrape `google.com/search`, reusing the same browser lifecycle and `fetch`. The live capability is off by default and wired only when `MARKETING_OS_WEB=1` (see [ADR-0001](docs/adr/0001-ports-and-adapters-architecture.md)).

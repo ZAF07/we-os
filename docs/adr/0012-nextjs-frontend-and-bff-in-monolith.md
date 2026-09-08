@@ -24,3 +24,7 @@ Milestone 1 is a **faithful static clone** of the six designed screens (Home, Ca
 - **Stage-vocabulary divergence (open).** The mockup's Workspace names 8 operator stages — `Brief · Research · Strategy · Plan · Produce · Approve · Publish · Measure` — which do not line up with the engine pipeline in `CONTEXT.md` (`Research → Brand Strategy → Campaign Strategy → Creative Brief → Asset Prompts → Performance Plan`). M1 uses the mockup names against mock data; the FE↔engine stage mapping must be resolved before wiring. Until then, no FE UI terms are added to the `CONTEXT.md` glossary (flows/APIs are still undetermined).
 - The repo now carries a Node toolchain (pnpm) alongside `uv`; contributors need both.
 - "Cadence" in the mockup is a wireframe placeholder; the shipped product name is **Marketing OS**.
+
+## Amendment (2026-09-08)
+
+The public name is now **We-OS**; "Marketing OS" is a descriptor, not the product name. The app also gains a public half (Landing at `/`, Pricing at `/pricing`) beside the signed-in half (Home moved to `/home`), organised as Next.js route groups `(public)` and `(app)`. See `CONTEXT.md` for **Landing**, **Home**, and **Tier**.
