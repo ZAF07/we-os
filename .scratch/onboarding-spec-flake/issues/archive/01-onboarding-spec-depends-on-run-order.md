@@ -169,4 +169,11 @@ unfixed tree turned out to be luck.
 ## Completion
 
 - Completed: 2026-09-08
-- Commit: <to be filled in manually>
+- Commits:
+  - `10b065e` — save once per wizard step; one awaited save per transition,
+    buttons disabled while it is in flight.
+  - `8a5ee4b` — the actual fix: wait for the step to render before asking which
+    fields it has. Also drops the `seedAnswers` guard and stops a failed save
+    clearing a revealed required-field error, both from code review.
+  - `b81fded` — marked completed and archived.
+  - `48fa457` — merge to `main`.
