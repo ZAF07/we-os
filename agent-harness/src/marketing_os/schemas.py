@@ -201,8 +201,8 @@ class Consumption(BaseModel):
     unit-economics question "what does a campaign actually cost?" — one query,
     because they are the same numbers read at two granularities (ADR-0020).
 
-    ``credits`` is the mechanism, not the presentation: whether it is shown as
-    credits, fair use, or metered billing stays a later decision.
+    Every number here is in credits — what a business buys and sees — derived
+    from the cost the ledger records at one platform-set rate (ADR-0020).
 
     Attributes:
         tenant_id: The tenant the report is for.

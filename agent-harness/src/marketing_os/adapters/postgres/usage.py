@@ -8,8 +8,8 @@ summed by the database rather than by pulling every row into the process — whi
 matters because the ledger grows for the life of the account while the answer it
 gives is one number.
 
-The per-tenant credits lives on the ``tenants`` row rather than in a table of
-its own: it is a fact about the business, of which there is exactly one.
+A tenant's own credits live on the ``tenants`` row rather than in a table of
+their own: they are a fact about the business, of which there is exactly one.
 
 Every operation opens one transaction and sets the tenant for it before
 querying, exactly as the document and deliverable adapters do — the ``SET`` is
@@ -116,7 +116,7 @@ class PostgresUsageLedger:
             tenant: The tenant about to be charged.
 
         Raises:
-            QuotaExhaustedError: If the tenant has used their whole credit balance.
+            QuotaExhaustedError: If the tenant has spent all their credits.
         """
         refuse_when_exhausted(self.consumption(tenant))
 

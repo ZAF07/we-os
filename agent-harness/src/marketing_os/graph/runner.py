@@ -545,7 +545,7 @@ async def arun_campaign(
             Required, for the reason given on ``document_store``.
         usage_ledger: The Usage Ledger every model call is checked against and
             charged to, or ``None`` to run uncharged. Checking inside the graph
-            is what stops a run already in flight from spending past an
+            is what stops a run already in flight from spending past the
             credits it was within when it started (ADR-0020).
         questionnaire: The published question set the Stage 0 gate enforces, so
             the graph gates on the same rule as the entrypoint that launched it

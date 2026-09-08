@@ -142,15 +142,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/UsageReport"
               example:
-                used: 4.2
-                credits: 25
-                remaining: 20.8
+                used: 420
+                credits: 2500
+                remaining: 2080
                 exhausted: false
                 campaigns:
                   - slug: spring
-                    used: 3.1
+                    used: 310
                   - slug: autumn
-                    used: 1.1
+                    used: 110
         "401":
           $ref: "#/components/responses/Unauthenticated"
 

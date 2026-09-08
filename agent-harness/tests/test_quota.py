@@ -138,7 +138,7 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 
 
 def _exhaust(client: TestClient, tenant: str = TENANT) -> None:
-    """Spend a tenant's whole credit balance, without running the pipeline to do it.
+    """Spend all a tenant's credits, without running the pipeline to do it.
 
     Charging the ledger directly keeps each test about *what an exhausted tenant
     is refused* rather than about how many model calls it takes to get there,
@@ -340,7 +340,7 @@ def test_approving_is_not_refused_for_quota(client: TestClient) -> None:
     assert response.status_code == 200
 
 
-def test_an_exhausted_credits_does_not_hide_a_failing_gate(client: TestClient) -> None:
+def test_exhausted_credits_do_not_hide_a_failing_gate(client: TestClient) -> None:
     """The gate is about incomplete governance inputs, and is reported as such."""
     _exhaust(client)
 
@@ -350,7 +350,7 @@ def test_an_exhausted_credits_does_not_hide_a_failing_gate(client: TestClient) -
     assert response.json()["type"] == "gate_failed"
 
 
-def test_one_tenants_exhausted_credits_does_not_refuse_another(
+def test_one_tenants_exhausted_credits_do_not_refuse_another(
     client: TestClient, repo: Path
 ) -> None:
     """Credits are a fact about one business, so exhausting it isolates to it.
@@ -438,7 +438,7 @@ def test_the_run_cap_is_per_campaign_not_per_tenant(
     assert client.post("/campaigns/second/run", json={"stage": "research"}).status_code == 202
 
 
-async def test_a_run_in_flight_halts_when_the_credits_runs_out(
+async def test_a_run_in_flight_halts_when_the_credits_run_out(
     settings: Settings, repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The cap binds the graph, not only the HTTP edge (ADR-0020).
@@ -669,11 +669,16 @@ def test_credits_are_spent_at_the_platform_rate_and_then_refused(
 def test_the_usage_report_shows_credits_as_whole_numbers(
     rated_client: TestClient,
 ) -> None:
-    """A fractional credit is display noise, so the report rounds it away."""
+    """Assert a fractional credit is rounded away rather than shown.
+
+    Six tokens at 0.001 a token is a cost of 0.006, which at rate 100 is 0.6
+    credits — an amount no business should be shown to one decimal place.
+
+    Args:
+        rated_client: The client whose platform rate is 100 credits per unit.
+    """
     from marketing_os.entrypoints.api.app import get_usage_ledger
 
-    # 6 tokens at 0.001 a token is a cost of 0.006, which at rate 100 is 0.6
-    # credits — an amount no business should be shown to one decimal place.
     get_usage_ledger().record(TENANT, slug=SLUG, model=MODEL, usage=_usage(6))
 
     body = rated_client.get("/usage").json()

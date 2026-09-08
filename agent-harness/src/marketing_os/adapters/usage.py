@@ -10,11 +10,13 @@ Costing lives here rather than in each adapter, so a call is priced identically
 whichever store is behind the port, and no caller can record a call at a price of
 its own choosing.
 
-The credits resolves in two steps: the platform-wide default from settings,
-overridden by a per-tenant credits when the directory holds one. Raising one
-design partner's cap is therefore a row rather than a deploy, while the decision
-about how credits are *presented* — credits, fair use, metered billing —
-stays deferred.
+A tenant's credits resolve in two steps: the platform-wide default from
+settings, overridden by that tenant's own credits when the directory holds them.
+Raising one design partner's cap is therefore a row rather than a deploy.
+
+Credits are not the cost the ledger records. The ledger keeps real model cost,
+because that is the unit-economics dataset; credits are what a business buys and
+sees, and the two are converted at one platform-set rate (ADR-0020).
 """
 
 from __future__ import annotations
@@ -177,10 +179,10 @@ def build_consumption(
     """Assemble a tenant's report, converting recorded cost into credits.
 
     Both adapters arrive at the same three numbers — a total cost, a cost per
-    campaign, and a credits ceiling — one by summing entries in the process, the
-    other from a ``GROUP BY``. Building the report here is what keeps the
-    conversion in a single place, so the two stores can never disagree about
-    what a tenant has spent or when they are refused.
+    campaign, and the credits the tenant may spend — one by summing entries in
+    the process, the other from a ``GROUP BY``. Building the report here is what
+    keeps the conversion in a single place, so the two stores can never disagree
+    about what a tenant has spent or when they are refused.
 
     Args:
         settings: The harness settings holding the platform-wide credit rate.
@@ -258,7 +260,7 @@ class CreditsResolver:
     """Answers what one tenant is allowed to spend.
 
     A separate object because the answer comes from two places and the
-    precedence matters: a tenant's own credits wins over the platform-wide
+    precedence matters: a tenant's own credits win over the platform-wide
     default, so raising one business's cap does not move everybody's. Sharing it
     between adapters keeps that precedence from being re-decided per backend.
     """
@@ -337,7 +339,7 @@ class InMemoryUsageLedger:
             tenant: The tenant about to be charged.
 
         Raises:
-            QuotaExhaustedError: If the tenant has used their whole credit balance.
+            QuotaExhaustedError: If the tenant has spent all their credits.
         """
         refuse_when_exhausted(self.consumption(tenant))
 

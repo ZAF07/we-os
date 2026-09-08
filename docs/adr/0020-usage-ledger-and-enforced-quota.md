@@ -13,4 +13,10 @@ Enforcement is built while pre-revenue, before there is pressure to ship without
 
 ## Amendment (2026-09-08)
 
-The presentation is decided: the allowance is shown to a business as **credits**, granted per tier each month. The engine still meters real cost; the cost-to-credit rate is set in one place and is not yet fixed. The `allowance` identifier remains in code until a separate rename. See **Credits** and **Tier** in `CONTEXT.md`.
+The presentation is decided: the allowance is shown to a business as **credits**, granted per tier each month. The engine still meters real cost; the cost-to-credit rate is set in one place and is not yet fixed. See **Credits** and **Tier** in `CONTEXT.md`.
+
+## Amendment (2026-09-08, second)
+
+The `allowance` identifier is renamed to `credits` throughout — the `tenants` column, the platform default (now `MARKETING_OS_CREDITS`), the usage report field, the 402 detail key, the ledger port, the adapters, the OpenAPI contract, and the web client. A guarded `RENAME COLUMN` carries a database provisioned under the old name across and is a no-op otherwise. Behaviour is unchanged by the rename.
+
+The cost-to-credit rate is now real: `MARKETING_OS_CREDIT_RATE` says how many credits one unit of recorded cost burns, defaulting to 1 so nothing moves until it is set. The ledger still records real cost — it remains the unit-economics dataset — and credits are derived from it in one place, shared by both ledger adapters. The usage report shows whole credits (round half up); the quota check compares the unrounded value, so display rounding never decides a refusal.

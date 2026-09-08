@@ -7,7 +7,7 @@ thing standing between a runaway loop and a real bill, so "both stores refuse at
 the same point" is a property worth pinning rather than assuming.
 
 The behaviour pinned here is what an owner and the platform admin can observe:
-spend accumulates, an exhausted credits refuses the next call, one tenant's
+spend accumulates, exhausted credits refuse the next call, one tenant's
 spend is invisible to another, and the same rows total per campaign as well as
 per tenant.
 
@@ -64,7 +64,7 @@ def postgres_ledger(postgres_pool: Any) -> Iterator[LedgerFactory]:
     """Return a factory building the Postgres ledger over a truncated database.
 
     Both tenants are registered first, because a business exists in the
-    directory before it can spend anything — and a per-tenant credits value is
+    directory before it can spend anything — and a tenant's own credits are
     recorded *on* that row, so a ledger over an unregistered tenant would have
     nowhere to write one.
 

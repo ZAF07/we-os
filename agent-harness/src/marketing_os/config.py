@@ -253,7 +253,7 @@ class Settings:
             data, so tightening or loosening the gates is a configuration change
             rather than a rewrite (ADR-0015).
         max_revisions: How many times one deliverable may be sent back with
-            written feedback, so a single item cannot burn a whole credit balance.
+            written feedback, so a single item cannot burn all a tenant's credits.
         max_runs_per_campaign: How many runs one campaign may accumulate. The
             companion cap to ``max_revisions``: that bounds re-working one
             deliverable, this bounds re-running the whole campaign (ADR-0020).

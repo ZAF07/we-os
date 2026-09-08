@@ -12,7 +12,9 @@ import { EngineError } from "@/lib/engine-error";
  *   is the list of fields it named.
  * - **Exhausted credits** say work has stopped; what they need is how far
  *   past the line they are, since that is what tells them whether to wait for a
- *   renewal or ask for more (ADR-0020).
+ *   renewal or ask for more (ADR-0020). The refusal carries exact credits, since
+ *   the engine raises it where rounding would be a display decision made too
+ *   early; they are rounded to whole credits here, matching what `/usage` shows.
  *
  * Args:
  *   error: The failure raised while calling the engine.

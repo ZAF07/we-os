@@ -566,7 +566,7 @@ class UsageLedger(Protocol):
             tenant: The tenant about to be charged.
 
         Raises:
-            QuotaExhaustedError: If the tenant has used their whole credit balance.
+            QuotaExhaustedError: If the tenant has spent all their credits.
         """
         ...
 

@@ -153,7 +153,7 @@ class StageNotAwaitingApprovalError(MarketingOSError):
 class RevisionLimitError(MarketingOSError):
     """One deliverable has been sent back as many times as it is allowed to be.
 
-    The cap exists so a single item cannot burn a whole credit balance: without it, an
+    The cap exists so a single item cannot burn all a tenant's credits: without it, an
     owner dissatisfied with one brand strategy could spend everything they have
     revising it (ADR-0015, ADR-0020).
     """

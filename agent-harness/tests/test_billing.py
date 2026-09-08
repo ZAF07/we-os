@@ -50,7 +50,7 @@ def _ledger(credits: float) -> InMemoryUsageLedger:
 
 
 async def test_an_exhausted_tenant_is_refused_before_the_call_is_made() -> None:
-    """The check precedes the call, so no model runs on a spent credits."""
+    """The check precedes the call, so no model runs on spent credits."""
     ledger = _ledger(credits=1.0)
     ledger.record(
         TENANT,

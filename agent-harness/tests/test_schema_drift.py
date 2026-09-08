@@ -136,10 +136,16 @@ def test_a_provisioned_database_reports_no_drift(postgres_pool: Any) -> None:
 def test_a_database_with_the_old_allowance_column_is_renamed_to_credits(
     postgres_dsn: str, postgres_superuser_dsn: str
 ) -> None:
-    # A database provisioned before the rename carries `tenants.allowance`. The
-    # rename must carry the column — and the values on it — across, so a design
-    # partner's raised ceiling survives the deploy rather than silently reverting
-    # to the platform default.
+    """Assert a database provisioned before the rename is carried across.
+
+    Such a database carries ``tenants.allowance``. The rename must bring the
+    column *and the values on it* over, so a design partner's raised ceiling
+    survives the deploy rather than silently reverting to the platform default.
+
+    Args:
+        postgres_dsn: The application-role connection string.
+        postgres_superuser_dsn: The administrative connection string.
+    """
     with _admin(postgres_superuser_dsn) as admin:
         admin.execute("ALTER TABLE tenants RENAME COLUMN credits TO allowance")
         admin.execute(
@@ -162,8 +168,14 @@ def test_a_database_with_the_old_allowance_column_is_renamed_to_credits(
 
 @pytest.mark.slow
 def test_running_the_rename_twice_is_harmless(postgres_superuser_dsn: str) -> None:
-    # The second start of a service already on the new column must not re-run the
-    # rename, and a fresh database has no old column to rename at all.
+    """Assert the rename is idempotent, like the rest of the schema module.
+
+    The second start of a service already on the new column must not re-run the
+    rename, and a fresh database has no old column to rename at all.
+
+    Args:
+        postgres_superuser_dsn: The administrative connection string.
+    """
     with _admin(postgres_superuser_dsn) as admin:
         ensure_schema(admin)
         ensure_schema(admin)
