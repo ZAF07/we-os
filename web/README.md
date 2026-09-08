@@ -6,7 +6,9 @@ engine derives the tenant from that claim (ADR-0013).
 
 ## Running it locally
 
-You need the engine running as well — the app renders nothing of its own.
+You need the engine running as well for the signed-in half — Home and
+everything behind it render nothing of their own. The public half (the Landing
+at `/`, `/pricing`, sign-in and sign-up) needs no engine.
 
 ```bash
 # terminal 1 — the engine
@@ -116,6 +118,15 @@ refuse. The last of those specs completes the wizard and fills the tenant in, so
 blankness is re-established by the seed on every stack start — which means
 re-running `pnpm test` against a stack that is already up fails that project.
 Bring the stack up again (`make e2e-up`) first; the spec says so when it fails.
+
+### The visitor
+
+The `chromium-public` project runs `tests/public.spec.ts` with no saved session
+and no dependency on the sign-in setup, because the public half must work with
+neither: a change that puts the Landing behind auth fails there rather than
+passing on a signed-in cookie. It needs no engine either, so on its own it runs
+without the stack — `pnpm test --project=chromium-public` starts the dev server
+itself when the compose stack is not up.
 
 ### CI
 

@@ -40,24 +40,33 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     trace: "on-first-retry",
   },
-  // The `setup` project signs both test users in; the two feature projects
-  // reuse the saved sessions, since clerkMiddleware protects every application
-  // route.
+  // The `setup` project signs both test users in; the two signed-in projects
+  // reuse the saved sessions, since clerkMiddleware protects every route in the
+  // app half.
   //
-  // Two projects because the suite needs two tenants. `chromium` runs against
-  // the seeded business, whose Brand DNA is complete so campaigns can be
-  // created. `chromium-onboarding` runs the wizard's specs against the blank
+  // Two signed-in projects because the suite needs two tenants. `chromium` runs
+  // against the seeded business, whose Brand DNA is complete so campaigns can
+  // be created. `chromium-onboarding` runs the wizard's specs against the blank
   // business, which has answered nothing — and runs them with one worker,
   // because they share a mutable fixture: the first reads a blank tenant and
   // the second fills it in. `testIgnore` on `chromium` keeps the onboarding
-  // file from running twice.
+  // and public files from running twice.
+  //
+  // `chromium-public` is the visitor: no saved session and no dependency on
+  // `setup`, because the public half must work with neither. A change that
+  // accidentally puts the Landing behind auth fails here rather than passing
+  // on a signed-in cookie.
   projects: [
     { name: "setup", testMatch: /auth\.setup\.ts/ },
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
       dependencies: ["setup"],
-      testIgnore: [/auth\.setup\.ts/, /onboarding\.spec\.ts/],
+      testIgnore: [
+        /auth\.setup\.ts/,
+        /onboarding\.spec\.ts/,
+        /public\.spec\.ts/,
+      ],
     },
     {
       name: "chromium-onboarding",
@@ -66,6 +75,11 @@ export default defineConfig({
       testMatch: /onboarding\.spec\.ts/,
       fullyParallel: false,
       workers: 1,
+    },
+    {
+      name: "chromium-public",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /public\.spec\.ts/,
     },
   ],
   webServer: STACK_IS_UP

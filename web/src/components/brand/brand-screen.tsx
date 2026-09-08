@@ -13,7 +13,7 @@ import type {
 import { questionSteps } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
-import { deleteAnswer, saveAnswers } from "@/app/onboarding/actions";
+import { deleteAnswer, saveAnswers } from "@/app/(app)/onboarding/actions";
 
 /**
  * Renders the Brand screen: the business's own Brand DNA, editable answer by
