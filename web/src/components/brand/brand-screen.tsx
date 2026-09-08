@@ -13,7 +13,7 @@ import type {
 import { questionSteps } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
-import { saveAnswers } from "@/app/onboarding/actions";
+import { deleteAnswer, saveAnswers } from "@/app/onboarding/actions";
 
 /**
  * Renders the Brand screen: the business's own Brand DNA, editable answer by
@@ -56,14 +56,34 @@ export function BrandScreen({
   const section = sections[selected] ?? sections[0];
 
   const save = (questionId: string) => {
+    const answer = draft.trim();
+    if (answer === "") {
+      setError(
+        "An answer cannot be blank. Use Delete to remove it, or type an answer.",
+      );
+      return;
+    }
     setError(null);
     startSaving(async () => {
       try {
-        await saveAnswers([{ question_id: questionId, answer: draft.trim() }]);
+        await saveAnswers([{ question_id: questionId, answer }]);
         setEditing(null);
         router.refresh();
       } catch {
         setError("Could not save that answer. Try again.");
+      }
+    });
+  };
+
+  const remove = (questionId: string) => {
+    setError(null);
+    startSaving(async () => {
+      try {
+        await deleteAnswer(questionId);
+        setEditing(null);
+        router.refresh();
+      } catch {
+        setError("Could not delete that answer. Try again.");
       }
     });
   };
@@ -157,6 +177,7 @@ export function BrandScreen({
                 onDraft={setDraft}
                 onCancel={() => setEditing(null)}
                 onSave={() => save(question.id)}
+                onDelete={() => remove(question.id)}
               />
             ))}
           </div>
@@ -180,6 +201,7 @@ export function BrandScreen({
  *   onDraft: Records a keystroke.
  *   onCancel: Abandons the edit.
  *   onSave: Saves the draft.
+ *   onDelete: Withdraws the answer, leaving the question unanswered.
  */
 function AnswerCard({
   question,
@@ -192,6 +214,7 @@ function AnswerCard({
   onDraft,
   onCancel,
   onSave,
+  onDelete,
 }: {
   question: Question;
   answer: string;
@@ -203,7 +226,9 @@ function AnswerCard({
   onDraft: (value: string) => void;
   onCancel: () => void;
   onSave: () => void;
+  onDelete: () => void;
 }) {
+  const answered = answer !== "";
   return (
     <div className="rounded-xl border bg-card px-[18px] py-[15px]">
       <div className="flex items-start gap-2">
@@ -245,7 +270,23 @@ function AnswerCard({
             >
               Cancel
             </button>
+            {answered && (
+              <button
+                onClick={onDelete}
+                disabled={pending}
+                aria-label={`Delete answer: ${question.field}`}
+                className="cursor-pointer rounded-lg border border-red-200 bg-card px-3 py-1.5 text-[12.5px] font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Delete
+              </button>
+            )}
           </div>
+          {answered && question.required && (
+            <p className="mt-2 text-[11.5px] text-muted-foreground">
+              This is a Required answer. Deleting it re-opens the DNA Gate, and
+              campaigns cannot run until it is answered again.
+            </p>
+          )}
         </div>
       ) : (
         <div className="mt-1.5 flex items-start gap-2">

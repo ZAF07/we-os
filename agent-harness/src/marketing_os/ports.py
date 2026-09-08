@@ -522,6 +522,24 @@ class AnswerStore(Protocol):
         """
         ...
 
+    def remove(self, tenant: str, *, question_id: str) -> BrandDnaRecord:
+        """Withdraw a business's answer to one question.
+
+        A distinct operation rather than a blank :meth:`upsert`, because absence
+        from an upsert means "leave it alone" — the very thing that makes partial
+        saves resumable — so a removal cannot be expressed through it.
+
+        Args:
+            tenant: The tenant whose answer is withdrawn.
+            question_id: The question to leave unanswered.
+
+        Returns:
+            The business's full record after the removal. Removing an answer the
+            business never gave is not an error: the outcome asked for already
+            holds.
+        """
+        ...
+
 
 @runtime_checkable
 class UsageLedger(Protocol):

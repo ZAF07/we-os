@@ -8,6 +8,7 @@ Endpoints:
   GET  /brand-dna                       -> the tenant's answers and rendered markdown
   GET  /brand-dna/completeness          -> what still stands between them and a run
   POST /brand-dna/answers               -> save answers, returning the updated report
+  DELETE /brand-dna/answers/{id}        -> withdraw one answer, returning the updated report
   GET  /brand-dna/segments              -> the audience segments a campaign may target
   POST /campaigns                       -> create a campaign from its goal (201)
   GET  /campaigns                       -> list active campaigns with status and progress
@@ -756,6 +757,39 @@ def answer_brand_dna(body: DnaAnswersUpsert, identity: Identity) -> DnaCompleten
     record = get_answer_store().upsert(
         identity.tenant_id, version=published.version, answers=body.answers
     )
+    project_brand_dna(identity, published, record)
+    answered_against = get_questionnaire_store().version(record.questionnaire_version)
+    return completeness(published, record, answered_against=answered_against)
+
+
+@app.delete("/brand-dna/answers/{question_id}")
+def remove_brand_dna_answer(question_id: str, identity: Identity) -> DnaCompleteness:
+    """Withdraw one questionnaire answer and report what remains.
+
+    Its own operation rather than saving a blank, because absence from a save
+    means "leave it alone" — what makes partial saves resumable — so a removal
+    cannot be expressed through it. Like a save, it re-renders the Brand DNA
+    markdown so the document the gate reads never keeps a field the answers no
+    longer have, and returns the report so the caller can show completeness
+    changing without a second request.
+
+    Args:
+        question_id: The question to leave unanswered.
+        identity: The verified identity whose tenant owns the DNA.
+
+    Returns:
+        The updated completeness report.
+
+    Raises:
+        HTTPException: 404 if the published set does not ask that question, as
+            the save endpoint refuses an answer to one.
+    """
+    published = get_questionnaire_store().published()
+    if published.question(question_id) is None:
+        raise _http_error(
+            DocumentNotFoundError(f"The published questionnaire does not ask: {question_id}.")
+        )
+    record = get_answer_store().remove(identity.tenant_id, question_id=question_id)
     project_brand_dna(identity, published, record)
     answered_against = get_questionnaire_store().version(record.questionnaire_version)
     return completeness(published, record, answered_against=answered_against)

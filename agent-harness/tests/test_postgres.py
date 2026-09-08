@@ -493,6 +493,39 @@ def test_editing_one_answer_leaves_the_rest_and_advances_the_version(
     assert record.updated_at is not None
 
 
+def test_removing_an_answer_leaves_the_rest_and_is_scoped_to_one_tenant(
+    postgres_pool: Any,
+) -> None:
+    store = PostgresAnswerStore(postgres_pool)
+    store.upsert(
+        TENANT,
+        version=1,
+        answers=[
+            DnaAnswer(question_id="q_business_name", answer="Acme"),
+            DnaAnswer(question_id="q_price_point", answer="$90"),
+        ],
+    )
+    store.upsert(
+        OTHER_TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$120")]
+    )
+
+    store.remove(TENANT, question_id="q_price_point")
+
+    record = store.read(TENANT)
+    assert record.answer_for("q_price_point") is None
+    assert record.answer_for("q_business_name") == "Acme"
+    assert store.read(OTHER_TENANT).answer_for("q_price_point") == "$120"
+
+
+def test_removing_an_unanswered_question_changes_nothing(postgres_pool: Any) -> None:
+    store = PostgresAnswerStore(postgres_pool)
+    store.upsert(TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$90")])
+
+    store.remove(TENANT, question_id="q_business_name")
+
+    assert store.read(TENANT).answer_for("q_price_point") == "$90"
+
+
 def test_publishing_a_question_set_changes_what_the_gate_requires(
     postgres_pool: Any, tmp_path: Any
 ) -> None:

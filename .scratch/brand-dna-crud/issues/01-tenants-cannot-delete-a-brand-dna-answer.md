@@ -1,6 +1,6 @@
 # 01 — A business cannot remove a Brand DNA answer, and a blank Save stores an empty one
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 
 ## Context

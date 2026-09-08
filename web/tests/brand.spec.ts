@@ -59,3 +59,54 @@ test("an individual answer can be edited and saved", async ({ page }) => {
 
   await expect(page.getByText(updated)).toBeVisible({ timeout: 30_000 });
 });
+
+test("a blank answer is refused rather than saved as an empty one", async ({
+  page,
+}) => {
+  await page.goto("/brand");
+
+  const index = page.getByRole("navigation", { name: "Brand sections" });
+  await index.getByRole("button", { name: /Reach/ }).click();
+
+  await page
+    .getByRole("button", {
+      name: "Edit: What languages do your customers speak?",
+    })
+    .click();
+  await page.getByLabel("What languages do your customers speak?").fill("  ");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect(
+    page.getByText("An answer cannot be blank.", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save", exact: true }),
+  ).toBeVisible();
+});
+
+test("an answer can be deleted, and the question goes back to unanswered", async ({
+  page,
+}) => {
+  // Competitors is Recommended and unseeded, so this spec answers it and then
+  // withdraws it — leaving the shared test tenant exactly as it found it, and
+  // never taking a Required answer out from under another spec's gate.
+  await page.goto("/brand");
+
+  const index = page.getByRole("navigation", { name: "Brand sections" });
+  await index.getByRole("button", { name: /Recommended/ }).click();
+
+  const question = "Who do you lose deals to?";
+  await page.getByRole("button", { name: `Edit: ${question}` }).click();
+  const rival = uniqueName("Boulder Republic");
+  await page.getByLabel(question).fill(rival);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(rival)).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole("button", { name: `Edit: ${question}` }).click();
+  await page
+    .getByRole("button", { name: "Delete answer: Competitors" })
+    .click();
+
+  await expect(page.getByText(rival)).toBeHidden({ timeout: 30_000 });
+  await expect(page.getByText("Not answered yet.").first()).toBeVisible();
+});
