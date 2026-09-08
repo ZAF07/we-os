@@ -49,7 +49,7 @@ export function Department() {
           {SPECIALISTS.map((specialist, index) => (
             <li
               key={specialist.name}
-              className="flex min-h-[200px] flex-col gap-2.5 rounded-2xl border p-6 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_40px_-16px_rgba(15,23,42,0.2)]"
+              className="lift flex min-h-[200px] flex-col gap-2.5 rounded-2xl border p-6"
             >
               <span className="text-xs font-semibold tracking-[0.06em] text-primary uppercase">
                 Stage {String(index + 1).padStart(2, "0")}

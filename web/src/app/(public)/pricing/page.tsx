@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 
 import { Faq } from "@/components/public/faq";
 import { FinalCall } from "@/components/public/final-call";
-import { Container, Eyebrow } from "@/components/public/section";
+import { PricingIntro } from "@/components/public/pricing-section";
+import { Container } from "@/components/public/section";
 import { TierCards } from "@/components/public/tier-card";
 
 export const metadata: Metadata = {
@@ -24,20 +25,7 @@ export default function PricingPage() {
     <main>
       <section aria-labelledby="pricing-heading">
         <Container className="pt-20 pb-24 md:pt-24">
-          <div className="max-w-[640px]">
-            <Eyebrow>Pricing</Eyebrow>
-            <h1
-              id="pricing-heading"
-              className="text-[clamp(30px,3.6vw,44px)] leading-[1.1] font-bold tracking-[-0.03em]"
-            >
-              The whole product, on every tier.
-            </h1>
-            <p className="mt-4 text-[16.5px] leading-relaxed text-slate-600">
-              Tiers differ only in monthly credits. A credit is what your
-              business spends on generation, and every tier grants a fresh set
-              each month.
-            </p>
-          </div>
+          <PricingIntro as="h1" />
           <TierCards />
         </Container>
       </section>

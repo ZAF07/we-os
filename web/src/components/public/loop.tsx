@@ -3,6 +3,7 @@ import {
   Eyebrow,
   SectionHeading,
 } from "@/components/public/section";
+import { cn } from "@/lib/utils";
 
 /**
  * Renders the augmented loop: you answer, the specialists run, you approve.
@@ -38,20 +39,43 @@ export function Loop() {
             badge="×5"
             title="Specialists run"
             text="Research, strategy, plan, creative, prompts. Each shows its reasoning."
-            dark
+            variant="dark"
           />
           <Arrow />
           <LoopCard
             badge="✓"
             title="You approve"
             text="Approve, send back, or re-open upstream. Nothing runs otherwise."
-            highlighted
+            variant="highlighted"
           />
         </div>
       </Container>
     </section>
   );
 }
+
+type LoopVariant = "plain" | "dark" | "highlighted";
+
+const VARIANT_CLASSES: Record<
+  LoopVariant,
+  { card: string; badge: string; text: string }
+> = {
+  plain: {
+    card: "border bg-card",
+    badge: "bg-accent text-accent-foreground",
+    text: "text-slate-600",
+  },
+  dark: {
+    card: "bg-slate-900 text-white",
+    badge: "bg-white/10 text-indigo-300",
+    text: "text-slate-300",
+  },
+  highlighted: {
+    card: "border-[1.5px] border-primary bg-card shadow-[0_10px_30px_-14px_rgba(79,70,229,0.5)]",
+    badge: "bg-primary text-white",
+    text: "text-slate-600",
+  },
+};
 
 /**
  * Renders one step of the loop.
@@ -60,46 +84,41 @@ export function Loop() {
  *   badge: The short mark in the corner: who, or how many.
  *   title: The step.
  *   text: What happens in it.
- *   dark: Draw it on the dark card, for the part the specialists do.
- *   highlighted: Draw it with the primary border, for the decision.
+ *   variant: `plain` for the owner's part, `dark` for the specialists' part,
+ *     `highlighted` for the decision.
  */
 function LoopCard({
   badge,
   title,
   text,
-  dark = false,
-  highlighted = false,
+  variant = "plain",
 }: {
   badge: string;
   title: string;
   text: string;
-  dark?: boolean;
-  highlighted?: boolean;
+  variant?: LoopVariant;
 }) {
-  const surface = dark
-    ? "bg-slate-900 text-white"
-    : highlighted
-      ? "border-[1.5px] border-primary bg-card shadow-[0_10px_30px_-14px_rgba(79,70,229,0.5)]"
-      : "border bg-card";
-  const badgeSurface = dark
-    ? "bg-white/10 text-indigo-300"
-    : highlighted
-      ? "bg-primary text-white"
-      : "bg-accent text-accent-foreground";
+  const classes = VARIANT_CLASSES[variant];
   return (
-    <div className={`flex flex-col gap-2.5 rounded-[14px] p-[22px] ${surface}`}>
+    <div
+      className={cn(
+        "flex flex-col gap-2.5 rounded-[14px] p-[22px]",
+        classes.card,
+      )}
+    >
       <span
         aria-hidden="true"
-        className={`flex size-9 items-center justify-center rounded-[10px] text-[13px] font-bold ${badgeSurface}`}
+        className={cn(
+          "flex size-9 items-center justify-center rounded-[10px] text-[13px] font-bold",
+          classes.badge,
+        )}
       >
         {badge}
       </span>
       <span className="text-base font-semibold tracking-[-0.01em]">
         {title}
       </span>
-      <span
-        className={`text-[13.5px] leading-normal ${dark ? "text-slate-300" : "text-slate-600"}`}
-      >
+      <span className={cn("text-[13.5px] leading-normal", classes.text)}>
         {text}
       </span>
     </div>

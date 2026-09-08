@@ -18,7 +18,7 @@ export default function SignUpPage() {
         <div className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight">We-OS</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Create the account your business&apos;s marketing lives in.
+            Set up your business. Its marketing lives here.
           </p>
         </div>
         <SignUp fallbackRedirectUrl="/home" signInFallbackRedirectUrl="/home" />

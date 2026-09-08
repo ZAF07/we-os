@@ -68,7 +68,7 @@ function HeroPipeline() {
   return (
     <div
       role="img"
-      aria-label="A campaign paused at the performance plan approval gate: three stages approved, two waiting on the decision."
+      aria-label="A campaign paused at the performance plan approval gate: the Brand DNA, research and both strategy stages done, the creative brief and asset prompts waiting on the decision."
       className="relative"
     >
       <div
@@ -107,10 +107,13 @@ function HeroPipeline() {
   );
 }
 
-const STAGE_LABELS: Record<Exclude<StageState, "gate">, string> = {
-  complete: "Complete",
-  approved: "Approved",
-  waiting: "Waiting",
+const STAGE_PRESENTATION: Record<
+  Exclude<StageState, "gate">,
+  { label: string; done: boolean }
+> = {
+  complete: { label: "Complete", done: true },
+  approved: { label: "Approved", done: true },
+  waiting: { label: "Waiting", done: false },
 };
 
 /**
@@ -127,7 +130,7 @@ function StageRow({
   name: string;
   state: Exclude<StageState, "gate">;
 }) {
-  const done = state !== "waiting";
+  const { label, done } = STAGE_PRESENTATION[state];
   return (
     <div
       className={cn(
@@ -147,10 +150,10 @@ function StageRow({
       </span>
       {done ? (
         <span className="rounded-full bg-emerald-100 px-2 py-[3px] text-xs font-semibold text-emerald-600">
-          {STAGE_LABELS[state]}
+          {label}
         </span>
       ) : (
-        <span className="text-xs">{STAGE_LABELS[state]}</span>
+        <span className="text-xs">{label}</span>
       )}
     </div>
   );
@@ -168,7 +171,7 @@ function GateRow({ name }: { name: string }) {
     <div className="my-1 rounded-xl border-[1.5px] border-primary bg-indigo-50/60 p-3.5">
       <div className="grid grid-cols-[24px_1fr] items-start gap-3">
         <span className="mt-px flex size-[22px] items-center justify-center rounded-full bg-primary">
-          <span className="size-2 animate-pulse rounded-full bg-white" />
+          <span className="size-2 rounded-full bg-white" />
         </span>
         <div>
           <div className="flex flex-wrap items-center justify-between gap-2">

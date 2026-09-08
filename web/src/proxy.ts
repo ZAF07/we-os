@@ -13,7 +13,7 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
 ]);
 
-/** The Landing — two pages for two audiences, and a tenant gets Home. */
+/** The Landing: a visitor's page, so a signed-in business gets Home instead. */
 const isLanding = createRouteMatcher(["/"]);
 
 /**

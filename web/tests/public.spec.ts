@@ -93,10 +93,10 @@ test("Pricing shows the three tiers, each linking to sign-up with the tier remem
 
   // Strategist is the default for someone unsure; the other two are not.
   await expect(
-    page.getByRole("article", { name: "Strategist" }).getByText("Most chosen"),
+    page.getByRole("article", { name: "Strategist" }).getByText("Recommended"),
   ).toBeVisible();
   await expect(
-    page.getByRole("article", { name: "Operator" }).getByText("Most chosen"),
+    page.getByRole("article", { name: "Operator" }).getByText("Recommended"),
   ).toHaveCount(0);
 
   await expect(

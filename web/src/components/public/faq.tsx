@@ -46,7 +46,7 @@ export function Faq() {
     <section
       id="faq"
       aria-labelledby="faq-heading"
-      className="scroll-mt-[68px]"
+      className="scroll-mt-(--top-bar-height)"
     >
       <Container className="grid gap-10 py-24 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] md:gap-x-24">
         <div>

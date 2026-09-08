@@ -27,7 +27,7 @@ export function HowItWorks() {
     <section
       id="how"
       aria-labelledby="how-heading"
-      className="mt-24 scroll-mt-[68px] border-y bg-background"
+      className="mt-24 scroll-mt-(--top-bar-height) border-y bg-background"
     >
       <Container className="py-24">
         <div className="max-w-[640px]">
@@ -40,7 +40,7 @@ export function HowItWorks() {
           {STEPS.map((step, index) => (
             <li
               key={step.title}
-              className="rounded-2xl border bg-card px-7 pt-7 pb-8 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_40px_-16px_rgba(15,23,42,0.2)]"
+              className="lift rounded-2xl border bg-card px-7 pt-7 pb-8"
             >
               <span
                 aria-hidden="true"

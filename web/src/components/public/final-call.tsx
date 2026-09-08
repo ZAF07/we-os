@@ -9,7 +9,7 @@ export function FinalCall() {
     <section
       id="start"
       aria-labelledby="start-heading"
-      className="scroll-mt-[68px]"
+      className="scroll-mt-(--top-bar-height)"
     >
       <Container className="pb-24">
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 to-indigo-700 p-12 text-white md:p-20">

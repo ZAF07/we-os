@@ -31,20 +31,24 @@ export function Eyebrow({
  *
  * Args:
  *   id: The heading id, so the section can be labelled by it.
+ *   as: The heading level: `h2` within a page, `h1` when the section is the
+ *     page.
  *   children: The heading text.
  *   className: Optional extra classes.
  */
 export function SectionHeading({
   id,
+  as: Heading = "h2",
   children,
   className,
 }: {
   id?: string;
+  as?: "h1" | "h2";
   children: React.ReactNode;
   className?: string;
 }) {
   return (
-    <h2
+    <Heading
       id={id}
       className={cn(
         "text-[clamp(30px,3.6vw,44px)] leading-[1.1] font-bold tracking-[-0.03em]",
@@ -52,7 +56,7 @@ export function SectionHeading({
       )}
     >
       {children}
-    </h2>
+    </Heading>
   );
 }
 

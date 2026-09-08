@@ -14,7 +14,7 @@ export interface Tier {
   name: TierName;
   monthlyPriceUsd: number;
   monthlyCredits: number;
-  audience: string;
+  suits: string;
   highlighted: boolean;
 }
 
@@ -23,21 +23,21 @@ export const TIERS: readonly Tier[] = [
     name: "Operator",
     monthlyPriceUsd: 59,
     monthlyCredits: 6_000,
-    audience: "For one business finding its footing.",
+    suits: "For one business finding its footing.",
     highlighted: false,
   },
   {
     name: "Strategist",
     monthlyPriceUsd: 89,
     monthlyCredits: 10_000,
-    audience: "For a business running campaigns every month.",
+    suits: "For a business running campaigns every month.",
     highlighted: true,
   },
   {
     name: "Command",
     monthlyPriceUsd: 115,
     monthlyCredits: 20_000,
-    audience: "For a business that never stops marketing.",
+    suits: "For a business that never stops marketing.",
     highlighted: false,
   },
 ];

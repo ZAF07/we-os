@@ -7,6 +7,10 @@ import { cn } from "@/lib/utils";
 /**
  * Renders one tier: name, price, credits, who it suits, and the way in.
  *
+ * The highlighted tier is labelled "Recommended" rather than "Most chosen":
+ * a recommendation is the product's to make, while popularity would be a
+ * claim about other businesses that nothing backs yet.
+ *
  * The one component both the Landing's pricing section and the Pricing page
  * use, so the two can never show different tiers.
  *
@@ -21,7 +25,7 @@ export function TierCard({ tier }: { tier: Tier }) {
     <article
       aria-labelledby={headingId}
       className={cn(
-        "flex flex-col gap-[18px] rounded-[20px] border bg-card p-8 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_40px_-16px_rgba(15,23,42,0.2)]",
+        "lift flex flex-col gap-[18px] rounded-[20px] border bg-card p-8",
         tier.highlighted &&
           "border-2 border-primary shadow-[0_20px_50px_-24px_rgba(79,70,229,0.45)]",
       )}
@@ -32,7 +36,7 @@ export function TierCard({ tier }: { tier: Tier }) {
         </h3>
         {tier.highlighted && (
           <span className="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">
-            Most chosen
+            Recommended
           </span>
         )}
       </div>
@@ -47,7 +51,7 @@ export function TierCard({ tier }: { tier: Tier }) {
         <strong>{credits}</strong> credits a month
       </p>
       <p className="flex-1 text-[15px] leading-relaxed text-slate-600">
-        {tier.audience}
+        {tier.suits}
       </p>
       <p className="text-[13.5px] leading-relaxed text-slate-500">
         Everything included: every stage, every specialist, your full Brand DNA.

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { Container } from "@/components/public/section";
 import { BrandMark } from "@/components/ui/brand-mark";
 
 /**
@@ -11,7 +12,7 @@ import { BrandMark } from "@/components/ui/brand-mark";
 export function PublicFooter() {
   return (
     <footer className="border-t">
-      <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-6 px-5 py-8 text-sm text-slate-500 md:px-10">
+      <Container className="flex flex-wrap items-center gap-6 py-8 text-sm text-slate-500">
         <Link href="/" className="text-foreground">
           <BrandMark />
         </Link>
@@ -22,7 +23,7 @@ export function PublicFooter() {
           Sign in
         </Link>
         <span className="ml-auto">© {new Date().getFullYear()} We-OS</span>
-      </div>
+      </Container>
     </footer>
   );
 }

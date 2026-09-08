@@ -37,6 +37,14 @@ test("opening the root signed in lands on Home, never the Landing", async ({
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 });
 
+test("signed in, the sign-in page hands straight over to Home", async ({
+  page,
+}) => {
+  await page.goto("/sign-in");
+
+  await expect(page).toHaveURL("/home");
+});
+
 test("all routes resolve without a 404", async ({ page }) => {
   const paths = [
     "/home",
