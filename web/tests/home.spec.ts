@@ -10,7 +10,7 @@ import { uniqueName } from "./fixtures";
  */
 
 test("home renders its sections", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
 
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await expect(page.getByText("Action queue")).toBeVisible();
@@ -20,7 +20,7 @@ test("home renders its sections", async ({ page }) => {
 });
 
 test("the stat tiles report real counts", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
 
   await expect(page.getByText("Need you", { exact: true })).toBeVisible();
   await expect(page.getByText("In progress", { exact: true })).toBeVisible();
@@ -53,7 +53,7 @@ test("a campaign at an approval gate appears in the queue and links to it", asyn
 
   // The queue is derived from real campaign state, so the campaign that just
   // halted must be on it — that is the whole claim Home makes.
-  await page.goto("/");
+  await page.goto("/home");
   const row = page.locator("div").filter({ hasText: name }).last();
   await expect(row).toBeVisible();
   await expect(
@@ -62,7 +62,7 @@ test("a campaign at an approval gate appears in the queue and links to it", asyn
 });
 
 test("an empty queue says so rather than showing nothing", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
 
   const queueCount = await page.getByText("Decision", { exact: true }).count();
   if (queueCount === 0) {
@@ -98,7 +98,7 @@ test("a decision made in the Workspace is reflected on Home without a refresh", 
 
   // A draft is not waiting on anyone, so Home must not be asking about it.
   const queue = page.getByRole("list", { name: "Decision queue" });
-  await page.goto("/");
+  await page.goto("/home");
   await expect(queue.locator(`a[href="/campaigns/${slug}"]`)).toHaveCount(0);
 
   // Run it to a gate: now it is waiting, and Home must say so.
@@ -107,7 +107,7 @@ test("a decision made in the Workspace is reflected on Home without a refresh", 
   const approve = page.getByRole("button", { name: "Approve", exact: true });
   await expect(approve).toBeVisible({ timeout: 120_000 });
 
-  await page.goto("/");
+  await page.goto("/home");
   await expect(queue.locator(`a[href="/campaigns/${slug}"]`)).toBeVisible();
 
   // Approving advances the run to the next stage, which is gated too — so the
@@ -122,6 +122,6 @@ test("a decision made in the Workspace is reflected on Home without a refresh", 
       .getByRole("button", { name: /^Brand strategy/ }),
   ).toContainText("Approved", { timeout: 120_000 });
 
-  await page.goto("/");
+  await page.goto("/home");
   await expect(queue.locator(`a[href="/campaigns/${slug}"]`)).toBeVisible();
 });

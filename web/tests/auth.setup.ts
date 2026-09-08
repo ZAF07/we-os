@@ -10,7 +10,8 @@ setup.describe.configure({ mode: "serial" });
 /**
  * Signs in the suite's two test users and saves a session for each.
  *
- * Every route is behind `clerkMiddleware`, so the specs need a real session.
+ * Every route in the app half is behind `clerkMiddleware`, so the specs need
+ * a real session.
  * This runs as a Playwright dependency project: it authenticates the dedicated
  * test users and writes the browser state the other projects reuse.
  *
@@ -87,9 +88,9 @@ for (const identity of IDENTITIES) {
     await clerk.loaded({ page });
     await clerk.signIn({ page, emailAddress: email });
 
-    await page.goto("/");
-    await expect(page).toHaveURL(/^(?!.*\/sign-in).*$/);
-    await expect(page.locator("aside").getByText("Marketing OS")).toBeVisible();
+    await page.goto("/home");
+    await expect(page).toHaveURL(/\/home$/);
+    await expect(page.locator("aside").getByText("We-OS")).toBeVisible();
 
     await page.context().storageState({ path: identity.storageState });
 

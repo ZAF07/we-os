@@ -21,6 +21,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { BrandMark } from "@/components/ui/brand-mark";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -30,15 +31,12 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Home", icon: Home },
+  { href: "/home", label: "Home", icon: Home },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/brand", label: "Brand", icon: BookOpen },
   { href: "/performance", label: "Performance", icon: TrendingUp },
 ];
-
-/** Routes that render their own full-page layout, without the app chrome. */
-const BARE_ROUTES = ["/sign-in", "/sign-up"];
 
 /**
  * Decides whether a nav item is active for the current path.
@@ -52,20 +50,7 @@ const BARE_ROUTES = ["/sign-in", "/sign-up"];
  *   Campaigns) is active.
  */
 function isActive(href: string, pathname: string): boolean {
-  if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-/** Renders the Marketing OS logo mark and wordmark. */
-function BrandMark() {
-  return (
-    <div className="flex items-center gap-[9px]">
-      <div className="flex size-6 items-center justify-center rounded-[7px] bg-gradient-to-br from-indigo-600 to-indigo-500 text-[13px] font-bold text-white">
-        M
-      </div>
-      <div className="text-[15px] font-bold tracking-tight">Marketing OS</div>
-    </div>
-  );
 }
 
 /**
@@ -143,16 +128,15 @@ function UserCard() {
  * Renders the persistent application shell: desktop nav rail, mobile
  * drawer, and the content area.
  *
+ * Only the signed-in half gets it: the `(app)` route group's layout renders
+ * the shell and the public half never does, so where a page lives decides
+ * whether it has one. There is no list of paths to keep in step.
+ *
  * Args:
  *   children: The active route's content.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const pathname = usePathname();
-
-  if (BARE_ROUTES.some((route) => pathname.startsWith(route))) {
-    return <>{children}</>;
-  }
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden md:flex-row">

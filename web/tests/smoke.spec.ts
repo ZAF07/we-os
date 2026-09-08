@@ -7,14 +7,14 @@ const NAV_ROUTES: Array<{ label: string; path: string }> = [
   { label: "Calendar", path: "/calendar" },
   { label: "Brand", path: "/brand" },
   { label: "Performance", path: "/performance" },
-  { label: "Home", path: "/" },
+  { label: "Home", path: "/home" },
 ];
 
 test("nav rail reaches every primary route and marks it active", async ({
   page,
 }) => {
-  await page.goto("/");
-  await expect(page.locator("aside").getByText("Marketing OS")).toBeVisible();
+  await page.goto("/home");
+  await expect(page.locator("aside").getByText("We-OS")).toBeVisible();
 
   // Scoped to the rail: the screens themselves link to each other now that
   // their empty states point somewhere useful, so a bare name matches more than
@@ -28,9 +28,18 @@ test("nav rail reaches every primary route and marks it active", async ({
   }
 });
 
+test("opening the root signed in lands on Home, never the Landing", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await expect(page).toHaveURL("/home");
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+});
+
 test("all routes resolve without a 404", async ({ page }) => {
   const paths = [
-    "/",
+    "/home",
     "/campaigns",
     "/campaigns/new",
     "/calendar",
@@ -56,7 +65,7 @@ test("below the mobile breakpoint the nav collapses into a drawer", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 720 });
-  await page.goto("/");
+  await page.goto("/home");
   await expect(
     page.locator("aside").getByRole("link", { name: "Campaigns" }),
   ).toBeHidden();

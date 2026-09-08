@@ -14,7 +14,7 @@ import {
   reviseStageAction,
   startRunAction,
   type StageView,
-} from "@/app/campaigns/[slug]/actions";
+} from "@/app/(app)/campaigns/[slug]/actions";
 import type { Campaign, CampaignStage } from "@/lib/engine";
 import { statusLabel } from "@/lib/campaigns";
 import { statusDotClass } from "@/lib/status";
