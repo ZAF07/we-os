@@ -33,7 +33,7 @@ One named group of the tenant's customers, defined inside the Brand DNA and rank
 _Avoid_: persona, audience, target market, cohort.
 
 **Landing**:
-The public page at the root of we-OS, shown to anyone who is not signed in: what the product does, how it works, what it costs, and the way in (sign up / sign in). A signed-in person who opens the root is sent to **Home** instead. Landing and Home are two different pages for two different audiences — a visitor deciding, and a business owner working.
+The public page at the root of we-OS, shown to anyone who is not signed in: what the product does, how it works, what makes it different, the questions people ask, and the way in (sign up / sign in). What it costs is not on it — that is **Pricing**, one link away. A signed-in person who opens the root is sent to **Home** instead. Landing and Home are two different pages for two different audiences — a visitor deciding, and a business owner working.
 _Avoid_: home page (for the public page), marketing site, website.
 
 **Home**:
@@ -41,7 +41,7 @@ The first signed-in screen — what needs the business owner right now (decision
 _Avoid_: dashboard, landing (for the signed-in screen).
 
 **Pricing**:
-The second public page: the three Tiers side by side, what a credit is, and the questions a business asks before paying. It shows exactly the tiers the Landing shows, so a visitor never sees two prices, and it exists so the tiers can be sent to a colleague as one address.
+The second public page, and the only place prices appear: the three Tiers side by side, what a credit is, and the questions a business asks before paying. One address, so a visitor never sees two prices and can send the tiers to a colleague.
 _Avoid_: plans page (a plan is the Performance Plan), billing page (there is no billing yet), packages.
 
 **Questionnaire**:
