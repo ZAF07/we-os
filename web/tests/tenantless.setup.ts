@@ -38,19 +38,28 @@ setup("authenticate the tenantless user", async ({ page }) => {
   await clerk.loaded({ page });
   await clerk.signIn({ page, emailAddress: email });
 
-  // With Clerk's organization-on-sign-up setting still on, a person with no
-  // organization is held in a "pending" session and never reaches the app —
-  // the welcome flow cannot run, and the failure would otherwise look like a
-  // redirect to the wrong place.
-  const status = await page.evaluate(
-    () =>
-      (window as unknown as { Clerk?: { session?: { status?: string } } }).Clerk
-        ?.session?.status,
-  );
+  // While the Clerk instance requires organization membership, a person with
+  // no organization is held in a "pending" session on a "choose-organization"
+  // task and never reaches the app — the welcome flow cannot run, and the
+  // failure would otherwise look like a redirect to the wrong place. Naming
+  // the task and the setting beats a bare status mismatch.
+  const session = await page.evaluate(() => {
+    const { Clerk } = window as unknown as {
+      Clerk?: { session?: { status?: string; currentTask?: { key?: string } } };
+    };
+    return {
+      status: Clerk?.session?.status,
+      task: Clerk?.session?.currentTask?.key,
+    };
+  });
   expect(
-    status,
-    "the tenantless user's session must be active: turn off Clerk's " +
-      "organization requirement on sign-up (see web/README.md)",
+    session.status,
+    `the tenantless user's session is "${session.status}"` +
+      (session.task ? ` on the "${session.task}" task` : "") +
+      ", not active. In the Clerk Dashboard, under Organizations settings, " +
+      'switch "Membership required" to "Membership optional" (Personal ' +
+      "Accounts on): required membership makes Clerk demand an organization " +
+      "after sign-in, and the welcome flow never runs. See web/README.md.",
   ).toBe("active");
 
   // The gate is the first assertion: signed in with no business, Home is not
