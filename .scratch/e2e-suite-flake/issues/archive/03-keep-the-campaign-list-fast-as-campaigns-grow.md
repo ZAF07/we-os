@@ -1,6 +1,6 @@
 # 03 — Keep the campaign list fast as a tenant's campaigns grow
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Parent
@@ -78,3 +78,8 @@ status and stage progress for every campaign are identical before and after.
 ## Blocked by
 
 None - can start immediately.
+
+## Completion
+
+- Completed: 2026-09-09
+- Commit: 1534f4e, with review fixes in 0624b3f

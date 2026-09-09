@@ -1,6 +1,6 @@
 # 02 — Log why a bearer token was refused, without telling the caller
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Parent
@@ -53,3 +53,8 @@ an event worth seeing in the default configuration, not a debug detail.
 ## Blocked by
 
 None - can start immediately.
+
+## Completion
+
+- Completed: 2026-09-09
+- Commit: 1534f4e, with review fixes in 0624b3f
