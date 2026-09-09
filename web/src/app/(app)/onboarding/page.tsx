@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useWizard } from "@/components/wizard/use-wizard";
 import { Field, WizardShell } from "@/components/wizard/wizard";
 import type { Question, Questionnaire } from "@/lib/engine";
+import { ENTRY_LIST_TYPE } from "@/lib/entry-list";
 import {
   answersById,
   questionSteps,
@@ -21,9 +22,6 @@ import { loadOnboarding, saveAnswers } from "./actions";
 
 /** Input types rendered as a multi-line control rather than a single line. */
 const MULTILINE_TYPES = new Set(["textarea", "list"]);
-
-/** The input type collecting repeatable named entries, one per row. */
-const ENTRY_LIST_TYPE = "entry_list";
 
 /**
  * Renders one published question as its labeled input.
@@ -73,8 +71,6 @@ function QuestionField({
         <EntryListInput
           label={question.text}
           value={value}
-          titlePlaceholder="Name this group"
-          descriptionPlaceholder="What defines them?"
           onChange={onChange}
         />
       ) : MULTILINE_TYPES.has(question.input_type) ? (

@@ -154,8 +154,7 @@ def test_create_campaign_rejects_a_segment_the_brand_dna_does_not_name(
 def test_create_campaign_targets_a_segment_by_its_title_alone(
     client: TestClient,
 ) -> None:
-    # The whole entry line is what the Brand DNA stores; a campaign targets the
-    # segment's title, so passing the description with it is not a segment.
+    """Refuse a whole entry line, since the title alone identifies a segment."""
     response = client.post(
         "/campaigns",
         json={

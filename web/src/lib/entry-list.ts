@@ -1,7 +1,16 @@
+/** The `input_type` whose answer is a list of named entries, one per row. */
+export const ENTRY_LIST_TYPE = "entry_list";
+
 /** The separator between an entry's title and its description. */
 const SEPARATOR = " — ";
 
-/** Matches the first ` — `, ` – ` or ` - ` on a line, which ends the title. */
+/**
+ * Matches the first ` — `, ` – ` or ` - ` on a line, which ends the title.
+ *
+ * The engine reads these lines back with the same rule — see
+ * `_parse_entry` in `agent-harness/src/marketing_os/campaign/goal.py` — so the
+ * separators the two accept must stay in step.
+ */
 const SEPARATOR_RE = /\s+[—–-]\s+/;
 
 export interface Entry {

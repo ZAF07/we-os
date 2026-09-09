@@ -11,6 +11,22 @@ import { uniqueName } from "./fixtures";
 
 const SEEDED_BUSINESS = "Summit Climbing Collective";
 
+/**
+ * The audience segments the e2e tenant is seeded with, in seeded order, as
+ * `scripts/seed_test_tenants.py` writes them. A segment is a named entry, so
+ * the seed and this spec agree on both halves.
+ */
+const SEGMENTS = [
+  {
+    title: "Urban beginners",
+    description: "22-35, curious about climbing, have never been to a gym",
+  },
+  {
+    title: "Weekend boulderers",
+    description: "plateauing at V4 and losing interest",
+  },
+];
+
 test("brand renders the questionnaire's sections and the business's answers", async ({
   page,
 }) => {
@@ -108,6 +124,57 @@ test("an answer can be deleted, and the question goes back to unanswered", async
 
   await expect(page.getByText(rival)).toBeHidden({ timeout: 30_000 });
   await expect(page.getByText("Not answered yet.").first()).toBeVisible();
+});
+
+test("audience segments are edited as named entries, and their order is kept", async ({
+  page,
+}) => {
+  // Puts the segments back exactly as the seed wrote them, so the campaign
+  // specs that pick a segment by name still find the one they expect.
+  await page.goto("/brand");
+
+  const index = page.getByRole("navigation", { name: "Brand sections" });
+  await index.getByRole("button", { name: /Customers/ }).click();
+
+  const question =
+    "Who buys from you? Describe each distinct group, most important first.";
+  await page.getByRole("button", { name: `Edit: ${question}` }).click();
+
+  const rows = page.getByRole("group", { name: question });
+  await expect(rows.getByLabel("Name of entry 1")).toHaveValue(
+    SEGMENTS[0].title,
+  );
+  await expect(rows.getByLabel("Name of entry 2")).toHaveValue(
+    SEGMENTS[1].title,
+  );
+
+  // Reorder: order carries meaning — the business lists its groups most
+  // important first — so moving one must actually move it.
+  await page.getByRole("button", { name: "Move entry 2 up" }).click();
+  await expect(rows.getByLabel("Name of entry 1")).toHaveValue(
+    SEGMENTS[1].title,
+  );
+
+  // Add a third, then remove it again: both halves of the control.
+  await page.getByRole("button", { name: "+ Add another" }).click();
+  await rows.getByLabel("Name of entry 3").fill("Temporary group");
+  await expect(rows.getByLabel("Name of entry 3")).toHaveValue(
+    "Temporary group",
+  );
+  await page.getByRole("button", { name: "Remove entry 3" }).click();
+  await expect(rows.getByLabel("Name of entry 3")).toHaveCount(0);
+
+  // Put the seeded order back and save, so the tenant ends as it started.
+  await page.getByRole("button", { name: "Move entry 2 up" }).click();
+  await expect(rows.getByLabel("Name of entry 1")).toHaveValue(
+    SEGMENTS[0].title,
+  );
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect(page.getByText(SEGMENTS[0].title)).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByText(SEGMENTS[0].description)).toBeVisible();
 });
 
 test("deleting a Required answer flips the banner to name what is now owed", async ({

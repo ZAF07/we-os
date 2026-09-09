@@ -13,6 +13,15 @@ import {
 } from "@/lib/entry-list";
 
 /**
+ * The row copy. Deliberately says nothing about what is being listed: the
+ * control serves any question collecting named entries, and the question
+ * itself — shown above the rows with its own help text — is what says what
+ * they are.
+ */
+const TITLE_PLACEHOLDER = "Name";
+const DESCRIPTION_PLACEHOLDER = "What defines it";
+
+/**
  * Renders an `entry_list` answer as repeatable title-and-description rows.
  *
  * The control keys off the question's `input_type` and knows nothing about
@@ -31,8 +40,6 @@ import {
  *   label: The question as it is asked, which names the group of rows —
  *     a repeatable control is a group, not one box a `<label>` can point at.
  *   value: The answer text as saved, which seeds the rows.
- *   titlePlaceholder: The hint shown in an empty title box.
- *   descriptionPlaceholder: The hint shown in an empty description box.
  *   onChange: Called with the rewritten answer text.
  *
  * Returns:
@@ -41,19 +48,15 @@ import {
 export function EntryListInput({
   label,
   value,
-  titlePlaceholder,
-  descriptionPlaceholder,
   onChange,
 }: {
   label: string;
   value: string;
-  titlePlaceholder: string;
-  descriptionPlaceholder: string;
   onChange: (value: string) => void;
 }) {
   const [entries, setEntries] = useState(() => parseEntries(value));
 
-  const write = (next: Entry[]) => {
+  const applyEntries = (next: Entry[]) => {
     setEntries(next);
     onChange(formatEntries(next));
   };
@@ -61,7 +64,7 @@ export function EntryListInput({
   const edit =
     (index: number, field: "title" | "description") =>
     (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      write(
+      applyEntries(
         entries.map((entry, at) =>
           at === index ? { ...entry, [field]: event.target.value } : entry,
         ),
@@ -81,14 +84,14 @@ export function EntryListInput({
             <Input
               value={entry.title}
               aria-label={`Name of entry ${index + 1}`}
-              placeholder={titlePlaceholder}
+              placeholder={TITLE_PLACEHOLDER}
               onChange={edit(index, "title")}
             />
             <button
               type="button"
               aria-label={`Move entry ${index + 1} up`}
               disabled={index === 0}
-              onClick={() => write(moveEntry(entries, index, -1))}
+              onClick={() => applyEntries(moveEntry(entries, index, -1))}
               className="cursor-pointer rounded-md border px-2 py-1 text-[12px] font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               ↑
@@ -97,7 +100,7 @@ export function EntryListInput({
               type="button"
               aria-label={`Move entry ${index + 1} down`}
               disabled={index === entries.length - 1}
-              onClick={() => write(moveEntry(entries, index, 1))}
+              onClick={() => applyEntries(moveEntry(entries, index, 1))}
               className="cursor-pointer rounded-md border px-2 py-1 text-[12px] font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               ↓
@@ -105,7 +108,9 @@ export function EntryListInput({
             <button
               type="button"
               aria-label={`Remove entry ${index + 1}`}
-              onClick={() => write(entries.filter((_, at) => at !== index))}
+              onClick={() =>
+                applyEntries(entries.filter((_, at) => at !== index))
+              }
               className="cursor-pointer rounded-md border px-2 py-1 text-[12px] font-semibold text-red-700 hover:bg-red-50"
             >
               Remove
@@ -114,7 +119,7 @@ export function EntryListInput({
           <Textarea
             value={entry.description}
             aria-label={`What defines entry ${index + 1}`}
-            placeholder={descriptionPlaceholder}
+            placeholder={DESCRIPTION_PLACEHOLDER}
             rows={2}
             onChange={edit(index, "description")}
           />
@@ -122,7 +127,7 @@ export function EntryListInput({
       ))}
       <button
         type="button"
-        onClick={() => write([...entries, { ...BLANK_ENTRY }])}
+        onClick={() => applyEntries([...entries, { ...BLANK_ENTRY }])}
         className="cursor-pointer self-start rounded-lg border bg-card px-3 py-1.5 text-[12.5px] font-semibold text-primary hover:bg-indigo-50"
       >
         + Add another

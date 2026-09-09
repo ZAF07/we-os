@@ -348,6 +348,10 @@ def audience_segments(brand_dna: str) -> list[AudienceSegment]:
 def _parse_entry(line: str) -> AudienceSegment:
     """Split one entry line into its title and its description.
 
+    The web control that writes these lines splits them the same way — see
+    ``web/src/lib/entry-list.ts`` — so the separators the two accept must stay
+    in step.
+
     Args:
         line: The entry line, as ``Title — description`` or a bare title.
 

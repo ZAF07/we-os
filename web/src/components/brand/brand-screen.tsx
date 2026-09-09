@@ -11,12 +11,9 @@ import type {
   Question,
   Questionnaire,
 } from "@/lib/engine";
-import { parseEntries } from "@/lib/entry-list";
+import { ENTRY_LIST_TYPE, parseEntries } from "@/lib/entry-list";
 import { questionSteps } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
-
-/** The input type collecting repeatable named entries, one per row. */
-const ENTRY_LIST_TYPE = "entry_list";
 
 import { deleteAnswer, saveAnswers } from "@/app/(app)/onboarding/actions";
 
@@ -256,8 +253,6 @@ function AnswerCard({
             <EntryListInput
               label={question.text}
               value={draft}
-              titlePlaceholder="Name this group"
-              descriptionPlaceholder="What defines them?"
               onChange={onDraft}
             />
           ) : (
