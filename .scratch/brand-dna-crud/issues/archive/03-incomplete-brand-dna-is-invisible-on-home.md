@@ -1,6 +1,6 @@
 # 03 — Incomplete Brand DNA is invisible on Home and in the side nav
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Symptom
@@ -84,17 +84,70 @@ not the screen. In the layout, a failed read means no badge; the layout must not
 
 ## Acceptance criteria
 
-- [ ] With an incomplete Brand DNA, the Brand item in the side nav shows the count of
+- [x] With an incomplete Brand DNA, the Brand item in the side nav shows the count of
       missing Required fields, on every signed-in route
-- [ ] With an incomplete Brand DNA, the Action queue contains a `Setup` item using the
+- [x] With an incomplete Brand DNA, the Action queue contains a `Setup` item using the
       copy above, with a `Fill it in` button linking to `/brand`
-- [ ] The Setup item sorts after `Decision` items and before `Stale` items
-- [ ] Home's header count ("N things need you") includes the Setup item
-- [ ] Both the badge and the queue item disappear once completeness reports `complete`
-- [ ] A completeness read that fails costs the badge and the queue item only — Home
+- [x] The Setup item sorts after `Decision` items and before `Stale` items
+- [x] Home's header count ("N things need you") includes the Setup item
+- [x] Both the badge and the queue item disappear once completeness reports `complete`
+- [x] A completeness read that fails costs the badge and the queue item only — Home
       and the shell still render
-- [ ] Unit tests cover `toQueue()` with complete / partially complete / empty DNA,
+- [x] Unit tests cover `toQueue()` with complete / partially complete / empty DNA,
       including the sort position and the `+N more` meta truncation
-- [ ] A Playwright spec covers incomplete vs. complete Brand DNA on Home
-- [ ] Quality gates pass, run from `web/`: `pnpm lint`, `pnpm typecheck`,
+- [x] A Playwright spec covers incomplete vs. complete Brand DNA on Home
+- [x] Quality gates pass, run from `web/`: `pnpm lint`, `pnpm typecheck`,
       `pnpm test:unit` (vitest), `pnpm test` (playwright), `pnpm format:check`
+
+## Completion
+
+- Completed: 2026-09-09
+- Commits: b65de47 (implementation), 0ad9e30 (code-review fixes), ed6d69f (archive)
+
+### Evidence per criterion
+
+- **Nav badge on every signed-in route** — `web/src/components/shell/app-shell.tsx:97`
+  renders the count on the Brand item only (`item.href === BRAND_HREF`), inside
+  `NavLinks`, which both the desktop aside and the mobile drawer use. Fed by
+  `web/src/app/(app)/layout.tsx`, the server component wrapping every `(app)` route.
+- **Setup item with the copy and a `Fill it in` button** — `toSetupItem()` in
+  `web/src/lib/home.ts` emits `tag: "Setup"`, `cta: "Fill it in"`, `href: "/brand"`;
+  `TAG_CLASSES` in `home/page.tsx:29` gains the `Setup` class.
+- **Sorts after Decision, before Stale** — `web/src/lib/home.ts:90`
+  (`[...waiting, ...setup, ...stale]`); asserted by the "sorts after a decision but
+  before stale work" test, which checks `["Decision", "Setup", "Stale"]`.
+- **Header count includes it** — `home/page.tsx:67` reads `queue.length` off the same
+  `toQueue(campaigns, completeness)` result; no separate count path.
+- **Both disappear once complete** — `toSetupItem` returns null on `complete`;
+  `countBrandFieldsOwed` returns 0, and the badge is gated on `> 0`.
+- **A failed read costs only the badge and the item** — `loadHome()` catches
+  `EngineError` to null, matching `getUsage()`; the layout catches bare so it cannot
+  throw.
+- **Unit tests** — 7 new cases in `web/src/lib/home.test.ts` covering not-started,
+  partial (singular and plural), `+N more` truncation, sort position, complete, and
+  the unread (null) case. 102 tests pass.
+- **Playwright** — the complete half in `tests/home.spec.ts` ("a complete Brand DNA
+  leaves Home and the nav unmarked"); the incomplete half in `tests/onboarding.spec.ts`,
+  which owns the only genuinely blank tenant.
+- **Quality gates** — `pnpm lint`, `pnpm typecheck`, `pnpm test:unit` (102 passed),
+  `pnpm format:check` all pass. `pnpm test` (Playwright) green against the compose
+  stack.
+
+### Decisions worth carrying forward
+
+- **The meta line uses `missing[].field`, not `missing[].label`.** The issue specified
+  `label`, but the engine builds `MissingField(..., field=question.field,
+  label=question.text)` — `label` is the whole question text ("What must never appear
+  in your marketing?") while `field` is the short name ("Hard constraints"). Three
+  question texts comma-separated is a paragraph, not a meta line, so `field` serves the
+  issue's stated intent against its letter. Documented in `toSetupItem`'s docstring.
+- **The incomplete-DNA Playwright coverage lives in `onboarding.spec.ts`.** Withdrawing
+  a Required answer from the shared seeded tenant closes its Brand DNA gate, and the
+  engine then refuses `POST /campaigns/*/run` with a 409 for every spec running in
+  parallel beside it — observed as three unrelated workspace failures before the
+  coverage was moved to the blank tenant.
+- **The layout's completeness read is not deduplicated with Home's.** React's
+  per-request `cache()` does not span the two, because `loadHome` is a server action
+  and so does not share the layout render's request scope. Measured against the running
+  stack: one Home render costs two calls to `/brand-dna/completeness` either way. The
+  duplicate read is the deliberate trade, named in the layout's docstring.
