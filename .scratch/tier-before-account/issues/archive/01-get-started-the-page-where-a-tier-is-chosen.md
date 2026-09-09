@@ -43,7 +43,7 @@ None - can start immediately.
 - Commits:
   - `9b8d758` Get Started: the page where a tier is chosen before an account exists
   - `8cc55e2` Address code review: one set-once judgement, honest docstrings, real assertions (the intro copy)
-  - merged to main as `<merge hash, filled in after the merge>`
+  - merged to main as `b6c878f` Merge: a tier is chosen before an account exists, and the platform creates the tenant
 
 ### Evidence
 

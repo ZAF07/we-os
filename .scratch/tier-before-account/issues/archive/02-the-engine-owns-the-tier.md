@@ -52,7 +52,7 @@ None - can start immediately. Runs in parallel with issue 01; they share no file
 - Commits:
   - `75d8bec` The engine owns the tier: a column, a backfill, and PUT /tenant/tier
   - `8cc55e2` Address code review: one set-once judgement, honest docstrings, real assertions
-  - merged to main as `<merge hash, filled in after the merge>`
+  - merged to main as `b6c878f` Merge: a tier is chosen before an account exists, and the platform creates the tenant
 
 ### Evidence
 
