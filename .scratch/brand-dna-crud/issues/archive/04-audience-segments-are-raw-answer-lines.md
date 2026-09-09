@@ -161,3 +161,42 @@ Verified against the running system, not just the tests:
   `agent-harness/`; from `web/`, `pnpm lint`, `pnpm typecheck`,
   `pnpm test:unit` (90 passed), `pnpm format:check`, and the full Playwright
   suite (71 passed against a freshly seeded e2e stack).
+
+### Reopened after manual testing, then closed again
+
+The change above was archived too early. It was verified only against answers
+already in entry form — every fixture and every e2e run started from freshly
+seeded data — so nothing exercised the case that matters most in practice: an
+answer written *before* the question collected entries.
+
+Manual end-to-end testing on a real account found two failures, both from that
+same blind spot:
+
+1. **The Brand form shattered a prose answer.** Reading one entry per line
+   turned a four-section answer into twenty-six numbered cards — headings,
+   sentences and bullet fragments each posing as a segment. That is the very
+   chopped-up prose this issue exists to end, moved from the campaign picker
+   into the Brand form.
+2. **The campaign picker offered nothing at all.** `audience_segments()` strips
+   `- ` bullets but left `###` headings, so an answer written as markdown
+   sections parsed to zero options and the wizard's segment step was empty.
+
+Both sides now read an answer as the shape it actually has: one entry per
+markdown heading when it has headings, one entry for unstructured prose, and
+one per line only when every line is already `Title — description`. Writing
+folds a description's own newlines to spaces, since one entry is one line —
+otherwise a rescued description shatters again on the next save.
+
+The "no migration" decision was read too literally the first time. It rules out
+a compatibility layer; it does not license breaking answers already in the
+database.
+
+- Commits: `a88aa69` (web), `2ae112d` (harness)
+- Verified against both real tenants in the running dev stack, not fixtures:
+  the prose answer opens as 4 cards and offers 4 picker titles (0 before); the
+  already-formatted answer stays at 2 and is unaffected. Save → re-open → save
+  is stable with no drift, and the full chain form → `dna.md` → picker keeps
+  all four segments.
+- Gates re-run green: `make check` (650) and `make test-postgres` (760); from
+  `web/` lint, typecheck, `pnpm test:unit` (95), `format:check`, and the full
+  Playwright suite (71).
