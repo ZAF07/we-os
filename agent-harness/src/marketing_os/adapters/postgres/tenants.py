@@ -17,9 +17,10 @@ from typing import Any
 from marketing_os.adapters.tenants import (
     display_name_for,
     new_tenant_id,
+    refuse_a_different_tier,
     validate_external_auth_id,
 )
-from marketing_os.errors import TierAlreadySetError, ToolError
+from marketing_os.errors import ToolError
 from marketing_os.schemas import Tenant, TierName
 
 TENANT_COLUMNS = "tenant_id, name, external_auth_id, tier"
@@ -138,7 +139,4 @@ class PostgresTenantDirectory:
             ).fetchone()
         if row is None:
             raise ToolError(f"No tenant '{tenant_id}' is registered.")
-        recorded = _tenant_from_row(row)
-        if recorded.tier != tier:
-            raise TierAlreadySetError(str(recorded.tier), tier)
-        return recorded
+        return refuse_a_different_tier(_tenant_from_row(row), tier)

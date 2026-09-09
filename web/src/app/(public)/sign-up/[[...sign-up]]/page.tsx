@@ -1,6 +1,10 @@
 import { SignUp } from "@clerk/nextjs";
 
-import { tierFromParam, welcomeHref } from "@/lib/tiers";
+import {
+  tierFromSearchParams,
+  welcomeHref,
+  type TierSearchParams,
+} from "@/lib/tiers";
 
 /**
  * Clerk's hosted sign-up flow, under the public layout.
@@ -21,9 +25,9 @@ import { tierFromParam, welcomeHref } from "@/lib/tiers";
 export default async function SignUpPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tier?: string | string[] }>;
+  searchParams: TierSearchParams;
 }) {
-  const tier = tierFromParam((await searchParams).tier);
+  const tier = await tierFromSearchParams(searchParams);
 
   return (
     <main className="flex flex-1 items-center justify-center px-6 py-16">

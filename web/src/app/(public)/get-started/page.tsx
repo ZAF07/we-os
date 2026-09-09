@@ -46,7 +46,7 @@ export default async function GetStartedPage() {
             </SectionHeading>
             <p className="mt-4 text-[16.5px] leading-relaxed text-slate-600">
               Every tier includes the whole product. Pick the credits your
-              business will use each month, and set up your account next.
+              business will use each month, then create your login.
             </p>
           </div>
           <TierCards destination={(tier) => launchHref(tier, session)} />

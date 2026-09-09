@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 import { WelcomeForm } from "@/components/welcome/welcome-form";
-import { tierFromParam, tierParam } from "@/lib/tiers";
+import { tierFromSearchParams, type TierSearchParams } from "@/lib/tiers";
 
 export const metadata: Metadata = { title: "Welcome" };
 
@@ -30,19 +30,13 @@ export const dynamic = "force-dynamic";
 export default async function WelcomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ tier?: string | string[] }>;
+  searchParams: TierSearchParams;
 }) {
-  const tier = tierFromParam((await searchParams).tier);
+  const tier = await tierFromSearchParams(searchParams);
   const { orgId } = await auth();
   const businessExists = Boolean(orgId);
 
   if (tier === null) redirect(businessExists ? "/home" : "/get-started");
 
-  return (
-    <WelcomeForm
-      tier={tierParam(tier)}
-      tierName={tier.name}
-      businessExists={businessExists}
-    />
-  );
+  return <WelcomeForm tier={tier} businessExists={businessExists} />;
 }

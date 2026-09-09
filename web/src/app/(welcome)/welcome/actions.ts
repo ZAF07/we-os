@@ -1,9 +1,10 @@
 "use server";
 
-import { engineErrorMessage, setTenantTier } from "@/lib/engine";
+import { EngineError, engineErrorMessage, setTenantTier } from "@/lib/engine";
 
 export interface RecordTierResult {
   error: string | null;
+  retryable: boolean;
 }
 
 /**
@@ -19,13 +20,17 @@ export interface RecordTierResult {
  *
  * Returns:
  *   No error when the tier is recorded, otherwise the engine's own message,
- *   returned rather than thrown so the page can show it beside a retry.
+ *   returned rather than thrown so the page can show it beside a retry. The
+ *   one refusal no retry can change — the business already has a different
+ *   tier — is marked not retryable, so the page offers Home instead.
  */
 export async function recordTier(tier: string): Promise<RecordTierResult> {
   try {
     await setTenantTier(tier);
-    return { error: null };
+    return { error: null, retryable: true };
   } catch (error) {
-    return { error: engineErrorMessage(error) };
+    const alreadySet =
+      error instanceof EngineError && error.type === "tier_already_set";
+    return { error: engineErrorMessage(error), retryable: !alreadySet };
   }
 }

@@ -73,6 +73,29 @@ def validate_external_auth_id(external_auth_id: str) -> str:
     return cleaned
 
 
+def refuse_a_different_tier(tenant: Tenant, tier: TierName) -> Tenant:
+    """Return a tenant whose recorded tier is the one asked for, or refuse.
+
+    The set-once judgement the minting directories share once their write
+    found the tier already filled: the same tier again is harmless — the
+    welcome flow's retry depends on it — and a different one is the typed
+    refusal (ADR-0027).
+
+    Args:
+        tenant: The tenant as recorded.
+        tier: The tier asked for.
+
+    Returns:
+        The tenant, unchanged.
+
+    Raises:
+        TierAlreadySetError: If the tenant records a different tier.
+    """
+    if tenant.tier is not None and tenant.tier != tier:
+        raise TierAlreadySetError(tenant.tier, tier)
+    return tenant
+
+
 class PassthroughTenantDirectory:
     """Reports the IdP's organization id as the tenant id, for the filesystem layer.
 
@@ -205,10 +228,8 @@ class InMemoryTenantDirectory:
         existing = self._by_tenant.get(tenant_id)
         if existing is None:
             raise ToolError(f"No tenant '{tenant_id}' is registered.")
-        if existing.tier == tier:
-            return existing
         if existing.tier is not None:
-            raise TierAlreadySetError(existing.tier, tier)
+            return refuse_a_different_tier(existing, tier)
         tenant = existing.model_copy(update={"tier": tier})
         self._remember(tenant)
         return tenant

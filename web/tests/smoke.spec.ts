@@ -62,8 +62,12 @@ test("Welcome sends a business owner to Home, and never changes their tier", asy
   // event, and billing does not exist yet.
   await page.goto("/welcome?tier=command");
   await expect(
+    page.getByRole("heading", { name: "Your business already has a tier." }),
+  ).toBeVisible();
+  await expect(
     page.getByText("This business is on the strategist tier"),
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await page.getByRole("link", { name: "Go to Home" }).click();
   await expect(page).toHaveURL("/home");
 });

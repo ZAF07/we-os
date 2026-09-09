@@ -30,7 +30,7 @@ from marketing_os.adapters.tenants import (
     PassthroughTenantDirectory,
 )
 from marketing_os.errors import TierAlreadySetError, ToolError, UnauthenticatedError
-from marketing_os.schemas import RECOMMENDED_TIER, TIER_NAMES, VerifiedClaims
+from marketing_os.schemas import RECOMMENDED_TIER, TIER_NAMES, Tenant, VerifiedClaims
 
 CLERK_ORG = "org_3IlRVjdAue93iyWDYAQYGLHcjBx"
 
@@ -288,10 +288,37 @@ def test_a_request_stores_its_documents_under_the_platform_tenant_not_the_org_id
 AUTHORIZED = {"Authorization": "Bearer any.token"}
 
 
+class _RememberingDirectory(InMemoryTenantDirectory):
+    """A minting directory that also records which organizations it resolved.
+
+    ``get`` is keyed by the platform id, which a test that wants to prove no
+    tenant was minted for an organization does not have — so the directory
+    says which organizations reached it instead.
+    """
+
+    def __init__(self) -> None:
+        """Initialise the empty directory and its record of resolutions."""
+        super().__init__()
+        self.resolved: list[str] = []
+
+    def resolve(self, *, external_auth_id: str, name: str | None = None) -> Tenant:
+        """Resolve as the in-memory directory does, remembering the organization.
+
+        Args:
+            external_auth_id: The IdP's identifier for the business.
+            name: The business's display name from the verified claim.
+
+        Returns:
+            The tenant that owns the business's data.
+        """
+        self.resolved.append(external_auth_id)
+        return super().resolve(external_auth_id=external_auth_id, name=name)
+
+
 @pytest.fixture
 def tier_api(
     repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[tuple[TestClient, InMemoryTenantDirectory]]:
+) -> Iterator[tuple[TestClient, _RememberingDirectory]]:
     """Yield an API client whose identity resolves through a minting directory.
 
     The default fixtures override the identity dependency wholesale, which is
@@ -314,7 +341,7 @@ def tier_api(
     api.get_settings.cache_clear()
     install_prototype_adapters(repo)
     api.app.dependency_overrides.clear()
-    directory = InMemoryTenantDirectory()
+    directory = _RememberingDirectory()
     monkeypatch.setattr(api, "get_token_verifier", lambda: _FakeVerifier())
     monkeypatch.setattr(api, "get_tenant_directory", lambda: directory)
     with TestClient(api.app) as client:
@@ -324,7 +351,7 @@ def tier_api(
 
 
 def test_a_business_that_has_never_set_a_tier_reports_none_over_the_api(
-    tier_api: tuple[TestClient, InMemoryTenantDirectory],
+    tier_api: tuple[TestClient, _RememberingDirectory],
 ) -> None:
     client, _ = tier_api
 
@@ -332,7 +359,7 @@ def test_a_business_that_has_never_set_a_tier_reports_none_over_the_api(
 
 
 def test_setting_a_tier_records_it_and_the_tenant_reads_it_back(
-    tier_api: tuple[TestClient, InMemoryTenantDirectory],
+    tier_api: tuple[TestClient, _RememberingDirectory],
 ) -> None:
     client, directory = tier_api
 
@@ -345,21 +372,22 @@ def test_setting_a_tier_records_it_and_the_tenant_reads_it_back(
 
 
 def test_the_tier_call_is_the_first_call_a_new_business_makes(
-    tier_api: tuple[TestClient, InMemoryTenantDirectory],
+    tier_api: tuple[TestClient, _RememberingDirectory],
 ) -> None:
     """There is no create-tenant endpoint: the tier call mints the tenant it attaches to."""
     client, directory = tier_api
-    assert directory.get(CLERK_ORG) is None
+    assert directory.resolved == []
 
     client.put("/tenant/tier", json={"tier": "strategist"}, headers=AUTHORIZED)
 
+    assert directory.resolved == [CLERK_ORG]
     minted = directory.resolve(external_auth_id=CLERK_ORG)
     assert minted.tenant_id.startswith("ten_")
     assert minted.tier == "strategist"
 
 
 def test_repeating_the_recorded_tier_succeeds_over_the_api(
-    tier_api: tuple[TestClient, InMemoryTenantDirectory],
+    tier_api: tuple[TestClient, _RememberingDirectory],
 ) -> None:
     client, _ = tier_api
     client.put("/tenant/tier", json={"tier": "operator"}, headers=AUTHORIZED)
@@ -371,7 +399,7 @@ def test_repeating_the_recorded_tier_succeeds_over_the_api(
 
 
 def test_naming_a_different_tier_is_refused_with_409_and_a_typed_detail(
-    tier_api: tuple[TestClient, InMemoryTenantDirectory],
+    tier_api: tuple[TestClient, _RememberingDirectory],
 ) -> None:
     client, _ = tier_api
     client.put("/tenant/tier", json={"tier": "operator"}, headers=AUTHORIZED)
@@ -389,7 +417,7 @@ def test_naming_a_different_tier_is_refused_with_409_and_a_typed_detail(
 
 
 def test_an_unknown_tier_name_is_refused_with_422(
-    tier_api: tuple[TestClient, InMemoryTenantDirectory],
+    tier_api: tuple[TestClient, _RememberingDirectory],
 ) -> None:
     client, _ = tier_api
 
@@ -403,7 +431,7 @@ def test_an_unknown_tier_name_is_refused_with_422(
 
 
 def test_a_caller_with_no_organization_claim_is_refused_with_401(
-    tier_api: tuple[TestClient, InMemoryTenantDirectory],
+    tier_api: tuple[TestClient, _RememberingDirectory],
 ) -> None:
     """The redirect in the web app is a convenience; this refusal is the boundary."""
     client, directory = tier_api
@@ -416,11 +444,11 @@ def test_a_caller_with_no_organization_claim_is_refused_with_401(
 
     assert refused.status_code == 401
     assert refused.json()["type"] == "unauthenticated"
-    assert directory.get(CLERK_ORG) is None
+    assert directory.resolved == []
 
 
 def test_an_unauthenticated_caller_cannot_set_a_tier(
-    tier_api: tuple[TestClient, InMemoryTenantDirectory],
+    tier_api: tuple[TestClient, _RememberingDirectory],
 ) -> None:
     client, _ = tier_api
 

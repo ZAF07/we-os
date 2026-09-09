@@ -196,7 +196,8 @@ def _upsert_tenant(connection: Any, tenant_id: str, name: str, organization_id: 
     that exist before anyone chose a tier — exactly the businesses the schema's
     backfill is for — but this seed writes its rows *after* ``init-db`` has run,
     so the backfill never sees them. Left without a tier, Home would send both
-    test users to Welcome and every signed-in spec would fail at the gate.
+    test users to Get Started to choose one, and every signed-in spec would
+    fail there.
 
     Args:
         connection: An open psycopg connection with administrative rights.

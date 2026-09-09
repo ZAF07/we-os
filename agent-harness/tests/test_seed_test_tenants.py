@@ -94,7 +94,7 @@ def test_seeding_writes_both_tenants(empty_database: str) -> None:
 
 
 def test_both_tenants_carry_the_recommended_tier(empty_database: str) -> None:
-    """The suite's businesses predate tiers, and Home sends a tierless business to Welcome."""
+    """The suite's businesses predate tiers, and Home sends a tierless one to choose."""
     from marketing_os.schemas import RECOMMENDED_TIER
 
     seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)

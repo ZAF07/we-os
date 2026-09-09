@@ -100,6 +100,24 @@ export function tierFromParam(
   return TIERS.find((tier) => tierParam(tier) === name) ?? null;
 }
 
+/** The query string as Next.js hands it to a page, read for the tier it carries. */
+export type TierSearchParams = Promise<{ tier?: string | string[] }>;
+
+/**
+ * Reads the tier a page's query string names.
+ *
+ * Args:
+ *   searchParams: The page's search params, as Next.js provides them.
+ *
+ * Returns:
+ *   The tier, or null when the query string names none.
+ */
+export async function tierFromSearchParams(
+  searchParams: TierSearchParams,
+): Promise<Tier | null> {
+  return tierFromParam((await searchParams).tier);
+}
+
 /**
  * Builds the Welcome address, carrying the tier when there is one.
  *

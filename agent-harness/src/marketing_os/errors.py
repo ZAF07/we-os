@@ -130,7 +130,7 @@ class TierAlreadySetError(MarketingOSError):
     A tier is set once (ADR-0027). Repeating the recorded tier is not an error —
     the welcome flow's retry depends on that — but changing it is a billing
     event, and billing does not exist yet. When it does, a change arrives on a
-    webhook rather than on a call the account holder makes about their own
+    webhook rather than on a call the business owner makes about their own
     subscription, so this refusal is what stands in for that until then.
     """
 

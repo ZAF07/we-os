@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { tierParam, type Tier } from "@/lib/tiers";
 
 /**
  * Brings a business into being: a name, then the Organization, then the tier.
@@ -32,20 +33,18 @@ import { Label } from "@/components/ui/label";
  * When the session already carries a business there is nothing to name, so
  * the tier is recorded on arrival and the person continues to Home. That is
  * how a business whose tier was never recorded — sent by Home to choose one —
- * finishes.
+ * finishes. A business that already has a different tier is refused by the
+ * engine, and no retry can change that, so that refusal is shown without one.
  *
  * Args:
- *   tier: The tier name as the engine spells it.
- *   tierName: The tier name as the person read it on the tier card.
+ *   tier: The tier the person chose.
  *   businessExists: Whether the session already carries an Organization.
  */
 export function WelcomeForm({
   tier,
-  tierName,
   businessExists,
 }: {
-  tier: string;
-  tierName: string;
+  tier: Tier;
   businessExists: boolean;
 }) {
   const router = useRouter();
@@ -55,11 +54,14 @@ export function WelcomeForm({
   const [created, setCreated] = useState(businessExists);
   const [busy, setBusy] = useState(businessExists);
   const [error, setError] = useState<string | null>(null);
+  const [retryable, setRetryable] = useState(true);
+  const tierName = tierParam(tier);
 
-  const settle = useCallback(
+  const afterRecordTier = useCallback(
     (result: RecordTierResult) => {
       if (result.error !== null) {
         setError(result.error);
+        setRetryable(result.retryable);
         setBusy(false);
         return;
       }
@@ -69,20 +71,20 @@ export function WelcomeForm({
   );
 
   const finish = useCallback(
-    async () => settle(await recordTier(tier)),
-    [settle, tier],
+    async () => afterRecordTier(await recordTier(tierName)),
+    [afterRecordTier, tierName],
   );
 
   useEffect(() => {
     if (!businessExists) return;
     let superseded = false;
-    void recordTier(tier).then((result) => {
-      if (!superseded) settle(result);
+    void recordTier(tierName).then((result) => {
+      if (!superseded) afterRecordTier(result);
     });
     return () => {
       superseded = true;
     };
-  }, [businessExists, settle, tier]);
+  }, [businessExists, afterRecordTier, tierName]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -126,24 +128,36 @@ export function WelcomeForm({
             id="welcome-heading"
             className="mt-3 text-2xl font-bold tracking-tight"
           >
-            {error ? "Almost there." : "Setting up your business."}
+            {error === null
+              ? "One moment."
+              : retryable
+                ? "Almost there."
+                : "Your business already has a tier."}
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-slate-600">
-            {error
-              ? "Your business exists. Recording its tier did not go through."
-              : `Recording the ${tierName} tier. One moment.`}
+            {error === null
+              ? `Recording the ${tier.name} tier for your business.`
+              : retryable
+                ? "Your business exists, but its tier was not recorded."
+                : "A tier is chosen once, so there is nothing to record here."}
           </p>
-          {error && (
+          {error !== null && (
             <p role="alert" className="mt-4 text-sm text-destructive">
               {error}
             </p>
           )}
-          {error && (
+          {error !== null && (
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button size="xl" onClick={retry} disabled={busy}>
-                Try again
-              </Button>
-              <Button asChild size="xl" variant="outline">
+              {retryable && (
+                <Button size="xl" onClick={retry} disabled={busy}>
+                  Try again
+                </Button>
+              )}
+              <Button
+                asChild
+                size="xl"
+                variant={retryable ? "outline" : "default"}
+              >
                 <Link href="/home">Go to Home</Link>
               </Button>
             </div>
@@ -158,7 +172,8 @@ export function WelcomeForm({
             Name your business.
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-slate-600">
-            You chose the {tierName} tier. Its marketing lives here from now on.
+            You chose the {tier.name} tier. Its marketing lives here from now
+            on.
           </p>
           <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
             <div className="flex flex-col gap-2">
