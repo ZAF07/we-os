@@ -3,7 +3,10 @@ import path from "node:path";
 import { clerk, clerkSetup } from "@clerk/testing/playwright";
 import { expect, test as setup } from "@playwright/test";
 
-import { deleteOrganizationsOf } from "./clerk-backend";
+import {
+  allowOrganizationCreationFor,
+  deleteOrganizationsOf,
+} from "./clerk-backend";
 import { TENANTLESS_EMAIL, TENANTLESS_SKIP_REASON } from "./tenantless-user";
 
 /**
@@ -19,7 +22,11 @@ import { TENANTLESS_EMAIL, TENANTLESS_SKIP_REASON } from "./tenantless-user";
  * The user must belong to no Organization: the whole project is about what a
  * session with no business can and cannot reach. A previous run that failed
  * before its teardown may have left one behind, so any the user belongs to
- * are deleted first — nothing but this suite ever creates them.
+ * are deleted first — nothing but this suite ever creates them. The user must
+ * also be allowed to create one, which Clerk decides per user from the
+ * instance default in force when the user was created; a user created before
+ * that default was turned on is repaired here, and the repair is announced so
+ * the instance default gets a second look — every real sign-up depends on it.
  */
 
 export const TENANTLESS_STORAGE_STATE = path.join(
@@ -33,6 +40,13 @@ setup("authenticate the tenantless user", async ({ page }) => {
 
   await clerkSetup();
   await deleteOrganizationsOf(email);
+  if (await allowOrganizationCreationFor(email)) {
+    console.log(
+      `Turned on "create organizations" for ${email}. Check that the Clerk ` +
+        'instance\'s "allow users to create organizations" default is on too, ' +
+        "or real sign-ups will fail at Welcome the same way.",
+    );
+  }
 
   await page.goto("/sign-in");
   await clerk.loaded({ page });

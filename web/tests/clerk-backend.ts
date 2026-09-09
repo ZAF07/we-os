@@ -47,6 +47,32 @@ async function userIdFor(email: string): Promise<string> {
 }
 
 /**
+ * Lets a test user create Organizations, if Clerk currently forbids it.
+ *
+ * Clerk stamps each new user with the instance's "allow users to create
+ * organizations" default at creation time. A test user created before that
+ * default was turned on keeps `false` for good, and Welcome then fails with
+ * "Organization creation is not enabled for this user" — a fact about the
+ * fixture, not about the app, so the fixture repairs it.
+ *
+ * Args:
+ *   email: The test user's email address.
+ *
+ * Returns:
+ *   Whether the flag had to be turned on.
+ */
+export async function allowOrganizationCreationFor(
+  email: string,
+): Promise<boolean> {
+  const clerk = backend();
+  const userId = await userIdFor(email);
+  const user = await clerk.users.getUser(userId);
+  if (user.createOrganizationEnabled) return false;
+  await clerk.users.updateUser(userId, { createOrganizationEnabled: true });
+  return true;
+}
+
+/**
  * Deletes every Organization a test user belongs to.
  *
  * Args:
