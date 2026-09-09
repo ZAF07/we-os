@@ -13,14 +13,19 @@ external id beside the business name. The passthrough adapter is for the
 filesystem layer, where a tenant *is* a directory name and there is no table to
 mint an id in: it reports the external id as the tenant id, which is exactly the
 pre-Postgres behaviour it preserves.
+
+The directory also records a business's **tier**, once (ADR-0027). The tier is
+the platform's own record rather than the identity provider's, so it lives on
+the tenant row beside the pairing — which is why the passthrough adapter, having
+no row, holds none.
 """
 
 from __future__ import annotations
 
 from uuid import uuid4
 
-from marketing_os.errors import ToolError
-from marketing_os.schemas import Tenant
+from marketing_os.errors import TierAlreadySetError, ToolError
+from marketing_os.schemas import Tenant, TierName
 
 TENANT_ID_PREFIX = "ten_"
 
@@ -112,6 +117,27 @@ class PassthroughTenantDirectory:
             return None
         return Tenant(tenant_id=cleaned, name=cleaned, external_auth_id=cleaned)
 
+    def set_tier(self, tenant_id: str, tier: TierName) -> Tenant:
+        """Accept a tier for a tenant, and keep none of it.
+
+        The filesystem layer has no table to hold a tier in, so nothing is
+        recorded and the tenant keeps reporting no tier. The call is accepted
+        rather than refused so the flow that records a tier does not fail on the
+        one layer that cannot keep it.
+
+        Args:
+            tenant_id: The platform tenant id, which here is the external id.
+            tier: The tier asked for, which is not retained.
+
+        Returns:
+            The tenant, still carrying no tier.
+
+        Raises:
+            ToolError: If the tenant id is empty.
+        """
+        cleaned = validate_external_auth_id(tenant_id)
+        return Tenant(tenant_id=cleaned, name=cleaned, external_auth_id=cleaned)
+
 
 class InMemoryTenantDirectory:
     """Mints platform tenant ids and holds the pairings in a dict.
@@ -146,9 +172,9 @@ class InMemoryTenantDirectory:
             tenant_id=existing.tenant_id if existing else new_tenant_id(),
             name=display_name_for(cleaned, name),
             external_auth_id=cleaned,
+            tier=existing.tier if existing else None,
         )
-        self._by_external[cleaned] = tenant
-        self._by_tenant[tenant.tenant_id] = tenant
+        self._remember(tenant)
         return tenant
 
     def get(self, tenant_id: str) -> Tenant | None:
@@ -161,3 +187,37 @@ class InMemoryTenantDirectory:
             The tenant, or ``None`` when no tenant has that id.
         """
         return self._by_tenant.get(tenant_id)
+
+    def set_tier(self, tenant_id: str, tier: TierName) -> Tenant:
+        """Record a tenant's tier, once.
+
+        Args:
+            tenant_id: The platform tenant id.
+            tier: The tier to record.
+
+        Returns:
+            The tenant, carrying the tier it now has recorded.
+
+        Raises:
+            TierAlreadySetError: If a different tier is already recorded.
+            ToolError: If no tenant has that id.
+        """
+        existing = self._by_tenant.get(tenant_id)
+        if existing is None:
+            raise ToolError(f"No tenant '{tenant_id}' is registered.")
+        if existing.tier == tier:
+            return existing
+        if existing.tier is not None:
+            raise TierAlreadySetError(existing.tier, tier)
+        tenant = existing.model_copy(update={"tier": tier})
+        self._remember(tenant)
+        return tenant
+
+    def _remember(self, tenant: Tenant) -> None:
+        """Index a tenant by both of its identifiers.
+
+        Args:
+            tenant: The tenant to hold.
+        """
+        self._by_external[tenant.external_auth_id] = tenant
+        self._by_tenant[tenant.tenant_id] = tenant

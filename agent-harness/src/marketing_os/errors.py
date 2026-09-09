@@ -124,6 +124,41 @@ class RunConflictError(MarketingOSError):
         }
 
 
+class TierAlreadySetError(MarketingOSError):
+    """A different tier was named for a business that already has one recorded.
+
+    A tier is set once (ADR-0027). Repeating the recorded tier is not an error —
+    the welcome flow's retry depends on that — but changing it is a billing
+    event, and billing does not exist yet. When it does, a change arrives on a
+    webhook rather than on a call the account holder makes about their own
+    subscription, so this refusal is what stands in for that until then.
+    """
+
+    http_status = 409
+    error_type = "tier_already_set"
+
+    def __init__(self, recorded_tier: str, requested_tier: str) -> None:
+        """Initialise the error.
+
+        Args:
+            recorded_tier: The tier the business already has.
+            requested_tier: The tier the caller asked for instead.
+        """
+        message = (
+            f"This business is on the {recorded_tier} tier. Changing a tier is not available yet."
+        )
+        super().__init__(message)
+        self.recorded_tier = recorded_tier
+        self.requested_tier = requested_tier
+        self.detail = {
+            "type": self.error_type,
+            "status": self.http_status,
+            "message": message,
+            "recorded_tier": recorded_tier,
+            "requested_tier": requested_tier,
+        }
+
+
 class StageNotAwaitingApprovalError(MarketingOSError):
     """A stage was approved or revised while nothing was waiting at its gate.
 

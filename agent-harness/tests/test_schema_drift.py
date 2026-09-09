@@ -24,6 +24,7 @@ from marketing_os.adapters.postgres.schema import (
     ensure_schema,
     schema_drift,
 )
+from marketing_os.schemas import RECOMMENDED_TIER
 
 
 @contextmanager
@@ -59,6 +60,7 @@ def test_every_table_declares_the_columns_it_is_checked_for() -> None:
         "started_at",
     )
     assert "credits" in EXPECTED_COLUMNS["tenants"]
+    assert "tier" in EXPECTED_COLUMNS["tenants"]
     assert "sequence" in EXPECTED_COLUMNS["deliverable_versions"]
     for table, columns in EXPECTED_COLUMNS.items():
         assert columns, f"{table} declares no expected columns"
@@ -85,6 +87,79 @@ def test_columns_added_after_a_table_shipped_are_repaired_not_only_created() -> 
         assert f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}" in SCHEMA_SQL, (
             f"{table}.{column} is only created inside CREATE TABLE IF NOT EXISTS"
         )
+
+
+def test_the_tier_backfill_takes_its_default_from_the_tier_definition() -> None:
+    # The schema module names no tier of its own: the default it backfills is
+    # the one the tier definition already marks as recommended, so renaming or
+    # re-choosing it is one edit, not two.
+    assert f"UPDATE tenants SET tier = '{RECOMMENDED_TIER}'" in SCHEMA_SQL
+
+
+@pytest.mark.slow
+def test_a_database_that_predates_tiers_is_backfilled_to_the_recommended_tier(
+    postgres_dsn: str, postgres_superuser_dsn: str
+) -> None:
+    """Assert a business that existed before tiers is given the recommended one.
+
+    Nothing yet distinguishes the tiers, so a default costs nothing and is
+    corrected when billing arrives (ADR-0027). The backfill must reach every
+    row the column was added under, and the drift check must name the column
+    on a database that lacks it.
+
+    Args:
+        postgres_dsn: The application-role connection string.
+        postgres_superuser_dsn: The administrative connection string.
+    """
+    with _admin(postgres_superuser_dsn) as admin:
+        admin.execute("ALTER TABLE tenants DROP COLUMN tier")
+        admin.execute(
+            "INSERT INTO tenants (tenant_id, name, external_auth_id)"
+            " VALUES ('pre_tier', 'Pre Tier', 'auth-pre-tier')"
+        )
+        try:
+            assert any("tenants.tier" in item for item in schema_drift(admin))
+            ensure_schema(admin)
+            assert schema_drift(admin) == []
+            backfilled = admin.execute(
+                "SELECT tier FROM tenants WHERE tenant_id = 'pre_tier'"
+            ).fetchone()
+            assert backfilled == (RECOMMENDED_TIER,)
+        finally:
+            admin.execute("DELETE FROM tenants WHERE tenant_id = 'pre_tier'")
+            ensure_schema(admin)
+
+
+@pytest.mark.slow
+def test_the_backfill_leaves_a_recorded_tier_and_an_unset_one_alone(
+    postgres_superuser_dsn: str,
+) -> None:
+    """Assert the backfill fires only when the column is first added.
+
+    A tier a business chose must survive a re-run of ``init-db``, and so must
+    the absence of one: a tenant minted between deploys, whose owner has not
+    finished the welcome flow, is sent back to finish by the app rather than
+    quietly defaulted here.
+
+    Args:
+        postgres_superuser_dsn: The administrative connection string.
+    """
+    with _admin(postgres_superuser_dsn) as admin:
+        admin.execute(
+            "INSERT INTO tenants (tenant_id, name, external_auth_id, tier) VALUES"
+            " ('chose_command', 'Chose', 'auth-chose', 'command'),"
+            " ('mid_welcome', 'Mid Welcome', 'auth-mid-welcome', NULL)"
+        )
+        try:
+            ensure_schema(admin)
+            ensure_schema(admin)
+            rows = admin.execute(
+                "SELECT tenant_id, tier FROM tenants"
+                " WHERE tenant_id IN ('chose_command', 'mid_welcome') ORDER BY tenant_id"
+            ).fetchall()
+            assert rows == [("chose_command", "command"), ("mid_welcome", None)]
+        finally:
+            admin.execute("DELETE FROM tenants WHERE tenant_id IN ('chose_command', 'mid_welcome')")
 
 
 @pytest.mark.slow

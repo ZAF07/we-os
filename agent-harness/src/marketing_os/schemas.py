@@ -8,7 +8,44 @@ output the QA reviewer is asked to return.
 
 from __future__ import annotations
 
+from typing import Literal, get_args
+
 from pydantic import BaseModel, Field
+
+TierName = Literal["operator", "strategist", "command"]
+"""The three tiers a business picks from before its tenant exists (ADR-0027).
+
+Names only, in the lowercase spelling the tier card sends as a query parameter.
+Prices and credit amounts are the web app's: they live in ``web/src/lib/tiers.ts``
+and nowhere else, because the pages that show them are public and make no
+engine call. That module and this literal point at each other — rename a tier
+in one and the other must follow, or every welcome flow ends in a 422.
+"""
+
+TIER_NAMES: tuple[TierName, ...] = get_args(TierName)
+"""The tier names in the order the web app shows them, smallest first."""
+
+RECOMMENDED_TIER: TierName = "strategist"
+"""The tier the product recommends to a business unsure which to pick.
+
+The web app highlights the same tier. It is also the tier existing businesses
+were backfilled to when tiers arrived, since nothing yet distinguishes them.
+"""
+
+
+def tier_from_name(name: str) -> TierName | None:
+    """Return the tier a name refers to.
+
+    Args:
+        name: The name a caller sent, as it arrived.
+
+    Returns:
+        The tier, or ``None`` when the name is not one of the three.
+    """
+    for tier in TIER_NAMES:
+        if tier == name:
+            return tier
+    return None
 
 
 class VerifiedClaims(BaseModel):
@@ -48,11 +85,14 @@ class Tenant(BaseModel):
         name: The business's display name.
         external_auth_id: The IdP's identifier for the business — for Clerk, the
             Organization id (``org_...``).
+        tier: The tier the business chose, recorded once through the tenant
+            directory (ADR-0027); ``None`` until it has been.
     """
 
     tenant_id: str
     name: str
     external_auth_id: str
+    tier: TierName | None = None
 
 
 class VerifiedIdentity(BaseModel):
@@ -71,6 +111,7 @@ class VerifiedIdentity(BaseModel):
             kept for support and audit.
         email: The signed-in person's email address, when the token carries one.
         business_name: The tenant's display name.
+        tier: The tenant's recorded tier, or ``None`` if it has never set one.
     """
 
     user_id: str
@@ -78,6 +119,7 @@ class VerifiedIdentity(BaseModel):
     organization_id: str
     email: str | None = None
     business_name: str | None = None
+    tier: TierName | None = None
 
 
 class Discrepancy(BaseModel):

@@ -33,6 +33,7 @@ from marketing_os.schemas import (
     ReviewVerdict,
     RunRecord,
     Tenant,
+    TierName,
     Usage,
     VerifiedClaims,
 )
@@ -335,6 +336,27 @@ class TenantDirectory(Protocol):
 
         Returns:
             The tenant, or ``None`` when no tenant has that id.
+        """
+        ...
+
+    def set_tier(self, tenant_id: str, tier: TierName) -> Tenant:
+        """Record a tenant's tier, once (ADR-0027).
+
+        Recording a tier where none is recorded succeeds. Repeating the recorded
+        tier succeeds and changes nothing, so the welcome flow can retry the call
+        alone after a transient failure. Naming a different tier is refused: a
+        tier change is a billing event, and billing does not exist yet.
+
+        Args:
+            tenant_id: The platform tenant id.
+            tier: The tier to record.
+
+        Returns:
+            The tenant, carrying the tier it now has recorded.
+
+        Raises:
+            TierAlreadySetError: If a different tier is already recorded.
+            ToolError: If no tenant has that id.
         """
         ...
 

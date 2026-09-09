@@ -4,6 +4,10 @@ This is the adapter the user's note is about: the Clerk Organization id belongs
 in a column of the ``tenants`` table, paired with the business's name and the
 platform's own ``tenant_id``, rather than serving as the identifier that every
 document path, run row and checkpoint thread is partitioned by (ADR-0014).
+
+The same row records the business's tier, once (ADR-0027): a fact the product
+will bill on belongs in the platform's own table, not only in a vendor's
+organization metadata.
 """
 
 from __future__ import annotations
@@ -15,7 +19,22 @@ from marketing_os.adapters.tenants import (
     new_tenant_id,
     validate_external_auth_id,
 )
-from marketing_os.schemas import Tenant
+from marketing_os.errors import TierAlreadySetError, ToolError
+from marketing_os.schemas import Tenant, TierName
+
+TENANT_COLUMNS = "tenant_id, name, external_auth_id, tier"
+
+
+def _tenant_from_row(row: Any) -> Tenant:
+    """Build a tenant from a row selected with :data:`TENANT_COLUMNS`.
+
+    Args:
+        row: The row, in column order.
+
+    Returns:
+        The tenant the row describes.
+    """
+    return Tenant(tenant_id=row[0], name=row[1], external_auth_id=row[2], tier=row[3])
 
 
 class PostgresTenantDirectory:
@@ -34,7 +53,8 @@ class PostgresTenantDirectory:
 
         A business's first authenticated request provisions its tenant; later
         requests find the same row, so renaming the organization in the IdP
-        keeps the platform's copy current without disturbing ``tenant_id``.
+        keeps the platform's copy current without disturbing ``tenant_id`` or
+        the tier recorded on it.
 
         This runs on **every authenticated request**, so the common case — a
         known business whose name has not changed — is a read. Writing
@@ -55,18 +75,18 @@ class PostgresTenantDirectory:
         display_name = display_name_for(cleaned, name)
         with self._pool.connection() as connection:
             row = connection.execute(
-                "SELECT tenant_id, name, external_auth_id FROM tenants WHERE external_auth_id = %s",
+                f"SELECT {TENANT_COLUMNS} FROM tenants WHERE external_auth_id = %s",
                 (cleaned,),
             ).fetchone()
             if row is not None and row[1] == display_name:
-                return Tenant(tenant_id=row[0], name=row[1], external_auth_id=row[2])
+                return _tenant_from_row(row)
             row = connection.execute(
                 "INSERT INTO tenants (tenant_id, name, external_auth_id) VALUES (%s, %s, %s) "
                 "ON CONFLICT (external_auth_id) DO UPDATE SET name = EXCLUDED.name "
-                "RETURNING tenant_id, name, external_auth_id",
+                f"RETURNING {TENANT_COLUMNS}",
                 (new_tenant_id(), display_name, cleaned),
             ).fetchone()
-        return Tenant(tenant_id=row[0], name=row[1], external_auth_id=row[2])
+        return _tenant_from_row(row)
 
     def get(self, tenant_id: str) -> Tenant | None:
         """Return a tenant by its platform id.
@@ -79,9 +99,46 @@ class PostgresTenantDirectory:
         """
         with self._pool.connection() as connection:
             row = connection.execute(
-                "SELECT tenant_id, name, external_auth_id FROM tenants WHERE tenant_id = %s",
+                f"SELECT {TENANT_COLUMNS} FROM tenants WHERE tenant_id = %s",
                 (tenant_id,),
             ).fetchone()
         if row is None:
             return None
-        return Tenant(tenant_id=row[0], name=row[1], external_auth_id=row[2])
+        return _tenant_from_row(row)
+
+    def set_tier(self, tenant_id: str, tier: TierName) -> Tenant:
+        """Record a tenant's tier, once.
+
+        The write is conditional on the column being empty, so two requests
+        racing to record a first tier cannot both win: the second finds the
+        row already filled and is judged against what it holds.
+
+        Args:
+            tenant_id: The platform tenant id.
+            tier: The tier to record.
+
+        Returns:
+            The tenant, carrying the tier it now has recorded.
+
+        Raises:
+            TierAlreadySetError: If a different tier is already recorded.
+            ToolError: If no tenant has that id.
+        """
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "UPDATE tenants SET tier = %s WHERE tenant_id = %s AND tier IS NULL "
+                f"RETURNING {TENANT_COLUMNS}",
+                (tier, tenant_id),
+            ).fetchone()
+            if row is not None:
+                return _tenant_from_row(row)
+            row = connection.execute(
+                f"SELECT {TENANT_COLUMNS} FROM tenants WHERE tenant_id = %s",
+                (tenant_id,),
+            ).fetchone()
+        if row is None:
+            raise ToolError(f"No tenant '{tenant_id}' is registered.")
+        recorded = _tenant_from_row(row)
+        if recorded.tier != tier:
+            raise TierAlreadySetError(str(recorded.tier), tier)
+        return recorded

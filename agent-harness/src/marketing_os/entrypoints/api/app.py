@@ -3,6 +3,7 @@
 Endpoints:
   GET  /health                          -> liveness; the only unauthenticated route
   GET  /me                              -> the verified identity and its tenant
+  PUT  /tenant/tier                     -> record the business's tier, once
   GET  /usage                           -> spend against credits, per tenant and campaign
   GET  /questionnaire                   -> the published question set
   GET  /brand-dna                       -> the tenant's answers and rendered markdown
@@ -118,6 +119,7 @@ from marketing_os.ports import (
 )
 from marketing_os.questionnaire import completeness, render_brand_dna
 from marketing_os.schemas import (
+    TIER_NAMES,
     ApprovalDecision,
     BrandDnaRecord,
     CampaignResult,
@@ -129,6 +131,7 @@ from marketing_os.schemas import (
     RunRecord,
     VerifiedIdentity,
     human_revisions_used,
+    tier_from_name,
 )
 
 if TYPE_CHECKING:
@@ -428,6 +431,7 @@ def get_identity(request: Request) -> VerifiedIdentity:
         organization_id=tenant.external_auth_id,
         email=claims.email,
         business_name=tenant.name,
+        tier=tenant.tier,
     )
 
 
@@ -492,6 +496,19 @@ def use_backend(backend: StorageBackend | None) -> None:
     global _backend_override
     _backend_override = backend
     reset_providers()
+
+
+class SetTier(BaseModel):
+    """Request body for recording the business's tier.
+
+    Carries the tier alone: the business it belongs to comes from the verified
+    token, never from the body (ADR-0013).
+
+    Attributes:
+        tier: The name of the tier chosen, as the tier card sent it.
+    """
+
+    tier: str
 
 
 class DnaAnswersUpsert(BaseModel):
@@ -598,13 +615,50 @@ def me(identity: Identity) -> dict[str, object]:
         identity: The verified identity, resolved from the bearer token.
 
     Returns:
-        The user id, email, and business name from the verified claim.
+        The user id, email, and business name from the verified claim, and the
+        tier the business has recorded — ``None`` until it has one, which is
+        how the interface knows to send a new business back to finish.
     """
     return {
         "user_id": identity.user_id,
         "email": identity.email,
         "business_name": identity.business_name or identity.tenant_id,
+        "tier": identity.tier,
     }
+
+
+@app.put("/tenant/tier")
+def set_tenant_tier(body: SetTier, identity: Identity) -> dict[str, object]:
+    """Record the business's tier, once (ADR-0027).
+
+    The first call a new business makes: resolving the identity has just minted
+    its tenant, and this attaches the tier the person chose before they had an
+    account. Repeating the recorded tier succeeds and changes nothing, so the
+    welcome flow can retry after a transient failure without creating anything
+    twice. Naming a different tier is refused with the typed 409 — a tier change
+    is a billing event, and billing does not exist yet.
+
+    Args:
+        body: The tier to record.
+        identity: The verified identity whose tenant the tier is recorded on.
+
+    Returns:
+        The tier the business now has recorded.
+
+    Raises:
+        HTTPException: 422 for a name that is not one of the three tiers, 409
+            when a different tier is already recorded.
+    """
+    tier = tier_from_name(body.tier)
+    if tier is None:
+        raise _http_error(
+            ValidationError(f"Unknown tier '{body.tier}'. Choose one of: {', '.join(TIER_NAMES)}.")
+        )
+    try:
+        tenant = get_tenant_directory().set_tier(identity.tenant_id, tier)
+    except MarketingOSError as exc:
+        raise _http_error(exc) from exc
+    return {"tier": tenant.tier}
 
 
 @app.get("/usage")

@@ -42,6 +42,8 @@ info:
     alongside the credits and both answer 409:
     `revision_limit_reached` bounds how often one deliverable may be sent back,
     and `run_limit_reached` bounds how often one campaign may be run.
+    `tier_already_set` (409) refuses a different tier for a business that has
+    one recorded: a tier is set once, and changing it is a billing event.
 servers:
   - url: http://localhost:4010
     description: Local mock server (Prism)
@@ -52,6 +54,8 @@ security:
 tags:
   - name: session
     description: The signed-in user and their business.
+  - name: tenant
+    description: The business itself — the tier it chose before it had an account.
   - name: questionnaire
     description: The admin-curated question set that authors the Brand DNA.
   - name: brand-dna
@@ -105,8 +109,67 @@ paths:
                 user_id: usr_9f2c
                 email: sam@coastcoffee.example
                 business_name: Coast Coffee
+                tier: strategist
         "401":
           $ref: "#/components/responses/Unauthenticated"
+
+  /tenant/tier:
+    put:
+      operationId: setTenantTier
+      summary: Record the business's tier, once
+      description: |
+        Records the tier a person chose before their account existed against the
+        business their verified token names. It is the first call a new business
+        makes: resolving the identity mints the tenant, and this attaches the
+        tier to it. There is no create-tenant operation.
+
+        Set once. Repeating the recorded tier succeeds and changes nothing, so
+        the welcome flow can retry after a transient failure. Naming a different
+        tier is refused with `tier_already_set`: a tier change is a billing
+        event, and billing does not exist yet. The tier names are the lowercase
+        ones the tier card sends; any other name is a `validation` error.
+      tags: [tenant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetTier"
+            example:
+              tier: strategist
+      responses:
+        "200":
+          description: The tier the business now has recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantTier"
+              example:
+                tier: strategist
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "409":
+          description: A different tier is already recorded for this business.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TierAlreadySetError"
+              example:
+                type: tier_already_set
+                status: 409
+                message: This business is on the strategist tier. Changing a tier is not available yet.
+                recorded_tier: strategist
+                requested_tier: command
+        "422":
+          description: The name is not one of the three tiers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                type: validation
+                status: 422
+                message: "Unknown tier 'platinum'. Choose one of: operator, strategist, command."
 
   /usage:
     get:
@@ -1092,7 +1155,7 @@ components:
   schemas:
     Me:
       type: object
-      required: [user_id, email, business_name]
+      required: [user_id, email, business_name, tier]
       properties:
         user_id:
           type: string
@@ -1102,6 +1165,35 @@ components:
         business_name:
           type: string
           description: The business this tenant represents — one tenant, one business.
+        tier:
+          description: The tier the business recorded, or null until it has one.
+          type: string
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Tier"
+
+    Tier:
+      type: string
+      description: |
+        One of the three tiers a business picks from before it has an account.
+        Names only — prices and credits are the interface's, defined once in its
+        tier module, which this list mirrors.
+      enum: [operator, strategist, command]
+
+    SetTier:
+      type: object
+      required: [tier]
+      properties:
+        tier:
+          type: string
+          description: The tier chosen, in the lowercase spelling the tier card sends.
+
+    TenantTier:
+      type: object
+      required: [tier]
+      properties:
+        tier:
+          $ref: "#/components/schemas/Tier"
 
     Questionnaire:
       type: object
@@ -1632,6 +1724,7 @@ components:
             - stage_not_awaiting_approval
             - revision_limit_reached
             - run_limit_reached
+            - tier_already_set
             - internal
         status:
           type: integer
@@ -1669,6 +1762,17 @@ components:
           required: [active_run_id]
           properties:
             active_run_id:
+              type: string
+
+    TierAlreadySetError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          required: [recorded_tier, requested_tier]
+          properties:
+            recorded_tier:
+              $ref: "#/components/schemas/Tier"
+            requested_tier:
               type: string
 
   examples:

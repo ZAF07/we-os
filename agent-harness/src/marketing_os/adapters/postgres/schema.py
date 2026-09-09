@@ -71,6 +71,15 @@ Seven tables (ADR-0014, ADR-0015, ADR-0018, ADR-0020):
     a guarded ``RENAME COLUMN`` carries a database provisioned under the old name
     across, and is a no-op on a fresh database or a second start.
 
+    The business's **tier** is the other fact about it that lives here
+    (ADR-0027): a nullable ``text`` column, ``NULL`` until the business records
+    one through the tenant directory. A database provisioned before tiers
+    existed has businesses that never chose; the guarded block that adds the
+    column backfills them to the recommended tier in the same step, since
+    nothing yet distinguishes the tiers and billing will correct it. The guard
+    is on the column, not the value, so a later ``init-db`` never defaults a
+    business that is mid-way through choosing.
+
 **Creating the schema is an operator step, not a boot step.** The service
 connects as an ordinary role that deliberately has no rights to create tables —
 handing the runtime DDL privileges to save one deployment command is how an
@@ -101,6 +110,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from marketing_os.schemas import RECOMMENDED_TIER
+
 TENANT_SETTING = "marketing_os.tenant_id"
 
 SCHEMA_SQL = f"""
@@ -109,7 +120,8 @@ CREATE TABLE IF NOT EXISTS tenants (
     name             text NOT NULL,
     external_auth_id text NOT NULL UNIQUE,
     created_at       timestamptz NOT NULL DEFAULT now(),
-    credits          double precision
+    credits          double precision,
+    tier             text
 );
 
 DO $$
@@ -127,6 +139,18 @@ END
 $$;
 
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS credits double precision;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tenants' AND column_name = 'tier'
+    ) THEN
+        ALTER TABLE tenants ADD COLUMN tier text;
+        UPDATE tenants SET tier = '{RECOMMENDED_TIER}';
+    END IF;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS documents (
     tenant_id  text NOT NULL,
