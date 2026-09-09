@@ -13,6 +13,10 @@ for (const file of [".env.local", ".env"]) {
 const PORT = 3100;
 const STORAGE_STATE = path.join(__dirname, ".auth/user.json");
 const BLANK_STORAGE_STATE = path.join(__dirname, ".auth/blank-user.json");
+const TENANTLESS_STORAGE_STATE = path.join(
+  __dirname,
+  ".auth/tenantless-user.json",
+);
 
 // The e2e compose stack serves the app on the same port, so when it is up
 // Playwright must attach rather than start a second server of its own. Anything
@@ -56,8 +60,18 @@ export default defineConfig({
   // `setup`, because the public half must work with neither. A change that
   // accidentally puts the Landing behind auth fails here rather than passing
   // on a signed-in cookie.
+  //
+  // `chromium-tenantless` is a person who has just signed up: a session that
+  // carries no organization. It proves the gate — that such a session cannot
+  // reach the app half — and walks the welcome flow that creates the
+  // business. One worker, because its specs share a mutable fixture: the user
+  // stops being tenantless the moment a spec names a business, and each spec
+  // deletes what it created so the next one starts tenantless again. Its
+  // sign-in is a setup project of its own, so a missing tenantless user fails
+  // this project alone rather than every signed-in spec.
   projects: [
     { name: "setup", testMatch: /auth\.setup\.ts/ },
+    { name: "setup-tenantless", testMatch: /tenantless\.setup\.ts/ },
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
@@ -66,6 +80,7 @@ export default defineConfig({
         /auth\.setup\.ts/,
         /onboarding\.spec\.ts/,
         /public\.spec\.ts/,
+        /tenantless\.(setup|spec)\.ts/,
       ],
     },
     {
@@ -80,6 +95,17 @@ export default defineConfig({
       name: "chromium-public",
       use: { ...devices["Desktop Chrome"] },
       testMatch: /public\.spec\.ts/,
+    },
+    {
+      name: "chromium-tenantless",
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: TENANTLESS_STORAGE_STATE,
+      },
+      dependencies: ["setup-tenantless"],
+      testMatch: /tenantless\.spec\.ts/,
+      fullyParallel: false,
+      workers: 1,
     },
   ],
   webServer: STACK_IS_UP

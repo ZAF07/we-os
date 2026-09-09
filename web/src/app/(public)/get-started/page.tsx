@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { auth } from "@clerk/nextjs/server";
 
 import { Faq } from "@/components/public/faq";
 import {
@@ -7,6 +8,7 @@ import {
   SectionHeading,
 } from "@/components/public/section";
 import { TierCards } from "@/components/public/tier-card";
+import { launchHref } from "@/lib/tiers";
 
 export const metadata: Metadata = {
   title: "Get started",
@@ -22,9 +24,17 @@ export const metadata: Metadata = {
  * components so the two pages cannot show two sets of numbers. What differs is
  * the job: Pricing explains what it costs, this page asks for the decision,
  * and its heading says so. There is no final-call section because the page is
- * the call. No engine call and no session, so it loads as fast as the Landing.
+ * the call.
+ *
+ * It reads the Clerk session — and makes no engine call, so the public half's
+ * no-engine property holds — because where Launch leads depends on it: a
+ * visitor goes to sign-up, a signed-in person to Welcome, with the tier either
+ * way.
  */
-export default function GetStartedPage() {
+export default async function GetStartedPage() {
+  const { userId } = await auth();
+  const session = { signedIn: userId !== null };
+
   return (
     <main>
       <section aria-labelledby="get-started-heading">
@@ -39,7 +49,7 @@ export default function GetStartedPage() {
               business will use each month, and set up your account next.
             </p>
           </div>
-          <TierCards />
+          <TierCards destination={(tier) => launchHref(tier, session)} />
         </Container>
       </section>
       <Faq />

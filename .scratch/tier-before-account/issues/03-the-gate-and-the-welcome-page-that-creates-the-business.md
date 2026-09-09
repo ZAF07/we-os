@@ -52,3 +52,8 @@ Route addresses and tier names are not restated here: the tier comes from the ti
 
 - [01 — Get Started, the page where a tier is chosen](01-get-started-the-page-where-a-tier-is-chosen.md)
 - [02 — The engine owns the tier](02-the-engine-owns-the-tier.md)
+
+## Comments
+
+- 2026-09-09 — One redirect differs from the text above. "Welcome with a business already active goes to Home" and "a tenant with no tier that reaches Home is sent back to Welcome" loop for a business whose tier was never recorded: Welcome cannot see the recorded tier without an engine call it is designed not to make. So Home sends a tierless business to **Get Started** to choose, and Welcome, when it arrives with a tier *and* an active business, records the tier and continues to Home instead of bouncing. Every other redirect is as written. The Launch resolver therefore sends any signed-in session to Welcome with the tier — a business owner who arrives with a different tier than the one recorded sees the engine's 409 message and a link to Home. Recorded in CONTEXT.md (Welcome, Home) and ADR-0027's consequences.
+- 2026-09-09 — The tenantless Playwright project needs a third Clerk test user (`E2E_CLERK_TENANTLESS_USER_EMAIL`) that belongs to no organization, and Clerk's organization-on-sign-up setting turned off. Both are dashboard steps documented in `web/README.md` and `web/.env.local.example`; neither can be made from the repository.

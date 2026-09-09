@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { Card, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -35,6 +36,11 @@ const TAG_CLASSES: Record<QueueTag, string> = {
  * names. A screen that answers "what needs me?" is only worth anything if the
  * answer is true, so nothing here is filled in when the real data is absent —
  * it says so instead.
+ *
+ * A business whose tier was never recorded is sent to Get Started to choose
+ * one: Launch then brings it to Welcome, which records the tier and returns
+ * here. Sending it to bare Welcome instead would bounce straight back, since
+ * Welcome sends a session that already has a business to Home.
  */
 export default async function HomePage() {
   let data;
@@ -43,6 +49,7 @@ export default async function HomePage() {
   } catch (error) {
     return <EngineDown error={error} />;
   }
+  if (data.tier === null) redirect("/get-started");
 
   const { campaigns, usage } = data;
   const queue = toQueue(campaigns);

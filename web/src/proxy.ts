@@ -17,6 +17,9 @@ const isPublicRoute = createRouteMatcher([
 /** The Landing: a visitor's page, so a signed-in business gets Home instead. */
 const isLanding = createRouteMatcher(["/"]);
 
+/** Welcome: the one signed-in route a session with no business may reach. */
+const isWelcome = createRouteMatcher(["/welcome"]);
+
 /**
  * Sends each request to the half of the app that is for it.
  *
@@ -27,13 +30,19 @@ const isLanding = createRouteMatcher(["/"]);
  * they were. `auth.protect()` would answer 404, which is right for an API but
  * leaves a person with no way to reach the login screen.
  *
+ * A signed-in session whose token carries no organization claim — a Tenantless
+ * Session, a new person between authenticating and naming their business — may
+ * reach only Welcome and the public routes. Anything else in the app half goes
+ * to Welcome, so there is always a way forward and never a way around. The
+ * claim is already in the token, so this costs no engine call on any request.
+ *
  * This is a convenience, not the security boundary. Every route that reads
  * tenant data does so through the engine, which verifies the token itself and
- * refuses an unauthenticated call regardless of how the request got here
- * (ADR-0013).
+ * refuses an unauthenticated call — or one with no organization claim —
+ * regardless of how the request got here (ADR-0013).
  */
 export default clerkMiddleware(async (auth, request) => {
-  const { userId, redirectToSignIn } = await auth();
+  const { userId, orgId, redirectToSignIn } = await auth();
 
   if (isLanding(request) && userId) {
     return NextResponse.redirect(new URL("/home", request.url));
@@ -41,6 +50,9 @@ export default clerkMiddleware(async (auth, request) => {
   if (isPublicRoute(request)) return;
   if (!userId) {
     return redirectToSignIn({ returnBackUrl: request.url });
+  }
+  if (!orgId && !isWelcome(request)) {
+    return NextResponse.redirect(new URL("/welcome", request.url));
   }
 });
 

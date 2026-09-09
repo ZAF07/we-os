@@ -64,8 +64,11 @@ person can make about their own account.
   tenant into being.
 - **A window exists** between activating the organization and recording the
   tier, in which a tenant has no tier. It is closed by a check on Home, which
-  sends a tierless tenant back to finish. This is why the tier call must be
-  safe to repeat.
+  sends a tierless tenant back to finish: to Get Started to choose, from where
+  Launch leads to Welcome, which records the tier for a session that already
+  has a business. Home cannot send it to bare Welcome, because Welcome sends a
+  session with a business and no tier to Home. This is why the tier call must
+  be safe to repeat.
 - **Tier names live in two languages** — TypeScript for the web app (with
   prices and credits) and a Python literal for validation. Only the names are
   duplicated; each list points at the other. Serving the list from the engine

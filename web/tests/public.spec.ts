@@ -72,6 +72,13 @@ test("Home without a session is sent to sign-in, and remembers where to return",
   expect(decodeURIComponent(page.url())).toContain("/home");
 });
 
+test("Welcome without a session is sent to sign-in", async ({ page }) => {
+  await page.goto("/welcome?tier=strategist");
+
+  await expect(page).toHaveURL(/\/sign-in/);
+  expect(decodeURIComponent(page.url())).toContain("/welcome");
+});
+
 test("the public pages stack at a phone width without horizontal scroll", async ({
   page,
 }) => {

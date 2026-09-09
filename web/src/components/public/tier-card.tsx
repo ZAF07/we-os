@@ -18,8 +18,15 @@ import { cn } from "@/lib/utils";
  *
  * Args:
  *   tier: The tier to show.
+ *   destination: Where Launch leads for this tier.
  */
-export function TierCard({ tier }: { tier: Tier }) {
+export function TierCard({
+  tier,
+  destination,
+}: {
+  tier: Tier;
+  destination: (tier: Tier) => string;
+}) {
   const headingId = `tier-${tier.name.toLowerCase()}`;
   const credits = new Intl.NumberFormat("en-US").format(tier.monthlyCredits);
 
@@ -64,7 +71,7 @@ export function TierCard({ tier }: { tier: Tier }) {
         variant={tier.highlighted ? "default" : "outline"}
         className="w-full"
       >
-        <Link href={signUpHref(tier)}>Launch</Link>
+        <Link href={destination(tier)}>Launch</Link>
       </Button>
     </article>
   );
@@ -76,13 +83,21 @@ export function TierCard({ tier }: { tier: Tier }) {
  *
  * No trial, refund or cancellation term is promised here, because the product
  * cannot honour one yet.
+ *
+ * Args:
+ *   destination: Where each tier's Launch leads. Pricing keeps the default,
+ *     sign-up carrying the tier; Get Started resolves it from the session.
  */
-export function TierCards() {
+export function TierCards({
+  destination = signUpHref,
+}: {
+  destination?: (tier: Tier) => string;
+}) {
   return (
     <>
       <div className="mt-14 grid items-stretch gap-5 md:grid-cols-3">
         {TIERS.map((tier) => (
-          <TierCard key={tier.name} tier={tier} />
+          <TierCard key={tier.name} tier={tier} destination={destination} />
         ))}
       </div>
       <p className="mt-6 text-[13.5px] text-slate-500">
