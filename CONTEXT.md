@@ -44,6 +44,18 @@ _Avoid_: dashboard, landing (for the signed-in screen).
 The second public page, and the only place prices appear: the three Tiers side by side, what a credit is, and the questions a business asks before paying. One address, so a visitor never sees two prices and can send the tiers to a colleague.
 _Avoid_: plans page (a plan is the Performance Plan), billing page (there is no billing yet), packages.
 
+**Get Started**:
+The third public page, and the funnel step: the same Tiers and the same questions as **Pricing**, under a heading that asks for the decision rather than explaining the prices. Every generic "Get started" on the public half leads here, because a tier is chosen before an account exists. Its tier buttons say **Launch** — the action that will one day open checkout, and today opens sign-up carrying the chosen tier.
+_Avoid_: signup page, checkout, plan picker, upgrade page.
+
+**Welcome**:
+The signed-in half's antechamber: where a person who has authenticated but has no business yet names it. Its own route group, so neither the public layout nor the app shell has to defend against a session with no tenant. It creates the Organization, activates it on the session, and records the chosen tier — in that order — and is the only place a tenant is ever brought into being. A session that arrives without a tier is sent back to **Get Started** to choose one.
+_Avoid_: onboarding (that is the Brand DNA wizard), setup, registration, create account.
+
+**Tenantless Session**:
+A person who is signed in but whose session carries no organization claim — a new sign-up between authentication and naming their business, or one who left partway. They may reach only **Welcome** and **Get Started**; every other signed-in route sends them to Welcome. The engine refuses them independently with `NO_ORGANIZATION` (**401**), which is the real boundary — the redirect is only a convenience (see [ADR-0013](docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md)).
+_Avoid_: anonymous user (they are authenticated), guest, incomplete account.
+
 **Questionnaire**:
 The admin-curated set of questions a business answers to author its Brand DNA. It asks only for **facts the business owner uniquely knows** — never for crafted artifacts like positioning or channel choice, which the pipeline produces. One artifact drives three things: the onboarding wizard, the shape of the DNA, and what the DNA Gate enforces as Required.
 _Avoid_: survey, form, intake, onboarding flow.
@@ -153,7 +165,9 @@ What one business may spend on generation before billable work is refused, and t
 _Avoid_: allowance (the former identifier, renamed out of the code), quota (for the number itself — quota is the enforcement, credits are the amount), tokens, limit.
 
 **Tier**:
-One of the subscriptions a business picks at sign-up — **Operator**, **Strategist**, or **Command**. Tiers differ only in the credits they grant each month; every tier gets the whole product. Prices and credit amounts are placeholders until pricing is decided, so they live in one place and nowhere else. One tier is **recommended** as the default for a business unsure which to pick (Strategist today); it is a recommendation the product makes, never a claim about what other businesses chose.
+One of the subscriptions a business picks **before its tenant exists** — **Operator**, **Strategist**, or **Command**. Tiers differ only in the credits they grant each month; every tier gets the whole product. Prices and credit amounts are placeholders until pricing is decided, so they live in one place and nowhere else. One tier is **recommended** as the default for a business unsure which to pick (Strategist today); it is a recommendation the product makes, never a claim about what other businesses chose.
+
+A tier is the platform's own record, not the identity provider's: it is stored on the tenant row and set once, through `PUT /tenant/tier`. Changing it is refused (**409**), because a tier change is a billing event and billing does not exist yet. The tier names are known to both the web app (with their prices and credits) and the engine (names only, for validation) — the two lists point at each other.
 _Avoid_: plan (taken by the Performance Plan), package, subscription level, seat, "most chosen" / "most popular" (popularity nothing backs).
 
 **Web Backend**:
