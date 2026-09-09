@@ -4,13 +4,17 @@ import { clerk, clerkSetup } from "@clerk/testing/playwright";
 import { expect, test as setup } from "@playwright/test";
 
 import { deleteOrganizationsOf } from "./clerk-backend";
+import { TENANTLESS_EMAIL, TENANTLESS_SKIP_REASON } from "./tenantless-user";
 
 /**
  * Signs in the tenantless user and saves a session that carries no business.
  *
- * Its own setup project, apart from the two signed-in identities, so a
- * missing `E2E_CLERK_TENANTLESS_USER_EMAIL` fails the tenantless project alone
- * rather than every signed-in spec.
+ * Its own setup project, apart from the two signed-in identities, so the
+ * tenantless project stands or falls alone. With no
+ * `E2E_CLERK_TENANTLESS_USER_EMAIL` set the project is skipped and says so —
+ * the user is provisioned by hand in the Clerk dashboard, and a suite that
+ * turned red for everyone until that happened would gate unrelated work on it.
+ * With the variable set, anything wrong fails loudly.
  *
  * The user must belong to no Organization: the whole project is about what a
  * session with no business can and cannot reach. A previous run that failed
@@ -24,14 +28,8 @@ export const TENANTLESS_STORAGE_STATE = path.join(
 );
 
 setup("authenticate the tenantless user", async ({ page }) => {
-  const email = process.env.E2E_CLERK_TENANTLESS_USER_EMAIL;
-
-  if (!email) {
-    throw new Error(
-      "Set E2E_CLERK_TENANTLESS_USER_EMAIL to a Clerk test user that belongs " +
-        "to no organization, in web/.env.local. See web/.env.local.example.",
-    );
-  }
+  setup.skip(!TENANTLESS_EMAIL, TENANTLESS_SKIP_REASON);
+  const email = TENANTLESS_EMAIL ?? "";
 
   await clerkSetup();
   await deleteOrganizationsOf(email);

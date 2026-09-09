@@ -158,6 +158,12 @@ during sign-up: with that setting on, a person with no organization is held in
 a pending session, the welcome flow never runs, and the setup fails naming the
 setting rather than passing on a session that was never tenantless.
 
+Until `E2E_CLERK_TENANTLESS_USER_EMAIL` is set, the project is **skipped** and
+Playwright reports it so. That is deliberate: the user is provisioned by hand,
+and a suite that stayed red for everyone until then would gate unrelated work
+on it. Once the variable is set, anything wrong with the user or the instance
+fails loudly.
+
 ### CI
 
 CI does not run the end-to-end suite — it needs Clerk secrets and a live engine.

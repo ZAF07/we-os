@@ -3,10 +3,14 @@ import { expect, test, type Page, type Response } from "@playwright/test";
 
 import { createOrganizationFor, deleteOrganizationsOf } from "./clerk-backend";
 import { uniqueName } from "./fixtures";
+import { TENANTLESS_EMAIL, TENANTLESS_SKIP_REASON } from "./tenantless-user";
 
 // Every spec here ends by making the user tenantless again, and two of them
 // create a business, so they run one at a time in declaration order.
 test.describe.configure({ mode: "serial" });
+
+// Skipped, and reported as such, until the tenantless user is provisioned.
+test.skip(!TENANTLESS_EMAIL, TENANTLESS_SKIP_REASON);
 
 /**
  * The gate and the welcome flow, as a person who has just signed up.
@@ -19,7 +23,7 @@ test.describe.configure({ mode: "serial" });
  * for the next run.
  */
 
-const EMAIL = process.env.E2E_CLERK_TENANTLESS_USER_EMAIL ?? "";
+const EMAIL = TENANTLESS_EMAIL ?? "";
 
 const APP_ROUTES = [
   "/home",
