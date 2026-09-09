@@ -42,6 +42,7 @@ _SEGMENT_FIELD = "Primary segment(s)"
 _TIMEFRAME_RE = re.compile(r"^\s*(\S+)\s*→\s*(\S+)\s*$")
 _BUDGET_RE = re.compile(r"^\s*([\d,.]+)\s+([A-Za-z]{3})\s*$")
 _ENTRY_SEPARATOR_RE = re.compile(r"\s+[—–-]\s+")
+_HEADING_RE = re.compile(r"^#{1,6}\s+(?:\d+[.)]\s*)?(.*)$")
 _FALLBACK_SLUG = "campaign"
 
 
@@ -328,6 +329,13 @@ def audience_segments(brand_dna: str) -> list[AudienceSegment]:
     ``entry_list`` input guarantees; a line carrying no separator is a title on
     its own.
 
+    An answer written before the question collected entries is prose, not entry
+    lines. Reading it per line offers a sentence fragment as a segment, or —
+    when every line is a markdown heading's leftovers — offers nothing at all.
+    So an answer carrying headings is read as one segment per heading, matching
+    the rescue the web control applies to the same answer (see
+    ``web/src/lib/entry-list.ts``).
+
     Args:
         brand_dna: The tenant's Brand DNA markdown.
 
@@ -335,14 +343,43 @@ def audience_segments(brand_dna: str) -> list[AudienceSegment]:
         The segments, in the order the business listed them; empty when the DNA
         names none.
     """
-    segments = [
-        _parse_entry(line)
+    lines = [
+        line.strip()
         for label, value in walk_fields(brand_dna)
         if label == _SEGMENT_FIELD
         for line in value.splitlines()
         if line.strip()
     ]
+    segments = (
+        _parse_heading_blocks(lines)
+        if any(_HEADING_RE.match(line) for line in lines)
+        else [_parse_entry(line) for line in lines]
+    )
     return [segment for segment in segments if segment.title]
+
+
+def _parse_heading_blocks(lines: list[str]) -> list[AudienceSegment]:
+    """Read a heading-written answer as one segment per heading.
+
+    Args:
+        lines: The answer's non-blank lines.
+
+    Returns:
+        One segment per heading, its description being the lines up to the next
+        heading. Lines before the first heading are dropped, having no segment
+        to belong to.
+    """
+    segments: list[AudienceSegment] = []
+    for line in lines:
+        heading = _HEADING_RE.match(line)
+        if heading:
+            segments.append(AudienceSegment(title=heading.group(1).strip()))
+            continue
+        if not segments:
+            continue
+        current = segments[-1]
+        current.description = f"{current.description} {line}".strip()
+    return segments
 
 
 def _parse_entry(line: str) -> AudienceSegment:

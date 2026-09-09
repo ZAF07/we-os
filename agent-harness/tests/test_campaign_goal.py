@@ -190,5 +190,36 @@ def test_audience_segments_keeps_a_dash_inside_a_description() -> None:
     ]
 
 
+def test_audience_segments_reads_a_heading_written_answer_as_one_segment_each() -> None:
+    """Rescue an answer written as prose before the question collected entries."""
+    dna = "\n".join(
+        [
+            "# Brand DNA — Acme",
+            "",
+            "- **Primary segment(s):**",
+            "  - ### 1. Small and boutique marketing agencies",
+            "  - Agencies managing many clients with small teams.",
+            "  - Typical buyers:",
+            "  - Agency founders",
+            "  - ### 2. SMEs with in-house teams",
+            "  - Growing businesses with one or two marketers.",
+        ]
+    )
+
+    assert [segment.title for segment in audience_segments(dna)] == [
+        "Small and boutique marketing agencies",
+        "SMEs with in-house teams",
+    ]
+
+
+def test_audience_segments_never_offers_a_heading_marker_as_a_segment() -> None:
+    """A ``###`` heading names a segment; it is never itself an option."""
+    dna = "- **Primary segment(s):**\n  - ### 1. Small agencies\n  - Many clients.\n"
+
+    titles = [segment.title for segment in audience_segments(dna)]
+    assert titles == ["Small agencies"]
+    assert not any(title.startswith("#") for title in titles)
+
+
 def test_audience_segments_is_empty_when_the_dna_names_none() -> None:
     assert audience_segments("# Brand DNA — Acme\n") == []
