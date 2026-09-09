@@ -1,3 +1,4 @@
+import Image from "next/image";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -7,7 +8,8 @@ import { cn } from "@/lib/utils";
  *
  * One component for every place the name appears — the app shell, the public
  * top bar and the footer — so the product has one name and one mark wherever
- * a person sees it.
+ * a person sees it. The mark is the logo artwork, which carries its own dark
+ * rounded-square ground, so the tile needs no background of its own.
  *
  * Args:
  *   size: `"default"` for the shell and the footer, `"large"` for the public
@@ -33,17 +35,17 @@ export function BrandMark({
       )}
       {...props}
     >
-      <span
+      <Image
+        src="/we-os-mark.png"
+        alt=""
         aria-hidden="true"
+        width={120}
+        height={120}
+        priority={large}
         className={cn(
-          "flex items-center justify-center bg-gradient-to-br from-indigo-600 to-indigo-500 font-bold text-white",
-          large
-            ? "size-[30px] rounded-[9px] text-sm"
-            : "size-6 rounded-[7px] text-[13px]",
+          large ? "size-[30px] rounded-[9px]" : "size-6 rounded-[7px]",
         )}
-      >
-        W
-      </span>
+      />
       <span
         className={cn(
           "font-bold tracking-tight",
