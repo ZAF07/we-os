@@ -93,6 +93,19 @@ def test_seeding_writes_both_tenants(empty_database: str) -> None:
     }
 
 
+def test_both_tenants_carry_the_recommended_tier(empty_database: str) -> None:
+    """The suite's businesses predate tiers, and Home sends a tierless one to choose."""
+    from marketing_os.schemas import RECOMMENDED_TIER
+
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+
+    rows = _fetch(empty_database, "SELECT tenant_id, tier FROM tenants ORDER BY tenant_id", ())
+    assert dict(rows) == {
+        seed_test_tenants.TEST_TENANT_ID: RECOMMENDED_TIER,
+        seed_test_tenants.BLANK_TENANT_ID: RECOMMENDED_TIER,
+    }
+
+
 def test_the_seeded_tenant_gets_a_complete_dna(empty_database: str) -> None:
     seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
 

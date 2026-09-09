@@ -64,8 +64,11 @@ person can make about their own account.
   tenant into being.
 - **A window exists** between activating the organization and recording the
   tier, in which a tenant has no tier. It is closed by a check on Home, which
-  sends a tierless tenant back to finish. This is why the tier call must be
-  safe to repeat.
+  sends a tierless tenant back to finish: to Get Started to choose, from where
+  Launch leads to Welcome, which records the tier for a session that already
+  has a business. Home cannot send it to bare Welcome, because Welcome sends a
+  session with a business and no tier to Home. This is why the tier call must
+  be safe to repeat.
 - **Tier names live in two languages** — TypeScript for the web app (with
   prices and credits) and a Python literal for validation. Only the names are
   duplicated; each list points at the other. Serving the list from the engine
@@ -73,7 +76,10 @@ person can make about their own account.
   call, a property ADR-0012's public half depends on.
 - **Existing tenants are backfilled** to `strategist` by a guarded update.
   Nothing yet distinguishes the tiers, so a default costs nothing and is
-  corrected when billing arrives.
+  corrected when billing arrives. The guard is on the column's absence, not
+  on empty values: the backfill runs once, when the column is first added, so
+  a later `init-db` never quietly defaults a business that is mid-way through
+  choosing — Home sends that business back to finish instead.
 - **The browser suite's users have organizations**, so they never walk this
   path; a dedicated tenantless user covers it and deletes the organization it
   creates, so the fixture stays tenantless for the next run.

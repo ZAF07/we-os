@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 
 /**
  * Renders the public top bar: the brand mark, the section links, and the one
- * way in.
+ * way in. "Get started" leads to Get Started, where a tier is chosen before an
+ * account exists; the sign-up form is reached from there.
  *
  * Sticky and translucent so it stays in reach as the Landing scrolls; its
  * height is the `--top-bar-height` token, which the page's scroll padding
@@ -34,7 +35,7 @@ export function PublicTopBar() {
               <Link href="/sign-in">Sign in</Link>
             </Button>
             <Button asChild>
-              <Link href="/sign-up">Get started</Link>
+              <Link href="/get-started">Get started</Link>
             </Button>
           </div>
         </Container>

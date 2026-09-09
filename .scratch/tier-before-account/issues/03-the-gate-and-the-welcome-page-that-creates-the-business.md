@@ -1,6 +1,6 @@
 # 03 — The gate, and the Welcome page that creates the business
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: task
 
 ## Parent
@@ -40,15 +40,21 @@ Route addresses and tier names are not restated here: the tier comes from the ti
 - [ ] A failure recording the tier keeps the person on Welcome with a plain message and a retry that does not create a second Organization.
 - [ ] Welcome with no tier goes to Get Started; Welcome with a business already active goes to Home; Welcome with no session goes to sign-in.
 - [ ] A signed-in session with no business cannot reach Home, Campaigns, Calendar, Brand, Performance or Onboarding — each goes to Welcome.
-- [ ] A tenant with no tier that reaches Home is sent back to Welcome.
-- [ ] A person who is already signed in and picks a tier on Get Started is taken to Welcome, not to sign-up.
-- [ ] The Launch destination resolver is a pure function with unit tests covering signed-out and tenantless, with and without a tier.
-- [ ] An existing business owner signs in and reaches Home exactly as before, with campaigns, credits and Brand DNA untouched — the existing signed-in Playwright projects pass unchanged.
+- [x] A tenant with no tier that reaches Home is sent back to Welcome.
+- [x] A person who is already signed in and picks a tier on Get Started is taken to Welcome, not to sign-up.
+- [x] The Launch destination resolver is a pure function with unit tests covering signed-out and tenantless, with and without a tier.
+- [x] An existing business owner signs in and reaches Home exactly as before, with campaigns, credits and Brand DNA untouched — the existing signed-in Playwright projects pass unchanged.
 - [ ] A Playwright project runs as a tenantless session with its own Clerk user, asserting the redirects above, and deletes the Organization it creates so the fixture is tenantless for the next run. It runs single-worker, as the onboarding project does.
-- [ ] Turning off Clerk's create-organization-on-sign-up is documented in the web setup steps.
+- [x] Turning off Clerk's create-organization-on-sign-up is documented in the web setup steps.
 - [ ] `make check`, `make test-postgres`, the web gates and the Playwright suite pass, and the whole new-user flow is confirmed end to end in the running app.
 
 ## Blocked by
 
 - [01 — Get Started, the page where a tier is chosen](01-get-started-the-page-where-a-tier-is-chosen.md)
 - [02 — The engine owns the tier](02-the-engine-owns-the-tier.md)
+
+## Comments
+
+- 2026-09-09 — One redirect differs from the text above. "Welcome with a business already active goes to Home" and "a tenant with no tier that reaches Home is sent back to Welcome" loop for a business whose tier was never recorded: Welcome cannot see the recorded tier without an engine call it is designed not to make. So Home sends a tierless business to **Get Started** to choose, and Welcome, when it arrives with a tier *and* an active business, records the tier and continues to Home instead of bouncing. Every other redirect is as written. The Launch resolver therefore sends any signed-in session to Welcome with the tier — a business owner who arrives with a different tier than the one recorded sees the engine's 409 message and a link to Home. Recorded in CONTEXT.md (Welcome, Home) and ADR-0027's consequences.
+- 2026-09-09 — The tenantless Playwright project needs a third Clerk test user (`E2E_CLERK_TENANTLESS_USER_EMAIL`) that belongs to no organization, and Clerk's organization-on-sign-up setting turned off. Both are dashboard steps documented in `web/README.md` and `web/.env.local.example`; neither can be made from the repository.
+- 2026-09-09 — Implementation landed in `02892c1` (the gate, Welcome, Home's tier check, the sign-up destination, the session-aware Launch, the tenantless Playwright project), `8cc55e2` (code review: the Welcome form takes a `Tier`, a refused tier change is shown without a retry), `6b3d4ec` (the tenantless project skips, saying why, until its user exists) and `77880c1` (glossary and ADR-0027 amendments). Proven on the final code: the full suite passed 64 with the 6 tenantless tests skipped; `/welcome` sends a business owner to Home and a different tier is refused (`smoke.spec.ts`); with the blank tenant's tier cleared in the e2e database, Home sent it to Get Started, Launch led to `/welcome?tier=command`, the tier was recorded and Home followed (a throwaway spec, not kept); Welcome with no session goes to sign-in (`public.spec.ts`); the resolver's unit tests pass. **Not proven, and why:** deactivating the blank user's organization in the browser was a no-op, which is what Clerk does while its organization requirement on sign-up is on — so no existing user can be made tenantless, a new sign-up would be held in a pending session, and criteria 1, 2 (the Organization created from the form), 3, 4 (the tenantless clause), 5 and 10 could not be exercised. **What a person must do:** in the Clerk dashboard, turn off the organization requirement on sign-up and create a third test user (`E2E_CLERK_TENANTLESS_USER_EMAIL`) in no organization; set the variable in `web/.env.local`; run `make test-e2e` — the tenantless project then runs instead of skipping and covers the remaining criteria. Hence `ready-for-human`.

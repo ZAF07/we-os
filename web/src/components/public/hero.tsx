@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * Renders the hero: the one-line promise, the two ways forward, and a picture
- * of the workflow paused at an approval gate.
+ * of the workflow paused at an approval gate. "Get started" leads to Get
+ * Started, where a tier is chosen before an account exists.
  */
 export function Hero() {
   return (
@@ -31,7 +32,7 @@ export function Hero() {
           </p>
           <div className="mt-9 flex flex-wrap gap-3">
             <Button asChild size="xl">
-              <Link href="/sign-up">Get started</Link>
+              <Link href="/get-started">Get started</Link>
             </Button>
             <Button asChild size="xl" variant="outline">
               <Link href="#how">See how it works</Link>

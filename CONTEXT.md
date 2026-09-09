@@ -37,7 +37,7 @@ The public page at the root of we-OS, shown to anyone who is not signed in: what
 _Avoid_: home page (for the public page), marketing site, website.
 
 **Home**:
-The first signed-in screen — what needs the business owner right now (decisions waiting, work under way, credits left). Only reachable with a signed-in session whose business is a tenant.
+The first signed-in screen — what needs the business owner right now (decisions waiting, work under way, credits left). Only reachable with a signed-in session whose business is a tenant. A business whose tier was never recorded is sent from Home to **Get Started** to choose one — not to bare **Welcome**, which would send a session that already has a business straight back — and Launch then brings it to Welcome to have the tier recorded.
 _Avoid_: dashboard, landing (for the signed-in screen).
 
 **Pricing**:
@@ -45,11 +45,11 @@ The second public page, and the only place prices appear: the three Tiers side b
 _Avoid_: plans page (a plan is the Performance Plan), billing page (there is no billing yet), packages.
 
 **Get Started**:
-The third public page, and the funnel step: the same Tiers and the same questions as **Pricing**, under a heading that asks for the decision rather than explaining the prices. Every generic "Get started" on the public half leads here, because a tier is chosen before an account exists. Its tier buttons say **Launch** — the action that will one day open checkout, and today opens sign-up carrying the chosen tier.
+The third public page, and the funnel step: the same Tiers and the same questions as **Pricing**, under a heading that asks for the decision rather than explaining the prices. Every generic "Get started" on the public half leads here, because a tier is chosen before an account exists. Its tier buttons say **Launch** — the action that will one day open checkout, and today opens sign-up carrying the chosen tier, or **Welcome** carrying it for a person who is already signed in, since they have a login and need no second one.
 _Avoid_: signup page, checkout, plan picker, upgrade page.
 
 **Welcome**:
-The signed-in half's antechamber: where a person who has authenticated but has no business yet names it. Its own route group, so neither the public layout nor the app shell has to defend against a session with no tenant. It creates the Organization, activates it on the session, and records the chosen tier — in that order — and is the only place a tenant is ever brought into being. A session that arrives without a tier is sent back to **Get Started** to choose one.
+The signed-in half's antechamber: where a person who has authenticated but has no business yet names it. Its own route group, so neither the public layout nor the app shell has to defend against a session with no tenant. It creates the Organization, activates it on the session, and records the chosen tier — in that order — and is the only place a tenant is ever brought into being. A session that arrives without a tier is sent back to **Get Started** to choose one; one that arrives with a business and no tier is sent to Home. A session that arrives with a tier *and* a business already active has nothing to name: Welcome records the tier and continues to Home, which is how a business whose tier was never recorded finishes.
 _Avoid_: onboarding (that is the Brand DNA wizard), setup, registration, create account.
 
 **Tenantless Session**:

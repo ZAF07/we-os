@@ -45,6 +45,33 @@ test("signed in, the sign-in page hands straight over to Home", async ({
   await expect(page).toHaveURL("/home");
 });
 
+test("Welcome sends a business owner to Home, and never changes their tier", async ({
+  page,
+}) => {
+  // A page for people without a business is not one a business owner can get
+  // stuck on.
+  await page.goto("/welcome");
+  await expect(page).toHaveURL("/home");
+
+  // Arriving with the tier the business already has is harmless: recording it
+  // again changes nothing, and Home follows.
+  await page.goto("/welcome?tier=strategist");
+  await expect(page).toHaveURL("/home");
+
+  // A different tier is refused. A tier is set once; changing it is a billing
+  // event, and billing does not exist yet.
+  await page.goto("/welcome?tier=command");
+  await expect(
+    page.getByRole("heading", { name: "Your business already has a tier." }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("This business is on the strategist tier"),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Go to Home" }).click();
+  await expect(page).toHaveURL("/home");
+});
+
 test("all routes resolve without a 404", async ({ page }) => {
   const paths = [
     "/home",

@@ -3,7 +3,13 @@ import Link from "next/link";
 import { Container } from "@/components/public/section";
 import { Button } from "@/components/ui/button";
 
-/** Renders the final call: one line, and the way in. */
+/**
+ * Renders the final call: one line, and the way in.
+ *
+ * "Get started" leads to Get Started, where a tier is chosen before an account
+ * exists. The Landing and Pricing end with this section; Get Started does not,
+ * because that page is the call.
+ */
 export function FinalCall() {
   return (
     <section
@@ -37,7 +43,7 @@ export function FinalCall() {
               size="xl"
               className="bg-white text-indigo-700 hover:bg-indigo-50"
             >
-              <Link href="/sign-up">Get started</Link>
+              <Link href="/get-started">Get started</Link>
             </Button>
             <Button
               asChild

@@ -48,7 +48,7 @@ from marketing_os.adapters.postgres import (
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
 from marketing_os.adapters.runs import AWAITING_APPROVAL
 from marketing_os.config import Settings
-from marketing_os.errors import RunConflictError
+from marketing_os.errors import RunConflictError, TierAlreadySetError, ToolError
 from marketing_os.graph.checkpoints import clear_campaign_threads, thread_id
 from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
@@ -140,6 +140,49 @@ def test_resolving_the_same_organization_twice_reuses_its_tenant(postgres_pool: 
 
     assert second.tenant_id == first.tenant_id
     assert second.name == "Coast Coffee Roasters"
+
+
+def test_a_new_tenant_reports_no_tier(postgres_pool: Any) -> None:
+    directory = PostgresTenantDirectory(postgres_pool)
+
+    tenant = directory.resolve(external_auth_id="org_tierless", name="Coast Coffee")
+
+    assert tenant.tier is None
+    assert directory.get(tenant.tenant_id) == tenant
+
+
+def test_a_tier_is_set_once_and_read_back_by_every_path(postgres_pool: Any) -> None:
+    """The column is the platform's record of the tier (ADR-0027), not the IdP's."""
+    directory = PostgresTenantDirectory(postgres_pool)
+    tenant = directory.resolve(external_auth_id="org_tiered", name="Coast Coffee")
+
+    recorded = directory.set_tier(tenant.tenant_id, "command")
+
+    assert recorded.tier == "command"
+    found = directory.get(tenant.tenant_id)
+    assert found is not None and found.tier == "command"
+    resolved = PostgresTenantDirectory(postgres_pool).resolve(
+        external_auth_id="org_tiered", name="Coast Coffee Roasters"
+    )
+    assert resolved.tier == "command"
+    assert resolved.name == "Coast Coffee Roasters"
+
+
+def test_repeating_the_tier_is_harmless_and_changing_it_is_refused(postgres_pool: Any) -> None:
+    directory = PostgresTenantDirectory(postgres_pool)
+    tenant = directory.resolve(external_auth_id="org_set_once", name="Coast Coffee")
+    directory.set_tier(tenant.tenant_id, "operator")
+
+    assert directory.set_tier(tenant.tenant_id, "operator").tier == "operator"
+    with pytest.raises(TierAlreadySetError):
+        directory.set_tier(tenant.tenant_id, "strategist")
+    found = directory.get(tenant.tenant_id)
+    assert found is not None and found.tier == "operator"
+
+
+def test_a_tier_cannot_be_set_for_a_tenant_that_does_not_exist(postgres_pool: Any) -> None:
+    with pytest.raises(ToolError):
+        PostgresTenantDirectory(postgres_pool).set_tier("ten_never_minted", "operator")
 
 
 # --- The shared run claim -------------------------------------------------------

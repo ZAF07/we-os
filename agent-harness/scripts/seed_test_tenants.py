@@ -37,7 +37,7 @@ import sys
 from typing import Any
 
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE, render_brand_dna
-from marketing_os.schemas import BrandDnaRecord, DnaAnswer
+from marketing_os.schemas import RECOMMENDED_TIER, BrandDnaRecord, DnaAnswer
 
 TEST_TENANT_ID = "ten_e2e0000000000000000000000000000"
 """The fixed tenant id the suite's business owns.
@@ -192,6 +192,13 @@ def _purge_campaigns(connection: Any, tenant_id: str) -> None:
 def _upsert_tenant(connection: Any, tenant_id: str, name: str, organization_id: str) -> None:
     """Write the ``tenants`` row pairing a fixed tenant id to a Clerk organization.
 
+    The row carries the recommended tier. Both suite tenants are businesses
+    that exist before anyone chose a tier — exactly the businesses the schema's
+    backfill is for — but this seed writes its rows *after* ``init-db`` has run,
+    so the backfill never sees them. Left without a tier, Home would send both
+    test users to Get Started to choose one, and every signed-in spec would
+    fail there.
+
     Args:
         connection: An open psycopg connection with administrative rights.
         tenant_id: The fixed tenant id to write.
@@ -200,12 +207,13 @@ def _upsert_tenant(connection: Any, tenant_id: str, name: str, organization_id: 
     """
     connection.execute(
         """
-        INSERT INTO tenants (tenant_id, name, external_auth_id)
-        VALUES (%s, %s, %s)
+        INSERT INTO tenants (tenant_id, name, external_auth_id, tier)
+        VALUES (%s, %s, %s, %s)
         ON CONFLICT (external_auth_id)
-        DO UPDATE SET tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name
+        DO UPDATE SET tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name,
+                      tier = EXCLUDED.tier
         """,
-        (tenant_id, name, organization_id),
+        (tenant_id, name, organization_id, RECOMMENDED_TIER),
     )
 
 

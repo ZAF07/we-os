@@ -8,7 +8,9 @@ engine derives the tenant from that claim (ADR-0013).
 
 You need the engine running as well for the signed-in half — Home and
 everything behind it render nothing of their own. The public half (the Landing
-at `/`, `/pricing`, sign-in and sign-up) needs no engine.
+at `/`, `/pricing`, `/get-started`, sign-in and sign-up) needs no engine.
+Welcome (`/welcome`), where a new person names their business, sits between the
+two: it needs a session but no engine until the moment it records the tier.
 
 ```bash
 # terminal 1 — the engine
@@ -73,6 +75,7 @@ dashboard fill these into `web/.env.local`:
 | `E2E_CLERK_ORG_ID`                  | Organizations — the org that user belongs to          |
 | `E2E_CLERK_BLANK_USER_EMAIL`        | the blank test user's email                           |
 | `E2E_CLERK_BLANK_ORG_ID`            | Organizations — a _second_ org, for the blank tenant  |
+| `E2E_CLERK_TENANTLESS_USER_EMAIL`   | a _third_ test user, member of no organization at all |
 
 No test password is stored: sign-in mints a ticket through Clerk's Backend API
 using `CLERK_SECRET_KEY`.
@@ -85,11 +88,13 @@ Brand DNA. Instead `agent-harness/scripts/seed_test_tenants.py` writes the
 a test user signs in, the engine finds that row rather than minting a new one,
 and the seeded state is already theirs.
 
-There are two users because there are two tenants, and the engine derives the
-tenant from the organization claim on the session token — so a second tenant
-means a second organization, and a second dedicated user keeps that claim a
-fixed property of a saved storage state rather than something a fixture has to
-switch mid-run.
+There are two users with organizations because there are two tenants, and the
+engine derives the tenant from the organization claim on the session token — so
+a second tenant means a second organization, and a second dedicated user keeps
+that claim a fixed property of a saved storage state rather than something a
+fixture has to switch mid-run. The third user has no organization for the
+opposite reason: it is the person who has just signed up (see
+[The tenantless session](#the-tenantless-session)).
 
 ### What the seed guarantees
 
@@ -127,6 +132,37 @@ neither: a change that puts the Landing behind auth fails there rather than
 passing on a signed-in cookie. It needs no engine either, so on its own it runs
 without the stack — `pnpm test --project=chromium-public` starts the dev server
 itself when the compose stack is not up.
+
+### The tenantless session
+
+A new sign-up lands authenticated with no organization — a **tenantless
+session** — because We-OS creates the business itself, on Welcome, after a tier
+has been chosen (ADR-0027). The `chromium-tenantless` project runs
+`tests/tenantless.spec.ts` as that person, with its own sign-in
+(`tests/tenantless.setup.ts`) and its own Clerk user, and proves two things:
+that such a session cannot reach Home, Campaigns or anything else in the app
+half, and that naming a business at Welcome creates it, records the tier, and
+lands on Home.
+
+The user stops being tenantless the moment a spec succeeds, so every spec
+deletes the Organization it created through Clerk's Backend API afterwards, and
+the setup deletes any a failed run left behind. It runs with one worker, like
+the onboarding project, because its specs share that mutable fixture. It needs
+the engine — recording the tier is an engine call — so it runs inside the
+compose stack.
+
+Two things about the Clerk instance make this work, and both live in the
+dashboard rather than the repository. The tenantless user must exist and belong
+to no organization. And Clerk must **not** create or require an organization
+during sign-up: with that setting on, a person with no organization is held in
+a pending session, the welcome flow never runs, and the setup fails naming the
+setting rather than passing on a session that was never tenantless.
+
+Until `E2E_CLERK_TENANTLESS_USER_EMAIL` is set, the project is **skipped** and
+Playwright reports it so. That is deliberate: the user is provisioned by hand,
+and a suite that stayed red for everyone until then would gate unrelated work
+on it. Once the variable is set, anything wrong with the user or the instance
+fails loudly.
 
 ### CI
 

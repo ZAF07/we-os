@@ -123,6 +123,11 @@ export interface Me {
   user_id: string;
   email: string | null;
   business_name: string;
+  tier: string | null;
+}
+
+export interface TenantTier {
+  tier: string;
 }
 
 export interface GateReport {
@@ -143,6 +148,28 @@ export interface DeliverableList {
 /** Resolves the verified identity to the business its tenant represents. */
 export function getMe(): Promise<Me> {
   return engineFetch<Me>("/me");
+}
+
+/**
+ * Records the business's tier, once (ADR-0027).
+ *
+ * The first call a new business makes: the engine mints its tenant from the
+ * verified claim and attaches the tier to it. Repeating the recorded tier is
+ * harmless, which is what lets Welcome retry after a failure; a different tier
+ * is refused, since a tier change is a billing event and billing does not
+ * exist yet.
+ *
+ * Args:
+ *   tier: The tier name as the tier card sent it.
+ *
+ * Returns:
+ *   The tier the business now has recorded.
+ */
+export function setTenantTier(tier: string): Promise<TenantTier> {
+  return engineFetch<TenantTier>("/tenant/tier", {
+    method: "PUT",
+    body: JSON.stringify({ tier }),
+  });
 }
 
 /**

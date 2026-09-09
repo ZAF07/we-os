@@ -19,9 +19,11 @@ export const metadata: Metadata = {
  * Renders Pricing: the three tiers, the questions people ask before paying,
  * and the way in, on a page a visitor can send to a colleague.
  *
- * A static server component with no engine call and no session. It is the
- * only place the tiers appear, so a visitor never sees two prices; the FAQ is
- * the same component the Landing shows.
+ * A static server component with no engine call and no session. The tiers
+ * are rendered by the same component Get Started uses, so a visitor never sees
+ * two prices; the FAQ is the same component the Landing shows. A tier button
+ * here keeps its destination — someone who decided on Pricing has already made
+ * the choice Get Started exists to extract.
  */
 export default function PricingPage() {
   return (

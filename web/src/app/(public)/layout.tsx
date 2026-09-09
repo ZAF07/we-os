@@ -2,8 +2,8 @@ import { PublicFooter } from "@/components/public/footer";
 import { PublicTopBar } from "@/components/public/top-bar";
 
 /**
- * Wraps the public half — the Landing and the sign-in and sign-up flows — in a
- * top bar and footer of its own, with no app shell and no session.
+ * Wraps the public half — the Landing, Pricing, Get Started and the sign-in
+ * and sign-up flows — in a top bar and footer of its own, with no app shell.
  *
  * Args:
  *   children: The active route's content.
