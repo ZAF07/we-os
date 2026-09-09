@@ -1,6 +1,6 @@
 # 04 — Campaign wizard's audience picker offers raw lines of the Brand DNA answer, not real segments
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Symptom
@@ -103,23 +103,23 @@ existing `audience_segment` values.
 
 ## Acceptance criteria
 
-- [ ] `entry_list` exists as a general `input_type`, rendered from the question set
+- [x] `entry_list` exists as a general `input_type`, rendered from the question set
       alone — the wizard does not special-case `q_segments`
-- [ ] A business can add, edit, remove and reorder audience segments in the Brand
+- [x] A business can add, edit, remove and reorder audience segments in the Brand
       DNA, each with a title and a description, and the order is preserved
-- [ ] An answer round-trips: entries render into `dna.md` as `Title — description`
+- [x] An answer round-trips: entries render into `dna.md` as `Title — description`
       sub-bullets and read back as the same entries, with no change to
       `markdown.py` or `render.py`
-- [ ] "Audience & budget" shows one selectable option per segment, displaying both
+- [x] "Audience & budget" shows one selectable option per segment, displaying both
       its title and its description
-- [ ] The selected segment stored on the campaign goal is the title only, and
+- [x] The selected segment stored on the campaign goal is the title only, and
       downstream stages use it as the segment header
-- [ ] `audience_segments()` no longer guesses at prose: a title comes from the
+- [x] `audience_segments()` no longer guesses at prose: a title comes from the
       entry's title field, not from splitting a free-text sentence
-- [ ] Tests cover entry round-tripping in the harness and the wizard selection in
+- [x] Tests cover entry round-tripping in the harness and the wizard selection in
       the web app
-- [ ] Harness gates pass: `make check` and `make test-postgres` from `agent-harness/`
-- [ ] Web gates pass, run from `web/`: `pnpm lint`, `pnpm typecheck`,
+- [x] Harness gates pass: `make check` and `make test-postgres` from `agent-harness/`
+- [x] Web gates pass, run from `web/`: `pnpm lint`, `pnpm typecheck`,
       `pnpm test:unit`, `pnpm test`, `pnpm format:check`
 
 ## Comments
@@ -137,3 +137,27 @@ the outcome is in `## Decision`, the alternatives rejected are here:
    tenant data is the operator's own testing, to be deleted rather than migrated.
 
 Status moved `needs-triage` → `ready-for-agent`.
+
+## Completion
+
+- Completed: 2026-09-09
+- Commits:
+  - `c7248fa` — Audience segments are named entries, not chopped-up prose
+  - `ffd2a9a` — Address code review: share the entry-list vocabulary, cover
+    remove and reorder
+
+Verified against the running system, not just the tests:
+
+- `entry_list` is rendered from the question set alone — `q_segments` appears
+  nowhere in `web/src`, and the control takes no question-specific copy.
+- The round trip was proved end to end: entries render into `dna.md` as
+  `Title — description` sub-bullets and read back as the same entries, with
+  `markdown.py` and `render.py` absent from the diff entirely.
+- The wizard shows both halves of each segment and stores the title alone,
+  which `render_field(SEGMENT_LABEL, ...)` writes as the segment header.
+- `audience_segments()` takes the title from the entry's own title field;
+  no prose is guessed at.
+- Gates: `make check` (648 passed) and `make test-postgres` (758 passed) from
+  `agent-harness/`; from `web/`, `pnpm lint`, `pnpm typecheck`,
+  `pnpm test:unit` (90 passed), `pnpm format:check`, and the full Playwright
+  suite (71 passed against a freshly seeded e2e stack).

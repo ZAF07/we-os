@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { EntryListInput } from "@/components/questionnaire/entry-list-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWizard } from "@/components/wizard/use-wizard";
 import { Field, WizardShell } from "@/components/wizard/wizard";
 import type { Question, Questionnaire } from "@/lib/engine";
+import { ENTRY_LIST_TYPE } from "@/lib/entry-list";
 import {
   answersById,
   questionSteps,
@@ -65,7 +67,13 @@ function QuestionField({
       error={error}
       hint={`Why we ask: ${question.why_we_ask} · A good answer: ${question.help_text}`}
     >
-      {MULTILINE_TYPES.has(question.input_type) ? (
+      {question.input_type === ENTRY_LIST_TYPE ? (
+        <EntryListInput
+          label={question.text}
+          value={value}
+          onChange={onChange}
+        />
+      ) : MULTILINE_TYPES.has(question.input_type) ? (
         <Textarea {...control} />
       ) : (
         <Input {...control} />

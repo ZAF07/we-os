@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // These specs share one mutable fixture — a tenant that starts blank and ends
 // filled in — so they must run in declaration order, not merely one at a time.
@@ -23,6 +23,20 @@ const FIRST_STEP_QUESTIONS = [
   "What do you sell?",
   "What category or industry are you in?",
   "What do your main products or services cost?",
+];
+
+const SEGMENTS_QUESTION =
+  "Who buys from you? Describe each distinct group, most important first.";
+
+/**
+ * The audience segments this spec answers with. `q_segments` is an
+ * `entry_list`, so it is not one box to fill but repeatable rows of a name and
+ * what defines the group — which is what gives the campaign wizard real
+ * segments to offer instead of chopped-up prose.
+ */
+const SEGMENTS = [
+  { title: "Urban commuters", description: "buy before work, price aware" },
+  { title: "Weekend hosts", description: "buy larger bags for guests" },
 ];
 
 const CRAFTED_ARTIFACT_QUESTIONS = [
@@ -57,6 +71,27 @@ async function fillAndConfirm(field: Locator, value: string) {
     await field.fill(value);
     expect(await field.inputValue()).toBe(value);
   }).toPass({ timeout: 10_000 });
+}
+
+/**
+ * Fills the audience-segment rows, adding a row per segment beyond the first.
+ *
+ * Args:
+ *   page: The page showing the step that asks for segments.
+ */
+async function fillSegments(page: Page) {
+  for (let index = 0; index < SEGMENTS.length; index += 1) {
+    if (index > 0)
+      await page.getByRole("button", { name: "+ Add another" }).click();
+    await fillAndConfirm(
+      page.getByLabel(`Name of entry ${index + 1}`),
+      SEGMENTS[index].title,
+    );
+    await fillAndConfirm(
+      page.getByLabel(`What defines entry ${index + 1}`),
+      SEGMENTS[index].description,
+    );
+  }
 }
 
 test("the wizard renders the published questions, each explaining itself", async ({
@@ -220,8 +255,6 @@ test("completing the questionnaire lands on the Brand screen with the answers", 
     "What do you sell?": "Specialty coffee kits and subscriptions",
     "What category or industry are you in?": "Specialty coffee",
     "What do your main products or services cost?": "$18–24 a bag",
-    "Who buys from you? Describe each distinct group, most important first.":
-      "Urban commuters",
     "What problems do those buyers hire you to solve?":
       "Long queues at cafes before work.",
     "When a customer picks you over an alternative, what decided it?":
@@ -243,6 +276,8 @@ test("completing the questionnaire lands on the Brand screen with the answers", 
       const field = page.getByLabel(label);
       if (await field.count()) await fillAndConfirm(field, value);
     }
+    const segments = page.getByRole("group", { name: SEGMENTS_QUESTION });
+    if (await segments.count()) await fillSegments(page);
     await page.getByRole("button", { name: "Next →" }).click();
     await expect(page.getByText(`Step ${step + 1} of 5`)).toBeVisible();
   }
@@ -261,4 +296,12 @@ test("completing the questionnaire lands on the Brand screen with the answers", 
   await index.getByRole("button", { name: "Reach & constraints" }).click();
   await expect(page.getByText("Australia-wide, online only")).toBeVisible();
   await expect(page.getByText("$2,000 a month")).toBeVisible();
+
+  // The entries round-trip: what was typed as rows comes back as the same
+  // named groups, each with its own description, rather than as one blob.
+  await index.getByRole("button", { name: "Customers" }).click();
+  for (const segment of SEGMENTS) {
+    await expect(page.getByText(segment.title)).toBeVisible();
+    await expect(page.getByText(segment.description)).toBeVisible();
+  }
 });

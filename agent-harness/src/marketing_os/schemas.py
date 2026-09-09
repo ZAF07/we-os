@@ -445,7 +445,11 @@ class Question(BaseModel):
         text: The question as the owner reads it.
         why_we_ask: Why the question is asked, so every question explains itself.
         help_text: What a good answer looks like.
-        input_type: How the wizard renders the input.
+        input_type: How the wizard renders the input. ``entry_list`` is a
+            repeatable control collecting named entries, whose answer is one
+            ``Title — description`` line per entry, in the order the business
+            put them; that keeps an answer plain text, so nothing about
+            storage or rendering has to know the question collects entries.
         required: Whether an answer is Required — Required answers feed the DNA
             Gate, recommended ones only sharpen the work.
         options: The choices for ``select`` and ``multi_select`` inputs.

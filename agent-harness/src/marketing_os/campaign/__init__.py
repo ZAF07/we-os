@@ -7,6 +7,7 @@ Pure domain with no I/O — where a goal is stored is the DocumentStore's busine
 from __future__ import annotations
 
 from marketing_os.campaign.goal import (
+    AudienceSegment,
     Budget,
     CampaignGoal,
     KpiTiers,
@@ -19,6 +20,7 @@ from marketing_os.campaign.goal import (
 )
 
 __all__ = [
+    "AudienceSegment",
     "Budget",
     "CampaignGoal",
     "KpiTiers",

@@ -49,15 +49,16 @@ COMPLETE_GOAL_BODY: dict[str, object] = {
     "objective": "120 refill subscriptions in 8 weeks",
     "timeframe": {"start_date": "2026-09-01", "end_date": "2026-10-27"},
     "budget": {"amount": 4000, "currency": "SGD"},
-    "audience_segment": "Urban 22-35 beginners curious about climbing",
+    "audience_segment": "Urban beginners",
     "kpis": {
         "business": "120 refill subscriptions",
         "marketing": "2.5% landing-page conversion",
         "creative": "30% hook rate on launch video",
     },
 }
-"""A complete ``POST /campaigns`` body, matching the segment the filled Brand DNA
-fixture names — a campaign may only target a segment the business described."""
+"""A complete ``POST /campaigns`` body, naming the title of a segment the filled
+Brand DNA fixture describes — a campaign may only target a segment the business
+described, and it is the title that identifies it."""
 
 
 def identity_for(tenant: str = TENANT, user: str | None = None) -> VerifiedIdentity:
@@ -495,7 +496,7 @@ def filled_dna_answers() -> BrandDnaRecord:
         "q_what_they_sell": "Monthly bouldering memberships and intro classes",
         "q_category": "Boutique fitness — indoor bouldering",
         "q_price_point": "$90 a month, $25 for an intro class",
-        "q_segments": "Urban 22-35 beginners curious about climbing",
+        "q_segments": ("Urban beginners — 22-35, curious about climbing, have never been to a gym"),
         "q_pain_points": "Gyms are boring and they do not know how to start climbing",
         "q_why_chosen": "Only gym in the city with free coached intro sessions",
         "q_geography": "Inner-city Melbourne, 10km radius",

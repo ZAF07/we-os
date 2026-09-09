@@ -14,6 +14,7 @@ import pytest
 
 from conftest import TENANT, filled_dna_answers
 from marketing_os.campaign import (
+    AudienceSegment,
     Budget,
     CampaignGoal,
     KpiTiers,
@@ -135,10 +136,15 @@ def test_audience_segments_come_from_the_brand_dna() -> None:
         SEED_QUESTIONNAIRE, filled_dna_answers(), business_name="Acme Climbing Gym"
     )
 
-    assert audience_segments(dna) == ["Urban 22-35 beginners curious about climbing"]
+    assert audience_segments(dna) == [
+        AudienceSegment(
+            title="Urban beginners",
+            description="22-35, curious about climbing, have never been to a gym",
+        )
+    ]
 
 
-def test_audience_segments_splits_a_multi_line_answer_and_drops_the_detail() -> None:
+def test_audience_segments_reads_one_entry_per_line_with_its_description() -> None:
     dna = "\n".join(
         [
             "# Brand DNA — Acme",
@@ -149,7 +155,39 @@ def test_audience_segments_splits_a_multi_line_answer_and_drops_the_detail() -> 
         ]
     )
 
-    assert audience_segments(dna) == ["Weekday regulars", "Weekend families"]
+    assert audience_segments(dna) == [
+        AudienceSegment(title="Weekday regulars", description="buy a drink every morning"),
+        AudienceSegment(title="Weekend families", description="larger orders, price sensitive"),
+    ]
+
+
+def test_audience_segments_keeps_the_order_the_business_listed() -> None:
+    dna = "\n".join(
+        [
+            "# Brand DNA — Acme",
+            "",
+            "- **Primary segment(s):**",
+            "  - Third — c",
+            "  - First — a",
+            "  - Second — b",
+        ]
+    )
+
+    assert [segment.title for segment in audience_segments(dna)] == ["Third", "First", "Second"]
+
+
+def test_audience_segments_keeps_a_title_that_carries_no_description() -> None:
+    dna = "- **Primary segment(s):** Weekday regulars\n"
+
+    assert audience_segments(dna) == [AudienceSegment(title="Weekday regulars", description="")]
+
+
+def test_audience_segments_keeps_a_dash_inside_a_description() -> None:
+    dna = "- **Primary segment(s):** Weekday regulars — buy a drink — every morning\n"
+
+    assert audience_segments(dna) == [
+        AudienceSegment(title="Weekday regulars", description="buy a drink — every morning")
+    ]
 
 
 def test_audience_segments_is_empty_when_the_dna_names_none() -> None:

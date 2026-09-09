@@ -9,6 +9,7 @@ import {
   getCampaign,
   listCampaigns,
   EngineError,
+  type AudienceSegment,
   type Campaign,
   type CampaignGoalInput,
   type CampaignSummary,
@@ -26,9 +27,10 @@ export interface CreateResult {
  * DNA, never free text, so the wizard offers exactly what the engine reports.
  *
  * Returns:
- *   The segment names, empty when the Brand DNA names none yet.
+ *   The segments, each with its title and description, empty when the Brand
+ *   DNA names none yet.
  */
-export async function loadAudienceSegments(): Promise<string[]> {
+export async function loadAudienceSegments(): Promise<AudienceSegment[]> {
   const { segments } = await getAudienceSegments();
   return segments;
 }

@@ -41,8 +41,21 @@ CONSTRAINTS_LABEL = "Campaign-specific constraints"
 _SEGMENT_FIELD = "Primary segment(s)"
 _TIMEFRAME_RE = re.compile(r"^\s*(\S+)\s*→\s*(\S+)\s*$")
 _BUDGET_RE = re.compile(r"^\s*([\d,.]+)\s+([A-Za-z]{3})\s*$")
-_SEGMENT_DETAIL_RE = re.compile(r"\s+[—–-]\s+")
+_ENTRY_SEPARATOR_RE = re.compile(r"\s+[—–-]\s+")
 _FALLBACK_SLUG = "campaign"
+
+
+class AudienceSegment(BaseModel):
+    """One group of buyers the business described, as a title and its detail.
+
+    Attributes:
+        title: The short name identifying the segment; what a campaign targets
+            and what downstream stages use as the segment header.
+        description: What defines the group, empty when the business gave none.
+    """
+
+    title: str = ""
+    description: str = ""
 
 
 class Timeframe(BaseModel):
@@ -306,26 +319,48 @@ def allocate_slug(name: str, *, taken: list[str]) -> str:
     return slug
 
 
-def audience_segments(brand_dna: str) -> list[str]:
+def audience_segments(brand_dna: str) -> list[AudienceSegment]:
     """Read the audience segments a campaign may target from the Brand DNA.
 
     A campaign targets one of the segments the business described, never free
     text, so the interface offers exactly what the DNA names. Each segment is
-    written as a name optionally followed by a dash and its detail; only the
-    name identifies the segment.
+    one entry line written as ``Title — description``, the shape the
+    ``entry_list`` input guarantees; a line carrying no separator is a title on
+    its own.
 
     Args:
         brand_dna: The tenant's Brand DNA markdown.
 
     Returns:
-        The segment names, in the order the business listed them; empty when the
-        DNA names none.
+        The segments, in the order the business listed them; empty when the DNA
+        names none.
     """
-    names = [
-        line
+    segments = [
+        _parse_entry(line)
         for label, value in walk_fields(brand_dna)
         if label == _SEGMENT_FIELD
         for line in value.splitlines()
         if line.strip()
     ]
-    return [name for name in (_SEGMENT_DETAIL_RE.split(raw)[0].strip() for raw in names) if name]
+    return [segment for segment in segments if segment.title]
+
+
+def _parse_entry(line: str) -> AudienceSegment:
+    """Split one entry line into its title and its description.
+
+    The web control that writes these lines splits them the same way — see
+    ``web/src/lib/entry-list.ts`` — so the separators the two accept must stay
+    in step.
+
+    Args:
+        line: The entry line, as ``Title — description`` or a bare title.
+
+    Returns:
+        The segment the line describes; the description is empty when the line
+        carries only a title. Only the first separator splits, so a dash inside
+        the description survives.
+    """
+    parts = _ENTRY_SEPARATOR_RE.split(line.strip(), maxsplit=1)
+    title = parts[0].strip()
+    description = parts[1].strip() if len(parts) > 1 else ""
+    return AudienceSegment(title=title, description=description)
