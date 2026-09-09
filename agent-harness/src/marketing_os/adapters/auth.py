@@ -14,6 +14,7 @@ IdP SDK or secret is needed on the engine side, since JWKS is public.
 from __future__ import annotations
 
 import time
+from enum import StrEnum
 from typing import Any, Protocol
 
 import jwt
@@ -105,39 +106,48 @@ def _organization_claim(
     return _first_claim(claims, flat_names)
 
 
-MISSING_HEADER = "missing header"
-EXPIRED = "expired"
-NOT_YET_VALID = "not yet valid"
-SIGNATURE = "signature"
-ISSUER = "issuer"
-AUDIENCE = "audience"
-NO_ORGANIZATION = "no organization"
-MALFORMED = "malformed"
+class RefusalClass(StrEnum):
+    """Why the engine refused a bearer token, for the operator's log only.
+
+    A closed set rather than free text, so a refusal cannot be logged under a
+    name nothing else uses. None of these ever reaches the caller: every one of
+    them answers the same 401 (ADR-0013), and the distinction exists so an
+    operator can tell a clock-skew refusal from a forged one.
+    """
+
+    MISSING_HEADER = "missing header"
+    EXPIRED = "expired"
+    NOT_YET_VALID = "not yet valid"
+    SIGNATURE = "signature"
+    ISSUER = "issuer"
+    AUDIENCE = "audience"
+    NO_ORGANIZATION = "no organization"
+    MALFORMED = "malformed"
 
 
-def _failure_class(exc: Exception) -> str:
+def _failure_class(exc: Exception) -> RefusalClass:
     """Name the class of a PyJWT decode failure for the refusal log.
 
     Args:
         exc: The exception ``jwt.decode`` (or the key lookup) raised.
 
     Returns:
-        One of the module's failure-class constants, defaulting to
-        :data:`MALFORMED` for anything unrecognised.
+        The matching refusal class, defaulting to
+        :attr:`RefusalClass.MALFORMED` for anything unrecognised.
     """
-    by_type: list[tuple[type[Exception], str]] = [
-        (jwt.ExpiredSignatureError, EXPIRED),
-        (jwt.ImmatureSignatureError, NOT_YET_VALID),
-        (jwt.InvalidIssuerError, ISSUER),
-        (jwt.InvalidAudienceError, AUDIENCE),
-        (jwt.InvalidSignatureError, SIGNATURE),
-        (jwt.InvalidKeyError, SIGNATURE),
-        (jwt.PyJWKClientError, SIGNATURE),
+    by_type: list[tuple[type[Exception], RefusalClass]] = [
+        (jwt.ExpiredSignatureError, RefusalClass.EXPIRED),
+        (jwt.ImmatureSignatureError, RefusalClass.NOT_YET_VALID),
+        (jwt.InvalidIssuerError, RefusalClass.ISSUER),
+        (jwt.InvalidAudienceError, RefusalClass.AUDIENCE),
+        (jwt.InvalidSignatureError, RefusalClass.SIGNATURE),
+        (jwt.InvalidKeyError, RefusalClass.SIGNATURE),
+        (jwt.PyJWKClientError, RefusalClass.SIGNATURE),
     ]
     for exception_type, failure_class in by_type:
         if isinstance(exc, exception_type):
             return failure_class
-    return MALFORMED
+    return RefusalClass.MALFORMED
 
 
 def _clock_offsets(token: str) -> str:
@@ -167,7 +177,9 @@ def _clock_offsets(token: str) -> str:
     return f" {' '.join(offsets)}" if offsets else ""
 
 
-def log_refusal(failure_class: str, request_path: str | None, *, token: str | None = None) -> None:
+def log_refusal(
+    failure_class: RefusalClass, request_path: str | None, *, token: str | None = None
+) -> None:
     """Record why a bearer token was refused, for the operator only.
 
     The caller's 401 stays uniform (ADR-0013); this is the other half of that
@@ -176,14 +188,14 @@ def log_refusal(failure_class: str, request_path: str | None, *, token: str | No
     claim beyond ``exp`` and ``iat`` is read.
 
     Args:
-        failure_class: The class of failure, one of the module's constants.
+        failure_class: Why the token was refused.
         request_path: The path the token was presented on, if known.
         token: The refused token, read only for its clock offsets; omit it when
             there is no token to read, as for a missing header.
     """
     _LOGGER.info(
         "token refused: %s path=%s%s",
-        failure_class,
+        failure_class.value,
         request_path or "unknown",
         _clock_offsets(token) if token else "",
     )
@@ -268,7 +280,7 @@ class JwksTokenVerifier:
         )
         subject = claims.get("sub")
         if not organization_id or not isinstance(subject, str):
-            log_refusal(NO_ORGANIZATION, request_path, token=token)
+            log_refusal(RefusalClass.NO_ORGANIZATION, request_path, token=token)
             raise UnauthenticatedError("Sign in to continue.")
 
         return VerifiedClaims(

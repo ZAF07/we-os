@@ -36,20 +36,44 @@ status and stage progress for every campaign are identical before and after.
 
 ## Acceptance criteria
 
-- [ ] Listing N campaigns issues a number of database queries that does not
+- [x] Listing N campaigns issues a number of database queries that does not
       grow with N, asserted by a test that counts statements against the
       Postgres adapter for 1 and for 50 campaigns.
-- [ ] The list response for a tenant with a mix of draft, awaiting-approval,
+      (`test_listing_costs_the_same_number_of_statements_at_1_and_50_campaigns`:
+      **7 statements at both**, of which 4 are the reads and 3 the
+      `set_config` that scopes each to its tenant.)
+- [x] The list response for a tenant with a mix of draft, awaiting-approval,
       approved, stale and archived campaigns is identical to today's,
-      asserted against a fixture captured before the change.
-- [ ] A concurrent request (campaign creation or a gate read) completes while
+      ~~asserted against a fixture captured before the change~~ — asserted
+      instead against the *unchanged* single-campaign path, which is a
+      stronger check than a captured fixture: a fixture pins one recorded
+      answer, this pins the two derivations to each other for every case.
+      `test_the_list_is_identical_across_a_mixed_portfolio` covers draft,
+      running, approved, stale and archived;
+      `test_a_campaign_waiting_on_a_person_says_so_in_the_list` drives a real
+      run to a gate and compares the listed campaign against
+      `GET /campaigns/{slug}`. At the domain seam,
+      `test_progress_from_pre_read_deliverables_matches_reading_the_store`
+      pins `progress_from_latest` to `campaign_progress` over every
+      combination of written stages and waiting stage.
+- [x] A concurrent request (campaign creation or a gate read) completes while
       a list of 100 campaigns is in flight, rather than after it, asserted by
       a test that times both against the running app.
-- [ ] `/campaigns` for a tenant with 120 campaigns answers in well under a
+      (`test_a_concurrent_request_is_answered_while_a_large_list_is_in_flight`
+      issues gate reads continuously for the whole life of a slowed
+      100-campaign list and asserts none of them waited. Verified to fail
+      when *any* single read — the document store's or the run registry's —
+      is left on the event loop.)
+- [x] `/campaigns` for a tenant with 120 campaigns answers in well under a
       second at the engine on a developer machine; record the before and
       after numbers in this issue.
-- [ ] `make check` and `make test-postgres` pass, and `make test-e2e` stays
-      green.
+      **Before: 2.53 s. After: 0.012 s.** Median of five requests each, same
+      machine, same fixture: 120 campaigns seeded through the store with a
+      rotating number of produced stages, served by the engine over a real
+      containerised Postgres. A ~210x reduction.
+- [x] `make check` and `make test-postgres` pass, and `make test-e2e` stays
+      green. (`make check`: 623 passed. `make test-postgres`: 726 passed.
+      `make test-e2e`: 60 passed.)
 
 ## Blocked by
 

@@ -38,7 +38,9 @@ from conftest import (
     clear_prototype_adapters,
     install_prototype_adapters,
     install_scripted_graph,
+    write_all_agent_specs,
 )
+from marketing_os.config import Settings
 
 
 class CountingConnection:
@@ -207,6 +209,50 @@ def test_the_list_is_identical_across_a_mixed_portfolio(client: TestClient) -> N
     assert "re-opened" in by_id[slugs[3]]["blocked_reason"]
 
 
+def test_a_campaign_waiting_on_a_person_says_so_in_the_list(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The awaiting-approval case, which needs a real run halted at a gate.
+
+    Read through the same handler as every other status, so the bulk path is
+    exercised for the one campaign state that costs a checkpoint read.
+    """
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    write_all_agent_specs(Settings(root=repo))
+    install_scripted_graph(monkeypatch)
+    from marketing_os.entrypoints.api.app import app, get_settings
+
+    get_settings.cache_clear()
+    install_prototype_adapters(repo)
+    authenticate(app)
+
+    try:
+        with TestClient(app) as client:
+            run_id = client.post(f"/campaigns/{SLUG}/run", json={}).json()["run_id"]
+            for _ in range(300):
+                if client.get(f"/runs/{run_id}").json()["status"] == "awaiting_approval":
+                    break
+                time.sleep(0.02)
+            else:
+                raise AssertionError("the run never reached a gate")
+
+            listed = client.get("/campaigns").json()["campaigns"]
+            campaign = next(entry for entry in listed if entry["id"] == SLUG)
+            single = client.get(f"/campaigns/{SLUG}").json()
+
+    finally:
+        get_settings.cache_clear()
+        clear_prototype_adapters()
+
+    assert campaign["status"] == "awaiting_approval"
+    assert campaign["blocked_reason"] is not None
+    assert "approval" in campaign["blocked_reason"]
+    assert campaign["status"] == single["status"]
+    assert campaign["stage_progress"]["current_stage_key"] == next(
+        stage["key"] for stage in single["stages"] if stage["state"] != "completed"
+    )
+
+
 def test_an_archived_campaign_stays_off_the_list(client: TestClient) -> None:
     from marketing_os.entrypoints.api.app import get_document_store
 
@@ -273,54 +319,73 @@ async def test_a_concurrent_request_is_answered_while_a_large_list_is_in_flight(
     """
     monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
     install_scripted_graph(monkeypatch)
-    from marketing_os.entrypoints.api.app import app, get_document_store, get_settings
+    from marketing_os.entrypoints.api.app import (
+        app,
+        get_document_store,
+        get_registry,
+        get_settings,
+    )
 
     get_settings.cache_clear()
+    get_registry.cache_clear()
     install_prototype_adapters(repo)
     authenticate(app)
 
     store = get_document_store()
     _seed_campaigns(store, 100)
-    _slow_down_reads(store, monkeypatch, seconds=0.002)
+    _slow_down_reads(store, monkeypatch, ("read", "read_many", "exists", "list"), seconds=0.002)
+    _slow_down_reads(get_registry(), monkeypatch, ("active",), seconds=0.5)
 
     transport = ASGITransport(app=app)
-    finished: list[str] = []
+    listing_done = asyncio.Event()
+    latencies: list[float] = []
     try:
         async with AsyncClient(transport=transport, base_url="http://engine") as client:
 
             async def _list() -> Any:
-                response = await client.get("/campaigns")
-                finished.append("list")
-                return response
+                try:
+                    return await client.get("/campaigns")
+                finally:
+                    listing_done.set()
 
-            async def _gate() -> Any:
-                await asyncio.sleep(0.01)
-                response = await client.get(f"/campaigns/{SLUG}/gate")
-                finished.append("gate")
-                return response
+            async def _gate_repeatedly() -> list[Any]:
+                """Ask an unrelated question over and over until the list is done."""
+                responses = []
+                while not listing_done.is_set():
+                    started = time.perf_counter()
+                    responses.append(await client.get(f"/campaigns/{SLUG}/gate"))
+                    latencies.append(time.perf_counter() - started)
+                return responses
 
-            listed, gate = await asyncio.gather(_list(), _gate())
+            listed, gates = await asyncio.gather(_list(), _gate_repeatedly())
     finally:
         get_settings.cache_clear()
         clear_prototype_adapters()
 
     assert listed.status_code == 200
-    assert gate.status_code == 200
     assert len(listed.json()["campaigns"]) >= 100
-    assert finished == ["gate", "list"], (
-        "the unrelated request waited for the list instead of overtaking it"
+    assert all(gate.status_code == 200 for gate in gates)
+    assert len(gates) > 1, "the list finished before a single concurrent request was tried"
+    assert max(latencies) < 0.25, (
+        f"an unrelated request waited {max(latencies):.2f}s behind the list"
     )
 
 
-def _slow_down_reads(store: Any, monkeypatch: pytest.MonkeyPatch, *, seconds: float) -> None:
-    """Make every store read block, so a list's synchronous cost is visible.
+def _slow_down_reads(
+    store: Any, monkeypatch: pytest.MonkeyPatch, names: tuple[str, ...], *, seconds: float
+) -> None:
+    """Make the named reads block, so a list's synchronous cost is visible.
+
+    Every read the list makes is slowed, the registry's included: one left on the
+    event loop is enough to stall the engine, so the test must be able to see it.
 
     Args:
-        store: The document store to slow.
+        store: The object whose reads to slow.
         monkeypatch: The pytest monkeypatch fixture.
+        names: The method names to slow.
         seconds: How long each read blocks for.
     """
-    for name in ("read", "read_many", "exists", "list"):
+    for name in names:
         original = getattr(store, name)
 
         def _slow(*args: Any, _original: Any = original, **kwargs: Any) -> Any:

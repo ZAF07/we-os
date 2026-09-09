@@ -253,6 +253,7 @@ def test_logs_the_failure_class_and_path_when_a_token_has_expired(
 def test_logs_a_signature_failure_without_the_token(
     verifier: JwksTokenVerifier, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """A token signed by the wrong key is logged as a signature failure."""
     impostor = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     token = make_token(impostor)
     with caplog.at_level(logging.INFO, logger="marketing_os"):
@@ -269,6 +270,7 @@ def test_logs_a_missing_organization_claim(
     keypair: tuple[Any, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """A token that verifies but names no business is its own failure class."""
     private_key, _ = keypair
     with caplog.at_level(logging.INFO, logger="marketing_os"):
         with pytest.raises(UnauthenticatedError):
@@ -301,6 +303,7 @@ def test_logs_the_issuer_and_audience_classes_apart(
     keypair: tuple[Any, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Wrong issuer and wrong audience are distinguishable in the log."""
     private_key, _ = keypair
     with caplog.at_level(logging.INFO, logger="marketing_os"):
         with pytest.raises(UnauthenticatedError):
@@ -344,6 +347,7 @@ def test_a_verified_token_logs_nothing(
     keypair: tuple[Any, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """The line records a refusal, so a token that verifies writes none."""
     private_key, _ = keypair
     with caplog.at_level(logging.INFO, logger="marketing_os"):
         verifier.verify(make_token(private_key), request_path="/campaigns")

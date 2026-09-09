@@ -137,7 +137,8 @@ class VersionHistoryReader:
             The stage keys in mandatory pipeline order.
 
         Raises:
-            NotImplementedError: Always; every subclass supplies its own.
+            NotImplementedError: Always; every subclass supplies its own, exactly
+                as each supplies its own :meth:`_load`.
         """
         raise NotImplementedError
 

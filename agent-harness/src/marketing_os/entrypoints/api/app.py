@@ -53,7 +53,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, field_validator
 from pydantic import Field as PydanticField
 
-from marketing_os.adapters.auth import MISSING_HEADER, JwksTokenVerifier, log_refusal
+from marketing_os.adapters.auth import JwksTokenVerifier, RefusalClass, log_refusal
 from marketing_os.adapters.observability import (
     configure_logging,
     configure_tracing,
@@ -126,6 +126,7 @@ from marketing_os.schemas import (
     DnaAnswer,
     DnaCompleteness,
     Questionnaire,
+    RunRecord,
     VerifiedIdentity,
     human_revisions_used,
 )
@@ -412,7 +413,7 @@ def get_identity(request: Request) -> VerifiedIdentity:
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
-        log_refusal(MISSING_HEADER, request.url.path)
+        log_refusal(RefusalClass.MISSING_HEADER, request.url.path)
         raise _http_error(UnauthenticatedError("Sign in to continue."))
     try:
         claims = get_token_verifier().verify(token.strip(), request_path=request.url.path)
@@ -854,13 +855,48 @@ def _campaign_slugs(tenant: str, store: DocumentStore) -> list[str]:
     Returns:
         The slugs, in sorted order.
     """
+    return _slugs_in(store.list(tenant, "campaigns"))
+
+
+def _slugs_in(paths: list[str]) -> list[str]:
+    """Return the campaign slugs a listing of a tenant's documents names.
+
+    A campaign is a directory holding a goal document, so the goal is what makes
+    a slug a campaign. Taken as already-listed paths rather than as a store, so
+    the same rule serves a caller that has the listing in hand.
+
+    Args:
+        paths: Tenant-relative document paths under ``campaigns``.
+
+    Returns:
+        The slugs, in sorted order.
+    """
     return sorted(
         {
             path.split("/")[1]
-            for path in store.list(tenant, "campaigns")
+            for path in paths
             if path.count("/") >= 2 and path.endswith(f"/{_GOAL_DOCUMENT}")
         }
     )
+
+
+def _archived_slugs_in(paths: list[str]) -> set[str]:
+    """Return the campaign slugs a listing shows an archive marker for.
+
+    The bulk counterpart of :func:`_is_archived`, reading the same marker
+    document from a listing the caller already has.
+
+    Args:
+        paths: Tenant-relative document paths under ``campaigns``.
+
+    Returns:
+        The archived slugs.
+    """
+    return {
+        path.split("/")[1]
+        for path in paths
+        if path.count("/") >= 2 and path.endswith(f"/{_ARCHIVE_MARKER}")
+    }
 
 
 def _read_goal(tenant: str, slug: str, store: DocumentStore) -> CampaignGoal:
@@ -1068,9 +1104,9 @@ async def list_campaigns(identity: Identity) -> dict[str, object]:
     """
     tenant = identity.tenant_id
     portfolio = await asyncio.to_thread(
-        _read_portfolio, tenant, get_document_store(), get_deliverable_store()
+        _read_portfolio, tenant, get_document_store(), get_deliverable_store(), get_registry()
     )
-    waiting_by_slug = await _stages_awaiting_approval(tenant, portfolio.slugs)
+    waiting_by_slug = await _stages_awaiting_approval(tenant, portfolio.halted)
     human_gate_stages = get_settings().human_gate_stages
 
     summaries: list[dict[str, object]] = []
@@ -1104,40 +1140,42 @@ class _Portfolio:
         goals: Each active campaign's goal, keyed by slug.
         latest: Each campaign's newest deliverable version per stage, keyed by
             slug then stage key; a campaign that has produced nothing is absent.
+        halted: The listed campaigns' live runs that are holding at an Approval
+            Gate. Which stage each is holding at is a checkpoint read, not a
+            store read, so it is resolved by the caller.
     """
 
     slugs: list[str]
     goals: dict[str, CampaignGoal]
     latest: dict[str, dict[str, DeliverableVersion]]
+    halted: list[RunRecord]
 
 
 def _read_portfolio(
-    tenant: str, store: DocumentStore, deliverables: DeliverableStore
+    tenant: str, store: DocumentStore, deliverables: DeliverableStore, registry: RunRegistry
 ) -> _Portfolio:
     """Read everything the campaign list needs, in a fixed number of queries.
 
-    Three reads whatever the number of campaigns: one listing of the tenant's
+    Four reads whatever the number of campaigns: one listing of the tenant's
     campaign documents, which names both the goals and the archive markers; one
-    bulk read of those goals; and one bulk read of every campaign's newest
-    deliverable per stage. Synchronous, so the caller runs it off the event loop.
+    bulk read of those goals; one bulk read of every campaign's newest
+    deliverable per stage; and one read of the tenant's live runs. Every one of
+    them is a synchronous store call, so they are gathered here for the caller to
+    run off the event loop together — a read left behind would stall the engine
+    exactly as the whole fan-out used to.
 
     Args:
         tenant: The tenant whose campaigns are listed.
         store: The tenant-scoped document store.
         deliverables: The store holding each stage's version chain.
+        registry: The registry naming which campaigns have a live run.
 
     Returns:
         The tenant's active campaigns and the data every summary is derived from.
     """
     paths = store.list(tenant, "campaigns")
-    archived = {path.split("/")[1] for path in paths if path.endswith(f"/{_ARCHIVE_MARKER}")}
-    slugs = [
-        path.split("/")[1]
-        for path in sorted(paths)
-        if path.count("/") >= 2
-        and path.endswith(f"/{_GOAL_DOCUMENT}")
-        and path.split("/")[1] not in archived
-    ]
+    archived = _archived_slugs_in(paths)
+    slugs = [slug for slug in _slugs_in(paths) if slug not in archived]
     documents = store.read_many(tenant, [f"campaigns/{slug}/{_GOAL_DOCUMENT}" for slug in slugs])
     goals = {
         slug: _named_goal(document, slug)
@@ -1149,28 +1187,28 @@ def _read_portfolio(
         slugs=listed,
         goals=goals,
         latest=deliverables.latest_by_campaign(tenant, listed),
+        halted=[
+            record
+            for record in registry.active(tenant)
+            if record.status == AWAITING_APPROVAL and record.slug in goals
+        ],
     )
 
 
-async def _stages_awaiting_approval(tenant: str, slugs: list[str]) -> dict[str, str]:
-    """Return the stage each campaign's live run is halted at, for those that are.
+async def _stages_awaiting_approval(tenant: str, halted: list[RunRecord]) -> dict[str, str]:
+    """Return the stage each halted run is holding at, keyed by campaign.
 
-    The tenant's live runs are read once rather than once per campaign, and only
-    the few that are actually halted at a gate cost a checkpoint read.
+    Only runs already known to be waiting on a person cost a checkpoint read, and
+    one campaign holds at most one run (ADR-0025), so this is bounded by how many
+    of the tenant's campaigns are at a gate rather than by how many exist.
 
     Args:
         tenant: The tenant that owns the campaigns.
-        slugs: The campaigns to answer for.
+        halted: The tenant's live runs that are holding at an Approval Gate.
 
     Returns:
         The waiting stage key per campaign, with idle campaigns absent.
     """
-    listed = set(slugs)
-    halted = [
-        record
-        for record in get_registry().active(tenant)
-        if record.status == AWAITING_APPROVAL and record.slug in listed
-    ]
     waiting: dict[str, str] = {}
     for record in halted:
         stage = await awaiting_approval_stage(

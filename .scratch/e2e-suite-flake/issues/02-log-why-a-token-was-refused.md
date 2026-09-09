@@ -28,19 +28,27 @@ an event worth seeing in the default configuration, not a debug detail.
 
 ## Acceptance criteria
 
-- [ ] Each distinct refusal path emits exactly one log line under the
+- [x] Each distinct refusal path emits exactly one log line under the
       `marketing_os` namespace naming its failure class and the request path;
       an expired token's line also carries its `exp` and `iat` offsets from
-      the engine clock in seconds.
-- [ ] The HTTP response for every refusal is byte-for-byte what it was:
+      the engine clock in seconds. (`marketing_os.auth`, at INFO. The classes
+      are a closed `RefusalClass` enum: the seven named here plus `malformed`
+      as the catch-all for anything PyJWT raises that the other seven do not
+      name — without it an unrecognised failure would log nothing, which is
+      the opacity this issue exists to remove.)
+- [x] The HTTP response for every refusal is byte-for-byte what it was:
       status 401 and the same "Sign in to continue." detail, asserted by the
       existing tests.
-- [ ] No log line contains the raw token or any of its claims beyond the two
+- [x] No log line contains the raw token or any of its claims beyond the two
       timestamps; a test asserts the token string is absent from the captured
-      log.
-- [ ] Unit tests at the verifier seam use `caplog` to assert the line for at
-      least the expired, signature and missing-organization cases.
-- [ ] `make check` and `make test-postgres` pass.
+      log. (`test_no_refusal_line_contains_the_raw_token` walks every refusal
+      class and asserts the token, the `sub` and the `org_id` are all absent.)
+- [x] Unit tests at the verifier seam use `caplog` to assert the line for at
+      least the expired, signature and missing-organization cases. (Those
+      three, plus not-yet-valid, issuer, audience, and a test that a token
+      which verifies logs nothing. The missing-header case is asserted at the
+      API seam in `test_tenancy.py`, where that refusal is raised.)
+- [x] `make check` and `make test-postgres` pass. (623 passed / 726 passed.)
 
 ## Blocked by
 
