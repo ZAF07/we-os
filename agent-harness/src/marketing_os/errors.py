@@ -47,7 +47,9 @@ class UnauthenticatedError(MarketingOSError):
     Raised by the token verifier for every failure mode — absent, malformed,
     expired, wrongly signed, wrong issuer or audience, or carrying no tenant
     claim. The reasons are deliberately not distinguished to the caller, so a
-    probe learns nothing about why a token was refused.
+    probe learns nothing about why a token was refused; they are named in the
+    engine log instead, since the opacity is for the probe's benefit and not
+    the operator's (ADR-0013).
     """
 
     http_status = 401

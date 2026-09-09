@@ -32,3 +32,34 @@ tolerance Clerk itself encodes by dating `nbf` 10 seconds before `iat`. Anyone
 raising the BFF's `clockSkewInMs` above that must raise the engine's leeway
 with it; a token the BFF trusts and the engine refuses is the failure mode this
 amendment exists to name.
+
+## Amendment — a refusal is opaque to the caller, not to the operator (2026-09-09)
+
+The uniform 401 above is a decision about **the caller**, and it stands: every
+way a token can fail — absent, malformed, expired, not yet valid, wrongly
+signed, wrong issuer or audience, carrying no organization — answers the same
+status and the same "Sign in to continue.", so a probe learns nothing from a
+refusal.
+
+That opacity was never meant for the operator, and treating it as though it
+were is what made the amendment above expensive to reach: the engine wrote
+nothing when it said no, so diagnosing issue 01 took twelve suite runs and a
+hand-patched container to establish a fact the engine already knew.
+
+The two audiences are now separated. The response is unchanged, and each
+refusal writes one INFO line under `marketing_os.auth` naming its failure class
+and the request path; for a decodable token the line also carries `exp` and
+`iat` as offsets from the engine clock, which is what makes a skew or expiry
+window visible at a glance rather than inferable over a dozen runs. The failure
+classes are a closed set (`RefusalClass`), so a refusal cannot be logged under a
+name nothing else uses.
+
+What the log must never carry is the other half of the contract: **not the token,
+and no claim beyond those two timestamps.** A refusal log that echoed the
+credential would hand an attacker with log access what the 401 was written to
+withhold, and it is asserted by test rather than left to care.
+
+Anyone adding a refusal path adds its class here too. A path that refuses
+silently is the condition this amendment exists to prevent — the caller-facing
+answer is the same either way, so silence is invisible until someone is
+debugging it under time pressure.
