@@ -45,7 +45,7 @@ The second public page, and the only place prices appear: the three Tiers side b
 _Avoid_: plans page (a plan is the Performance Plan), billing page (there is no billing yet), packages.
 
 **Get Started**:
-The third public page, and the funnel step: the same Tiers and the same questions as **Pricing**, under a heading that asks for the decision rather than explaining the prices. Every generic "Get started" on the public half leads here, because a tier is chosen before an account exists. Its tier buttons say **Launch** — the action that will one day open checkout, and today opens sign-up carrying the chosen tier.
+The third public page, and the funnel step: the same Tiers and the same questions as **Pricing**, under a heading that asks for the decision rather than explaining the prices. Every generic "Get started" on the public half leads here, because a tier is chosen before an account exists. Its tier buttons say **Launch** — the action that will one day open checkout, and today opens sign-up carrying the chosen tier, or **Welcome** carrying it for a person who is already signed in, since they have a login and need no second one.
 _Avoid_: signup page, checkout, plan picker, upgrade page.
 
 **Welcome**:
