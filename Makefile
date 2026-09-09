@@ -59,6 +59,40 @@ e2e-down:
 	$(COMPOSE) down -v --remove-orphans
 	@$(MAKE) --no-print-directory e2e-prune
 
+# Re-establish both test tenants' fixture state without restarting the stack.
+#
+# Some specs need a tenant that has answered nothing, and the suite leaves the
+# fixture dirty: the onboarding spec fills the blank tenant in, and every spec
+# that creates a campaign leaves it behind. Restarting the stack to get that
+# back costs a minute and rebuilds images to fix what is only stale data.
+#
+# So this re-runs the `seed` service, which already *establishes* fixture state
+# rather than adding to it (agent-harness/scripts/seed_test_tenants.py) — the
+# same job that runs at stack start, so the two paths cannot drift. Takes about
+# three seconds.
+#
+# `--no-deps` is required: without it Compose honours the service's
+# `depends_on` and starts a *second* Postgres alongside the live one.
+#
+# Use it between runs against a stack left up by `e2e-up`:
+#
+#     make e2e-test-reset && cd web && E2E_STACK=compose pnpm test
+#
+# `test-e2e` does not need it — that target starts the stack, so the seed has
+# just run.
+#
+# The stack check discards its own stderr: with no web/.env.local, Compose
+# cannot interpolate the seed service's variables and says so — which would
+# print above the advice below and bury it. `ps` exits 0 whether or not the
+# stack is up, so the test is on its output being empty, not on its status.
+e2e-test-reset:
+	@if [ -z "$$($(COMPOSE) ps --quiet postgres 2>/dev/null)" ]; then \
+		echo "The e2e stack is not running, so there is nothing to reset."; \
+		echo "Start it with 'make e2e-up', then re-run 'make e2e-test-reset'."; \
+		exit 1; \
+	fi
+	$(COMPOSE) run --rm --no-deps seed
+
 # Remove the images this stack's rebuilds orphaned.
 #
 # Scoped deliberately. A blanket `docker system prune` would take other
@@ -97,4 +131,4 @@ e2e-prune-cache:
 e2e-logs:
 	$(COMPOSE) logs -f
 
-.PHONY: dev dev-down dev-logs dev-reset test-e2e e2e-up e2e-down e2e-prune e2e-prune-cache e2e-logs
+.PHONY: dev dev-down dev-logs dev-reset test-e2e e2e-up e2e-down e2e-test-reset e2e-prune e2e-prune-cache e2e-logs

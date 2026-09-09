@@ -101,7 +101,7 @@ Every piece of work — feature, refactor, or bug — gets an issue file in `.sc
 
 - **Start**: run `/triage` ("show me what needs attention") to re-orient on in-flight work. When the user asks "what's in flight?" or "where were we?", this is the answer.
 - **End, work complete**: `/post-implement`, then the user commits the `.scratch/` status change (commit message convention: "updated tasks status").
-- **Before pushing**: run the full suite — `make check` **and** `make test-postgres`. There is no CI for `agent-harness/`; this manual run is the only gate.
+- **Before pushing**: run the full suite — `make check`, `make test-postgres` **and** `make test-e2e`. There is no CI; these manual runs are the only gate. See [Running the e2e suite](#running-the-e2e-suite) for why `make test-e2e` and not the fast loop.
 - **End, mid-task**: append a status note under `## Comments` in the active issue file — where things stand, what's next, any open questions.
 
 ---
@@ -117,8 +117,38 @@ A task is done when:
    is marked `slow` and skips silently unless `MARKETING_OS_TEST_POSTGRES=1` is
    set, so durable checkpointing goes unverified. `make test-postgres` is the
    only run that covers it.
-3. New behavior has tests; for a bug fix, a test that was red before the fix and is green after.
-4. Acceptance criteria on the issue are checked off with evidence, and you've reported what you changed and any caveats plainly.
+3. If the change touches `web/` or the engine's HTTP surface, `make test-e2e`
+   passes. Not the fast loop — see [Running the e2e suite](#running-the-e2e-suite).
+4. New behavior has tests; for a bug fix, a test that was red before the fix and is green after.
+5. Acceptance criteria on the issue are checked off with evidence, and you've reported what you changed and any caveats plainly.
+
+---
+
+## Running the e2e suite
+
+`make test-e2e` is the gate. It builds the images, starts Postgres + engine + web, seeds the two test tenants, runs the browser suite, and tears the stack down. Use it after any feature and always before pushing.
+
+`make e2e-test-reset` is **not an alternative to it** — it runs no tests. It re-establishes the two test tenants' fixture state (~3s) so the suite can be re-run against a stack left up by `make e2e-up`, instead of paying a full restart. It exists because the suite dirties its own fixture: the onboarding specs need a tenant that has answered nothing, and one of them fills that tenant in.
+
+The fast loop, for iterating:
+
+```
+make e2e-up                                                    # once
+make e2e-test-reset && cd web && E2E_STACK=compose pnpm test    # repeat
+make e2e-down                                                  # when done
+```
+
+**The trap: the fast loop does not rebuild images.** Only `web/` is bind-mounted and served by `pnpm dev`, so frontend source is live; nothing else is. If the change touched the engine, either Dockerfile, `package.json`, or any dependency, the running stack serves stale code and the fast loop goes green on what you already replaced. Rebuild with `make test-e2e` or `make e2e-up`.
+
+| Changed                      | Run                                    |
+| ---------------------------- | -------------------------------------- |
+| `web/` source only           | Fast loop is fine                      |
+| Engine, Dockerfiles, deps    | `make test-e2e` — must rebuild         |
+| Pre-push, or unsure          | `make test-e2e`                        |
+
+No reset is needed before the *first* run against a freshly started stack — starting the stack seeds it. `e2e-test-reset` is for the second run onward, and refuses with instructions if the stack is down.
+
+The reset re-runs `agent-harness/scripts/seed_test_tenants.py` — the same job the `seed` service runs at startup, so the two paths cannot drift. That script already *establishes* fixture state rather than adding to it, which is what makes re-running it safe. Editing the script while the stack is up leaves the reset on a cached image; restart with `make e2e-up` after touching it.
 
 ---
 
