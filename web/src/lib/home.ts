@@ -67,7 +67,7 @@ const MISSING_FIELDS_SHOWN = 3;
  */
 export function toQueue(
   campaigns: CampaignSummary[],
-  completeness: DnaCompleteness | null = null,
+  completeness: DnaCompleteness | null,
 ): QueueItem[] {
   const waiting: QueueItem[] = [];
   const stale: QueueItem[] = [];

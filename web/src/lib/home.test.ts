@@ -34,29 +34,35 @@ function campaign(
 
 describe("toQueue", () => {
   it("lists only campaigns that actually need a person", () => {
-    const queue = toQueue([
-      campaign("running-fine", { status: "running" }),
-      campaign("needs-me", {
-        status: "awaiting_approval",
-        blocked_reason: "Strategy is waiting for your approval.",
-      }),
-    ]);
+    const queue = toQueue(
+      [
+        campaign("running-fine", { status: "running" }),
+        campaign("needs-me", {
+          status: "awaiting_approval",
+          blocked_reason: "Strategy is waiting for your approval.",
+        }),
+      ],
+      null,
+    );
 
     expect(queue).toHaveLength(1);
     expect(queue[0].slug).toBe("needs-me");
   });
 
   it("puts approvals before stale work, because an approval blocks a run", () => {
-    const queue = toQueue([
-      campaign("stale-one", {
-        status: "running",
-        blocked_reason: "Plan rests on a decision you have since re-opened.",
-      }),
-      campaign("gate-one", {
-        status: "awaiting_approval",
-        blocked_reason: "Strategy is waiting for your approval.",
-      }),
-    ]);
+    const queue = toQueue(
+      [
+        campaign("stale-one", {
+          status: "running",
+          blocked_reason: "Plan rests on a decision you have since re-opened.",
+        }),
+        campaign("gate-one", {
+          status: "awaiting_approval",
+          blocked_reason: "Strategy is waiting for your approval.",
+        }),
+      ],
+      null,
+    );
 
     expect(queue.map((item) => item.slug)).toEqual(["gate-one", "stale-one"]);
     expect(queue[0].tag).toBe("Decision");
@@ -64,18 +70,21 @@ describe("toQueue", () => {
   });
 
   it("shows the engine's own reason rather than inventing one", () => {
-    const queue = toQueue([
-      campaign("c", {
-        status: "awaiting_approval",
-        blocked_reason: "Strategy is waiting for your approval.",
-      }),
-    ]);
+    const queue = toQueue(
+      [
+        campaign("c", {
+          status: "awaiting_approval",
+          blocked_reason: "Strategy is waiting for your approval.",
+        }),
+      ],
+      null,
+    );
 
     expect(queue[0].title).toBe("Strategy is waiting for your approval.");
   });
 
   it("is empty when nothing needs anyone", () => {
-    expect(toQueue([campaign("a"), campaign("b")])).toEqual([]);
+    expect(toQueue([campaign("a"), campaign("b")], null)).toEqual([]);
   });
 });
 

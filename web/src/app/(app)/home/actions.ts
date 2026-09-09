@@ -35,7 +35,9 @@ export interface HomeData {
  * Brand DNA completeness comes along for the same reason: a complete Brand DNA
  * gates every campaign stage there is, so an unfinished one is the one thing
  * waiting on a business that has no campaigns yet. It is optional too — a read
- * that fails costs the queue item, not the screen.
+ * that fails costs the queue item, not the screen. The `(app)` layout reads the
+ * same report for its nav badge, so a Home render makes the call twice; that is
+ * a deliberate trade, made in the layout's own docstring.
  *
  * Returns:
  *   The campaigns, the usage report (null when it could not be read), what the

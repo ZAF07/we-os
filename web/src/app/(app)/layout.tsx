@@ -13,8 +13,10 @@ export const dynamic = "force-dynamic";
  * The Brand DNA gate is read here rather than on Home because it blocks every
  * campaign stage there is, so the count belongs on every signed-in route — and
  * the shell is a client component, which cannot fetch. Reading it here costs a
- * second read on Home, which also needs it for the queue; that is cheaper than
- * threading one read up from a page to the layout that renders around it.
+ * second read on Home, which also needs it for the queue — `loadHome` is a
+ * server action, so React's per-request `cache` does not span the two. That
+ * duplicate read is cheaper than threading one up from a page to the layout
+ * that renders around it.
  *
  * Args:
  *   children: The active route's content.
