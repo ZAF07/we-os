@@ -1,6 +1,6 @@
 # 10 — Stage output shows raw markdown instead of rendered markdown
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Symptom
@@ -56,13 +56,42 @@ explicitly rather than relying on a prose plugin.
 
 ## Acceptance criteria
 
-- [ ] Stage deliverables render as formatted markdown — headings, bold/italic,
+- [x] Stage deliverables render as formatted markdown — headings, bold/italic,
       lists, blockquotes, links, code and tables — with no raw markdown characters
       visible in the workspace
-- [ ] Both `DeliverableContent` call sites are covered (current version and an
+- [x] Both `DeliverableContent` call sites are covered (current version and an
       older version viewed from history)
-- [ ] Raw HTML embedded in deliverable markdown is not evaluated
-- [ ] A unit test asserts a heading renders as a heading element rather than as
+- [x] Raw HTML embedded in deliverable markdown is not evaluated
+- [x] A unit test asserts a heading renders as a heading element rather than as
       literal `##` text
-- [ ] Quality gates pass from `web/`: `pnpm lint`, `pnpm typecheck`,
+- [x] Quality gates pass from `web/`: `pnpm lint`, `pnpm typecheck`,
       `pnpm test:unit`, `pnpm format:check`
+
+## Completion
+
+- Completed: 2026-09-09
+- Commits: 7a5e29c (render the markdown), a6e24f0 (fenced code block fix from review)
+
+Rendered with `react-markdown` + `remark-gfm`, each element styled explicitly
+because Tailwind v4 rules out `@tailwindcss/typography` as a drop-in. No
+`rehype-raw` is configured, so HTML in model-written deliverables stays inert
+text rather than becoming markup.
+
+Both call sites in `workspace.tsx` (394, 397) go through `DeliverableContent`,
+so the fix inside that component covers the current version and an older version
+viewed from history.
+
+Verified in the running app, not only in tests: the deliverable rendered with
+headings, bold/italic, blockquote, bullets, a GFM table, a link and inline code,
+and `<img src=x onerror=alert(1)>` showed as text with no `img` element.
+
+Two defects found during the work and fixed:
+- The renderer passes each component the syntax-tree node it came from, which
+  was being spread onto the element as a literal `node="[object Object]"`.
+  `withoutNode` drops it in one place.
+- The `code` component applied the inline pill unconditionally, so a fenced
+  block drew a chip inside the `pre` panel and lost its `language-*` class.
+
+Unit tests moved to a jsdom environment so a component that renders a document
+can be asserted on as elements. Gates from `web/`: `pnpm lint`, `pnpm typecheck`,
+`pnpm test:unit` (108 passing), `pnpm format:check` all pass.
