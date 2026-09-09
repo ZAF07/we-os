@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Input } from "@/components/ui/input";
@@ -97,19 +97,52 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [segments, setSegments] = useState<AudienceSegment[] | null>(null);
+  const [segmentsFailed, setSegmentsFailed] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    loadAudienceSegments()
-      .then(setSegments)
-      .catch(() => {
-        setSegments([]);
-        setFailure(
-          "We could not load your audience segments. Refresh to try again.",
-        );
-      });
+  const startSegmentLoad = useCallback(() => {
+    let abandoned = false;
+    void (async () => {
+      try {
+        const loaded = await loadAudienceSegments();
+        if (!abandoned) setSegments(loaded);
+      } catch {
+        // Retried once before anything is said to the owner: the failure this
+        // recovers from is transient latency, and a second attempt costs less
+        // than making someone read an error and click a button for a blip.
+        try {
+          const loaded = await loadAudienceSegments();
+          if (!abandoned) setSegments(loaded);
+        } catch {
+          if (!abandoned) setSegmentsFailed(true);
+        }
+      }
+    })();
+    // Returned so a load whose answer nobody is waiting for any more cannot
+    // land on the field: the effect below abandons it when the page goes away,
+    // and `retrySegments` abandons it when a retry supersedes it.
+    return () => {
+      abandoned = true;
+    };
   }, []);
+
+  useEffect(startSegmentLoad, [startSegmentLoad]);
+
+  const abandonSegmentLoad = useRef<(() => void) | null>(null);
+
+  /**
+   * Puts the field back into its loading state and asks for the segments again.
+   *
+   * The load in flight is abandoned first, so an earlier attempt answering late
+   * cannot overwrite the answer this one is about to give.
+   */
+  const retrySegments = () => {
+    abandonSegmentLoad.current?.();
+    setSegments(null);
+    setSegmentsFailed(false);
+    abandonSegmentLoad.current = startSegmentLoad();
+  };
 
   const setField = (field: keyof Draft) => (value: string) =>
     setDraft((previous) => ({ ...previous, [field]: value }));
@@ -253,7 +286,19 @@ export default function NewCampaignPage() {
             error={showError("audience_segment")}
             hint="From the segments you described in your Brand DNA — a campaign targets one group, never everyone."
           >
-            {segments === null ? (
+            {segmentsFailed ? (
+              <div className="text-[13px] text-muted-foreground">
+                We could not load your audience segments — this is on us, not on
+                your Brand DNA.{" "}
+                <button
+                  type="button"
+                  onClick={retrySegments}
+                  className="font-semibold text-slate-800 underline underline-offset-2"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : segments === null ? (
               <div className="text-[13px] text-muted-foreground">
                 Loading your segments…
               </div>

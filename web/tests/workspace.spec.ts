@@ -151,8 +151,12 @@ test.describe("approval gate", () => {
     // the page loaded.
     const approve = page.getByRole("button", { name: "Approve", exact: true });
     await expect(approve).toBeVisible({ timeout: 120_000 });
+    // Two headings read "Brand strategy" once the deliverable renders: the
+    // stage panel's, and the document's own title. `level` tells them apart —
+    // the panel heads the stage at h2, and DeliverableContent maps the
+    // document's leading `#` to h1.
     await expect(
-      page.getByRole("heading", { name: "Brand strategy" }),
+      page.getByRole("heading", { level: 2, name: "Brand strategy" }),
     ).toBeVisible();
     await expect(page.getByLabel("Deliverable")).not.toBeEmpty();
 
