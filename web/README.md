@@ -153,10 +153,13 @@ compose stack.
 
 Two things about the Clerk instance make this work, and both live in the
 dashboard rather than the repository. The tenantless user must exist and belong
-to no organization. And Clerk must **not** create or require an organization
-during sign-up: with that setting on, a person with no organization is held in
-a pending session, the welcome flow never runs, and the setup fails naming the
-setting rather than passing on a session that was never tenantless.
+to no organization. And the instance's Organizations settings must be set to
+**Membership optional** (Personal Accounts on). The default, **Membership
+required**, makes Clerk prompt every new session to create or join an
+organization before it can reach the app: the session sits in a "pending"
+state on a "choose-organization" task, the welcome flow never runs, and the
+setup fails naming that task and this setting rather than passing on a session
+that was never tenantless.
 
 Until `E2E_CLERK_TENANTLESS_USER_EMAIL` is set, the project is **skipped** and
 Playwright reports it so. That is deliberate: the user is provisioned by hand,
