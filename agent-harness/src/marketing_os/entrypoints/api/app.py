@@ -38,10 +38,11 @@ Run with:  uvicorn marketing_os.entrypoints.api.app:app --reload
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Annotated
 
@@ -52,7 +53,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, field_validator
 from pydantic import Field as PydanticField
 
-from marketing_os.adapters.auth import JwksTokenVerifier
+from marketing_os.adapters.auth import JwksTokenVerifier, RefusalClass, log_refusal
 from marketing_os.adapters.observability import (
     configure_logging,
     configure_tracing,
@@ -79,6 +80,7 @@ from marketing_os.campaign.progress import (
     StageProgress,
     campaign_progress,
     produced_deliverables,
+    progress_from_latest,
     stale_keys,
 )
 from marketing_os.config import Settings, load_settings
@@ -120,9 +122,11 @@ from marketing_os.schemas import (
     BrandDnaRecord,
     CampaignResult,
     Consumption,
+    DeliverableVersion,
     DnaAnswer,
     DnaCompleteness,
     Questionnaire,
+    RunRecord,
     VerifiedIdentity,
     human_revisions_used,
 )
@@ -392,7 +396,9 @@ def get_identity(request: Request) -> VerifiedIdentity:
 
     The header is checked before either provider is built, so a request with no
     token answers 401 even when the service is misconfigured — an unauthenticated
-    caller learns "sign in", not "the server is broken".
+    caller learns "sign in", not "the server is broken". Every refusal is logged
+    server-side with its failure class, since the uniform 401 the caller sees is
+    for the probe's benefit, not the operator's.
 
     Args:
         request: The inbound request carrying the bearer token.
@@ -407,9 +413,10 @@ def get_identity(request: Request) -> VerifiedIdentity:
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
+        log_refusal(RefusalClass.MISSING_HEADER, request.url.path)
         raise _http_error(UnauthenticatedError("Sign in to continue."))
     try:
-        claims = get_token_verifier().verify(token.strip())
+        claims = get_token_verifier().verify(token.strip(), request_path=request.url.path)
         tenant = get_tenant_directory().resolve(
             external_auth_id=claims.organization_id, name=claims.business_name
         )
@@ -848,13 +855,48 @@ def _campaign_slugs(tenant: str, store: DocumentStore) -> list[str]:
     Returns:
         The slugs, in sorted order.
     """
+    return _slugs_in(store.list(tenant, "campaigns"))
+
+
+def _slugs_in(paths: list[str]) -> list[str]:
+    """Return the campaign slugs a listing of a tenant's documents names.
+
+    A campaign is a directory holding a goal document, so the goal is what makes
+    a slug a campaign. Taken as already-listed paths rather than as a store, so
+    the same rule serves a caller that has the listing in hand.
+
+    Args:
+        paths: Tenant-relative document paths under ``campaigns``.
+
+    Returns:
+        The slugs, in sorted order.
+    """
     return sorted(
         {
             path.split("/")[1]
-            for path in store.list(tenant, "campaigns")
+            for path in paths
             if path.count("/") >= 2 and path.endswith(f"/{_GOAL_DOCUMENT}")
         }
     )
+
+
+def _archived_slugs_in(paths: list[str]) -> set[str]:
+    """Return the campaign slugs a listing shows an archive marker for.
+
+    The bulk counterpart of :func:`_is_archived`, reading the same marker
+    document from a listing the caller already has.
+
+    Args:
+        paths: Tenant-relative document paths under ``campaigns``.
+
+    Returns:
+        The archived slugs.
+    """
+    return {
+        path.split("/")[1]
+        for path in paths
+        if path.count("/") >= 2 and path.endswith(f"/{_ARCHIVE_MARKER}")
+    }
 
 
 def _read_goal(tenant: str, slug: str, store: DocumentStore) -> CampaignGoal:
@@ -872,7 +914,20 @@ def _read_goal(tenant: str, slug: str, store: DocumentStore) -> CampaignGoal:
     Returns:
         The structured goal, named after the slug when the document is untitled.
     """
-    goal = parse_campaign_goal(store.read(tenant, f"campaigns/{slug}/{_GOAL_DOCUMENT}"))
+    return _named_goal(store.read(tenant, f"campaigns/{slug}/{_GOAL_DOCUMENT}"), slug)
+
+
+def _named_goal(document: str, slug: str) -> CampaignGoal:
+    """Parse a goal document, falling back to the slug for an unnamed campaign.
+
+    Args:
+        document: The goal document's markdown.
+        slug: The campaign slug, used as the name when the document is untitled.
+
+    Returns:
+        The structured goal, always carrying a name.
+    """
+    goal = parse_campaign_goal(document)
     if not goal.name.strip():
         return goal.model_copy(update={"name": slug})
     return goal
@@ -1036,31 +1091,132 @@ async def list_campaigns(identity: Identity) -> dict[str, object]:
     Archived campaigns are left out: archiving is what takes a campaign off this
     list, and reading it back is what ``GET /campaigns/{slug}`` is for.
 
+    The whole portfolio is read in a bounded number of queries rather than a
+    fan-out per campaign, and the reads run in a worker thread: the stores are
+    synchronous, so a hundred-campaign list left on the event loop would hold up
+    every other request to the engine behind it.
+
     Args:
         identity: The verified identity whose tenant owns the campaigns.
 
     Returns:
         One summary per active campaign.
     """
-    store = get_document_store()
     tenant = identity.tenant_id
+    portfolio = await asyncio.to_thread(
+        _read_portfolio, tenant, get_document_store(), get_deliverable_store(), get_registry()
+    )
+    waiting_by_slug = await _stages_awaiting_approval(tenant, portfolio.halted)
+    human_gate_stages = get_settings().human_gate_stages
+
     summaries: list[dict[str, object]] = []
-    for slug in _campaign_slugs(tenant, store):
-        if _is_archived(tenant, slug, store):
-            continue
-        goal = _read_goal(tenant, slug, store)
-        stages, status = await _stage_report(tenant, slug)
+    for slug in portfolio.slugs:
+        progress = progress_from_latest(
+            portfolio.latest.get(slug, {}),
+            human_gate_stages=human_gate_stages,
+            waiting=waiting_by_slug.get(slug),
+        )
+        stages = [_render_stage(stage) for stage in progress.stages]
+        goal = portfolio.goals[slug]
         summaries.append(
             {
                 "id": slug,
                 "name": goal.name,
                 "objective": goal.objective,
-                "status": status,
+                "status": progress.status,
                 "stage_progress": _stage_progress(stages),
-                "blocked_reason": _blocked_reason(stages, status),
+                "blocked_reason": _blocked_reason(stages, progress.status),
             }
         )
     return {"campaigns": summaries}
+
+
+@dataclass(frozen=True)
+class _Portfolio:
+    """One tenant's active campaigns, read in a bounded number of queries.
+
+    Attributes:
+        slugs: The active campaign slugs, sorted, archived ones already excluded.
+        goals: Each active campaign's goal, keyed by slug.
+        latest: Each campaign's newest deliverable version per stage, keyed by
+            slug then stage key; a campaign that has produced nothing is absent.
+        halted: The listed campaigns' live runs that are holding at an Approval
+            Gate. Which stage each is holding at is a checkpoint read, not a
+            store read, so it is resolved by the caller.
+    """
+
+    slugs: list[str]
+    goals: dict[str, CampaignGoal]
+    latest: dict[str, dict[str, DeliverableVersion]]
+    halted: list[RunRecord]
+
+
+def _read_portfolio(
+    tenant: str, store: DocumentStore, deliverables: DeliverableStore, registry: RunRegistry
+) -> _Portfolio:
+    """Read everything the campaign list needs, in a fixed number of queries.
+
+    Four reads whatever the number of campaigns: one listing of the tenant's
+    campaign documents, which names both the goals and the archive markers; one
+    bulk read of those goals; one bulk read of every campaign's newest
+    deliverable per stage; and one read of the tenant's live runs. Every one of
+    them is a synchronous store call, so they are gathered here for the caller to
+    run off the event loop together — a read left behind would stall the engine
+    exactly as the whole fan-out used to.
+
+    Args:
+        tenant: The tenant whose campaigns are listed.
+        store: The tenant-scoped document store.
+        deliverables: The store holding each stage's version chain.
+        registry: The registry naming which campaigns have a live run.
+
+    Returns:
+        The tenant's active campaigns and the data every summary is derived from.
+    """
+    paths = store.list(tenant, "campaigns")
+    archived = _archived_slugs_in(paths)
+    slugs = [slug for slug in _slugs_in(paths) if slug not in archived]
+    documents = store.read_many(tenant, [f"campaigns/{slug}/{_GOAL_DOCUMENT}" for slug in slugs])
+    goals = {
+        slug: _named_goal(document, slug)
+        for slug in slugs
+        if (document := documents.get(f"campaigns/{slug}/{_GOAL_DOCUMENT}")) is not None
+    }
+    listed = sorted(goals)
+    return _Portfolio(
+        slugs=listed,
+        goals=goals,
+        latest=deliverables.latest_by_campaign(tenant, listed),
+        halted=[
+            record
+            for record in registry.active(tenant)
+            if record.status == AWAITING_APPROVAL and record.slug in goals
+        ],
+    )
+
+
+async def _stages_awaiting_approval(tenant: str, halted: list[RunRecord]) -> dict[str, str]:
+    """Return the stage each halted run is holding at, keyed by campaign.
+
+    Only runs already known to be waiting on a person cost a checkpoint read, and
+    one campaign holds at most one run (ADR-0025), so this is bounded by how many
+    of the tenant's campaigns are at a gate rather than by how many exist.
+
+    Args:
+        tenant: The tenant that owns the campaigns.
+        halted: The tenant's live runs that are holding at an Approval Gate.
+
+    Returns:
+        The waiting stage key per campaign, with idle campaigns absent.
+    """
+    waiting: dict[str, str] = {}
+    for record in halted:
+        stage = await awaiting_approval_stage(
+            tenant, record.slug, stage=record.stage, checkpointer=get_checkpointer()
+        )
+        if stage is not None:
+            waiting[record.slug] = stage
+    return waiting
 
 
 def _stage_progress(stages: list[dict[str, object]]) -> dict[str, object]:

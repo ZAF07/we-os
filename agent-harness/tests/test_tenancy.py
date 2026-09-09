@@ -9,6 +9,7 @@ not exist.
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
@@ -100,6 +101,36 @@ def test_a_malformed_authorization_header_is_refused(
 
     get_settings.cache_clear()
     get_token_verifier.cache_clear()
+    clear_prototype_adapters()
+
+
+def test_a_request_with_no_bearer_header_is_logged_with_its_path(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The operator sees why the engine said no; the caller still sees only 401."""
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    from marketing_os.entrypoints.api.app import app, get_settings
+
+    get_settings.cache_clear()
+    install_prototype_adapters(repo)
+    app.dependency_overrides.clear()
+
+    with TestClient(app) as client:
+        with caplog.at_level(logging.INFO, logger="marketing_os"):
+            response = client.get("/me")
+
+    assert response.status_code == 401
+    assert response.json()["message"] == "Sign in to continue."
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("marketing_os") and "token refused" in record.getMessage()
+    ]
+    assert len(lines) == 1
+    assert "missing header" in lines[0]
+    assert "/me" in lines[0]
+
+    get_settings.cache_clear()
     clear_prototype_adapters()
 
 

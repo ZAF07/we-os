@@ -85,6 +85,30 @@ class PostgresDocumentStore:
             raise DocumentNotFoundError(f"Document not found: {path}")
         return str(row[0])
 
+    def read_many(self, tenant: str, paths: list[str]) -> dict[str, str]:
+        """Return the text of several documents in one statement.
+
+        Keyed by the path the caller asked for rather than by the normalised one
+        it was looked up as, so the result is addressable with the same strings
+        that were passed in.
+
+        Args:
+            tenant: The tenant the documents belong to.
+            paths: The tenant-relative document paths to read.
+
+        Returns:
+            The content of every document that exists, keyed by its given path.
+        """
+        if not paths:
+            return {}
+        asked_for = {normalise_document_path(path): path for path in paths}
+        with self._scoped_to(tenant) as (connection, scoped):
+            rows = connection.execute(
+                "SELECT path, content FROM documents WHERE tenant_id = %s AND path = ANY(%s)",
+                (scoped, list(asked_for)),
+            ).fetchall()
+        return {asked_for[str(row[0])]: str(row[1]) for row in rows}
+
     def write(self, tenant: str, path: str, content: str) -> None:
         """Create or replace a document.
 

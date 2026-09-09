@@ -86,6 +86,35 @@ def test_list_unknown_prefix_is_empty(store: DocumentStore) -> None:
     assert store.list("acme", "campaigns/nothing-here") == []
 
 
+def test_read_many_returns_every_document_that_exists(store: DocumentStore) -> None:
+    store.write("acme", "campaigns/spring/goal.md", "# Spring")
+    store.write("acme", "campaigns/summer/goal.md", "# Summer")
+    read = store.read_many(
+        "acme",
+        ["campaigns/spring/goal.md", "campaigns/summer/goal.md"],
+    )
+    assert read == {
+        "campaigns/spring/goal.md": "# Spring",
+        "campaigns/summer/goal.md": "# Summer",
+    }
+
+
+def test_read_many_omits_a_missing_document_rather_than_raising(store: DocumentStore) -> None:
+    store.write("acme", "campaigns/spring/goal.md", "# Spring")
+    read = store.read_many("acme", ["campaigns/spring/goal.md", "campaigns/gone/goal.md"])
+    assert read == {"campaigns/spring/goal.md": "# Spring"}
+
+
+def test_read_many_of_no_paths_reads_nothing(store: DocumentStore) -> None:
+    store.write("acme", "campaigns/spring/goal.md", "# Spring")
+    assert store.read_many("acme", []) == {}
+
+
+def test_read_many_never_crosses_a_tenant(store: DocumentStore) -> None:
+    store.write("acme", "campaigns/spring/goal.md", "# Spring")
+    assert store.read_many("globex", ["campaigns/spring/goal.md"]) == {}
+
+
 def test_dna_document_round_trips_per_tenant(store: DocumentStore) -> None:
     store.write("acme", "dna.md", "# Brand DNA — Acme")
     assert store.exists("acme", "dna.md") is True

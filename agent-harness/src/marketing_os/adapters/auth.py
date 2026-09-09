@@ -13,13 +13,18 @@ IdP SDK or secret is needed on the engine side, since JWKS is public.
 
 from __future__ import annotations
 
+import time
+from enum import StrEnum
 from typing import Any, Protocol
 
 import jwt
 from jwt import PyJWKClient
 
+from marketing_os.adapters.observability import get_logger
 from marketing_os.errors import UnauthenticatedError
 from marketing_os.schemas import VerifiedClaims
+
+_LOGGER = get_logger("marketing_os.auth")
 
 _ALGORITHMS = ["RS256"]
 
@@ -101,6 +106,101 @@ def _organization_claim(
     return _first_claim(claims, flat_names)
 
 
+class RefusalClass(StrEnum):
+    """Why the engine refused a bearer token, for the operator's log only.
+
+    A closed set rather than free text, so a refusal cannot be logged under a
+    name nothing else uses. None of these ever reaches the caller: every one of
+    them answers the same 401 (ADR-0013), and the distinction exists so an
+    operator can tell a clock-skew refusal from a forged one.
+    """
+
+    MISSING_HEADER = "missing header"
+    EXPIRED = "expired"
+    NOT_YET_VALID = "not yet valid"
+    SIGNATURE = "signature"
+    ISSUER = "issuer"
+    AUDIENCE = "audience"
+    NO_ORGANIZATION = "no organization"
+    MALFORMED = "malformed"
+
+
+def _failure_class(exc: Exception) -> RefusalClass:
+    """Name the class of a PyJWT decode failure for the refusal log.
+
+    Args:
+        exc: The exception ``jwt.decode`` (or the key lookup) raised.
+
+    Returns:
+        The matching refusal class, defaulting to
+        :attr:`RefusalClass.MALFORMED` for anything unrecognised.
+    """
+    by_type: list[tuple[type[Exception], RefusalClass]] = [
+        (jwt.ExpiredSignatureError, RefusalClass.EXPIRED),
+        (jwt.ImmatureSignatureError, RefusalClass.NOT_YET_VALID),
+        (jwt.InvalidIssuerError, RefusalClass.ISSUER),
+        (jwt.InvalidAudienceError, RefusalClass.AUDIENCE),
+        (jwt.InvalidSignatureError, RefusalClass.SIGNATURE),
+        (jwt.InvalidKeyError, RefusalClass.SIGNATURE),
+        (jwt.PyJWKClientError, RefusalClass.SIGNATURE),
+    ]
+    for exception_type, failure_class in by_type:
+        if isinstance(exc, exception_type):
+            return failure_class
+    return RefusalClass.MALFORMED
+
+
+def _clock_offsets(token: str) -> str:
+    """Describe a token's ``exp`` and ``iat`` relative to this engine's clock.
+
+    Read without verifying, since the point is to explain a token that failed
+    verification. Only the two timestamps are read; no other claim is touched,
+    so nothing identifying can reach the log.
+
+    Args:
+        token: The raw bearer token.
+
+    Returns:
+        A fragment like ``" exp=-60s iat=-3660s"``, or an empty string if the
+        token does not decode or carries neither timestamp.
+    """
+    try:
+        claims = jwt.decode(token, options={"verify_signature": False})
+    except Exception:
+        return ""
+    now = time.time()
+    offsets = [
+        f"{name}={int(claims[name] - now):+d}s"
+        for name in ("exp", "iat")
+        if isinstance(claims.get(name), int | float)
+    ]
+    return f" {' '.join(offsets)}" if offsets else ""
+
+
+def log_refusal(
+    failure_class: RefusalClass, request_path: str | None, *, token: str | None = None
+) -> None:
+    """Record why a bearer token was refused, for the operator only.
+
+    The caller's 401 stays uniform (ADR-0013); this is the other half of that
+    contract — the engine log names the failure so a refusal is diagnosable
+    without patching a running container. The token is never logged, and no
+    claim beyond ``exp`` and ``iat`` is read.
+
+    Args:
+        failure_class: Why the token was refused.
+        request_path: The path the token was presented on, if known.
+        token: The refused token, read only for its clock offsets; omit it when
+            there is no token to read, as for a missing header.
+    """
+    _LOGGER.info(
+        "token refused: %s path=%s%s",
+        failure_class.value,
+        request_path or "unknown",
+        _clock_offsets(token) if token else "",
+    )
+
+
 class JwksTokenVerifier:
     """Verifies RS256 bearer tokens against an OIDC issuer's published JWKS.
 
@@ -137,11 +237,13 @@ class JwksTokenVerifier:
             self.jwks_url, cache_keys=True
         )
 
-    def verify(self, token: str) -> VerifiedClaims:
+    def verify(self, token: str, request_path: str | None = None) -> VerifiedClaims:
         """Verify a bearer token and return the claims it carries.
 
         Args:
             token: The raw bearer token, without its ``Bearer `` prefix.
+            request_path: The path the token was presented on, recorded in the
+                refusal log so an operator can place a failure.
 
         Returns:
             The verified claims, naming the person and the IdP organization
@@ -152,7 +254,8 @@ class JwksTokenVerifier:
         Raises:
             UnauthenticatedError: If the token fails any verification step or
                 carries no organization claim. The reason is not disclosed to
-                the caller, so a probe learns nothing from the refusal.
+                the caller, so a probe learns nothing from the refusal — it is
+                written to the engine log instead.
         """
         try:
             signing_key = self._jwks_client.get_signing_key_from_jwt(token)
@@ -169,6 +272,7 @@ class JwksTokenVerifier:
                 },
             )
         except Exception as exc:
+            log_refusal(_failure_class(exc), request_path, token=token)
             raise UnauthenticatedError("Sign in to continue.") from exc
 
         organization_id = _organization_claim(
@@ -176,6 +280,7 @@ class JwksTokenVerifier:
         )
         subject = claims.get("sub")
         if not organization_id or not isinstance(subject, str):
+            log_refusal(RefusalClass.NO_ORGANIZATION, request_path, token=token)
             raise UnauthenticatedError("Sign in to continue.")
 
         return VerifiedClaims(

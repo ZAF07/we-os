@@ -154,6 +154,41 @@ class PostgresDeliverableStore:
             ).fetchone()
         return _to_version(row) if row is not None else None
 
+    def latest_by_campaign(
+        self, tenant: str, slugs: list[str]
+    ) -> dict[str, dict[str, DeliverableVersion]]:
+        """Return the newest version of every stage, for several campaigns at once.
+
+        One statement whatever the number of campaigns, so listing a tenant's
+        portfolio does not cost a round trip per campaign per stage.
+        ``DISTINCT ON`` takes the highest version within each
+        ``(slug, stage_key)`` group, which is exactly what :meth:`latest` returns
+        for that pair.
+
+        Args:
+            tenant: The tenant that owns the campaigns.
+            slugs: The campaign slugs to read.
+
+        Returns:
+            For each campaign that has produced anything, its newest version per
+            stage.
+        """
+        if not slugs:
+            return {}
+        with self._scoped_to(tenant) as (connection, scoped):
+            rows = connection.execute(
+                f"SELECT DISTINCT ON (slug, stage_key) slug, {_COLUMNS} "
+                "FROM deliverable_versions "
+                "WHERE tenant_id = %s AND slug = ANY(%s) "
+                "ORDER BY slug, stage_key, version DESC",
+                (scoped, list(slugs)),
+            ).fetchall()
+        by_campaign: dict[str, dict[str, DeliverableVersion]] = {}
+        for row in rows:
+            version = _to_version(row[1:])
+            by_campaign.setdefault(str(row[0]), {})[version.stage_key] = version
+        return by_campaign
+
     def version(
         self, tenant: str, slug: str, stage_key: str, version: int
     ) -> DeliverableVersion | None:
