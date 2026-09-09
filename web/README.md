@@ -151,9 +151,13 @@ the onboarding project, because its specs share that mutable fixture. It needs
 the engine — recording the tier is an engine call — so it runs inside the
 compose stack.
 
-Two things about the Clerk instance make this work, and both live in the
+Three things about the Clerk instance make this work, and all live in the
 dashboard rather than the repository. The tenantless user must exist and belong
-to no organization. And the instance's Organizations settings must be set to
+to no organization. The instance must **allow users to create organizations**,
+because Welcome creates the business from the browser as the signed-in person;
+Clerk stamps that permission onto each user when it is created, so the setup
+turns it on for the tenantless user if it was created before the default was,
+and says so. And the instance's Organizations settings must be set to
 **Membership optional** (Personal Accounts on). The default, **Membership
 required**, makes Clerk prompt every new session to create or join an
 organization before it can reach the app: the session sits in a "pending"
