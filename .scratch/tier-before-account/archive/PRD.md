@@ -1,6 +1,6 @@
 # PRD: A tier before an account — the platform creates the tenant
 
-Status: ready-for-agent
+Status: completed
 Category: feature
 Date: 2026-09-09
 
@@ -192,3 +192,20 @@ The tenantless user stops being tenantless the moment the spec succeeds, so the 
 - That PRD also recorded an open tension — the copy promises credits granted monthly and a move to a higher tier, while the engine has neither a monthly reset nor billing. This feature does not resolve it. It narrows it slightly: the tier is now recorded, so the "move to a higher tier" promise has something to move.
 - Turning off Clerk's create-organization-on-sign-up is a **dashboard setting**, not a code change, and it is the single most likely thing to be missed when standing up a fresh Clerk instance. Missed, sign-up creates an organization behind the app's back and the gate never fires — with no error anywhere.
 - When Stripe lands, the expected change is: Launch opens checkout; the tier is written by a webhook on payment success rather than by the welcome page; and the 409 on tier change is replaced by whatever the subscription lifecycle needs. The welcome page's organization creation should not need to move.
+
+## Completion
+
+- Completed: 2026-09-09
+- Commits, on branch `tier-before-account`:
+  - `9b8d758` Get Started: the page where a tier is chosen before an account exists
+  - `75d8bec` The engine owns the tier: a column, a backfill, and PUT /tenant/tier
+  - `02892c1` The gate, and the Welcome page that creates the business
+  - `8cc55e2` Address code review: one set-once judgement, honest docstrings, real assertions
+  - `6b3d4ec` Skip the tenantless project, saying why, until its Clerk user is provisioned
+  - `77880c1` Glossary and ADR-0027: where Launch leads when signed in, and what guards the backfill
+  - merged to main as `b6c878f` Merge: a tier is chosen before an account exists, and the platform creates the tenant
+  - then `f1e281b` (merged as `6c07839`) and `d41b0cd` (merged as `68019a5`), which got the tenantless project running against the real Clerk instance
+- Per-criterion evidence lives on the three archived issues in [issues/archive/](issues/archive/).
+- Where the shipped flow departs from this document, on purpose: Home sends a business whose tier was never recorded to Get Started rather than to bare Welcome, and Welcome records the tier for a session that already has a business — the two rules as written would loop, since Welcome makes no engine call and cannot see the recorded tier. Recorded in CONTEXT.md and ADR-0027.
+- Two Clerk dashboard settings turned out to be needed, and both are now named in the web setup steps: "Membership optional" (Personal Accounts on) in place of the default "Membership required", and "allow users to create organizations". The backfill is guarded on the column's absence rather than on empty values, so a later `init-db` never defaults a business mid-way through choosing.
+- The open tension the landing PRD recorded stands: the copy promises monthly credits and a move to a higher tier, while the engine has no monthly reset and a tier change is refused until billing exists.
