@@ -1,6 +1,7 @@
-Status: ready-for-agent
+# 02 — Brand DNA answer textarea does not grow with the answer
 
-# Brand DNA answer textarea does not grow with the answer
+Status: ready-for-agent
+Type: bug
 
 ## Symptom
 

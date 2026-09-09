@@ -1,6 +1,7 @@
-Status: ready-for-agent
+# 03 — Incomplete Brand DNA is invisible on Home and in the side nav
 
-# Incomplete Brand DNA is invisible on Home and in the side nav
+Status: ready-for-agent
+Type: task
 
 ## Symptom
 
