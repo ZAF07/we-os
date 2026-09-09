@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWizard } from "@/components/wizard/use-wizard";
 import { Field, WizardShell } from "@/components/wizard/wizard";
-import type { CampaignGoalInput } from "@/lib/engine";
+import type { AudienceSegment, CampaignGoalInput } from "@/lib/engine";
 import { cn } from "@/lib/utils";
 
 import { createCampaignAction, loadAudienceSegments } from "../actions";
@@ -96,7 +96,7 @@ function toGoal(draft: Draft): CampaignGoalInput {
 export default function NewCampaignPage() {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(EMPTY);
-  const [segments, setSegments] = useState<string[] | null>(null);
+  const [segments, setSegments] = useState<AudienceSegment[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -264,23 +264,40 @@ export default function NewCampaignPage() {
               </div>
             ) : (
               <div className="flex flex-col gap-1.5" role="radiogroup">
-                {segments.map((segment) => (
-                  <button
-                    key={segment}
-                    type="button"
-                    role="radio"
-                    aria-checked={draft.audience_segment === segment}
-                    onClick={() => setField("audience_segment")(segment)}
-                    className={cn(
-                      "cursor-pointer rounded-lg border px-3 py-2 text-left text-[13px] font-medium",
-                      draft.audience_segment === segment
-                        ? "border-primary bg-indigo-50 font-semibold text-primary"
-                        : "bg-card hover:border-indigo-200",
-                    )}
-                  >
-                    {segment}
-                  </button>
-                ))}
+                {segments.map((segment) => {
+                  const chosen = draft.audience_segment === segment.title;
+                  return (
+                    <button
+                      key={segment.title}
+                      type="button"
+                      role="radio"
+                      aria-checked={chosen}
+                      onClick={() =>
+                        setField("audience_segment")(segment.title)
+                      }
+                      className={cn(
+                        "cursor-pointer rounded-lg border px-3 py-2 text-left text-[13px]",
+                        chosen
+                          ? "border-primary bg-indigo-50 text-primary"
+                          : "bg-card hover:border-indigo-200",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "block",
+                          chosen ? "font-semibold" : "font-medium",
+                        )}
+                      >
+                        {segment.title}
+                      </span>
+                      {segment.description !== "" && (
+                        <span className="mt-0.5 block text-[12.5px] font-normal text-muted-foreground">
+                          {segment.description}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </Field>

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { EntryListInput } from "@/components/questionnaire/entry-list-input";
 import { StatusPill } from "@/components/ui/status-pill";
 import type {
   BrandDna,
@@ -10,8 +11,12 @@ import type {
   Question,
   Questionnaire,
 } from "@/lib/engine";
+import { parseEntries } from "@/lib/entry-list";
 import { questionSteps } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
+
+/** The input type collecting repeatable named entries, one per row. */
+const ENTRY_LIST_TYPE = "entry_list";
 
 import { deleteAnswer, saveAnswers } from "@/app/(app)/onboarding/actions";
 
@@ -247,16 +252,28 @@ function AnswerCard({
 
       {editing ? (
         <div className="mt-2.5">
-          <label htmlFor={`answer-${question.id}`} className="sr-only">
-            {question.text}
-          </label>
-          <textarea
-            id={`answer-${question.id}`}
-            value={draft}
-            onChange={(event) => onDraft(event.target.value)}
-            rows={question.input_type === "textarea" ? 4 : 2}
-            className="w-full rounded-lg border bg-card px-2.5 py-2 text-[13px]"
-          />
+          {question.input_type === ENTRY_LIST_TYPE ? (
+            <EntryListInput
+              label={question.text}
+              value={draft}
+              titlePlaceholder="Name this group"
+              descriptionPlaceholder="What defines them?"
+              onChange={onDraft}
+            />
+          ) : (
+            <>
+              <label htmlFor={`answer-${question.id}`} className="sr-only">
+                {question.text}
+              </label>
+              <textarea
+                id={`answer-${question.id}`}
+                value={draft}
+                onChange={(event) => onDraft(event.target.value)}
+                rows={question.input_type === "textarea" ? 4 : 2}
+                className="w-full rounded-lg border bg-card px-2.5 py-2 text-[13px]"
+              />
+            </>
+          )}
           <div className="mt-2 flex gap-2">
             <button
               onClick={onSave}
@@ -281,6 +298,8 @@ function AnswerCard({
               <span className="text-muted-foreground italic">
                 Not answered yet.
               </span>
+            ) : question.input_type === ENTRY_LIST_TYPE ? (
+              <EntryList answer={answer} />
             ) : (
               answer
             )}
@@ -311,5 +330,32 @@ function AnswerCard({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * Renders an `entry_list` answer as the named entries it holds, rather than
+ * as the line-per-entry text they are stored as.
+ *
+ * Args:
+ *   answer: The saved answer text.
+ *
+ * Returns:
+ *   One row per entry, its name above what defines it.
+ */
+function EntryList({ answer }: { answer: string }) {
+  return (
+    <ol className="flex flex-col gap-1.5">
+      {parseEntries(answer).map((entry, index) => (
+        <li key={index}>
+          <div className="font-semibold">{entry.title}</div>
+          {entry.description !== "" && (
+            <div className="text-[12.5px] text-muted-foreground">
+              {entry.description}
+            </div>
+          )}
+        </li>
+      ))}
+    </ol>
   );
 }

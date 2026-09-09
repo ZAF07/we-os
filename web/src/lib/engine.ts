@@ -414,9 +414,22 @@ export function archiveCampaign(slug: string): Promise<Campaign> {
   );
 }
 
-/** Reads the audience segments a campaign may target, from the Brand DNA. */
-export function getAudienceSegments(): Promise<{ segments: string[] }> {
-  return engineFetch<{ segments: string[] }>("/brand-dna/segments");
+export interface AudienceSegment {
+  title: string;
+  description: string;
+}
+
+/**
+ * Reads the audience segments a campaign may target, from the Brand DNA.
+ *
+ * Each segment carries its title and its description, because the two together
+ * are what lets a business tell one group from another when it picks; only the
+ * title identifies the segment a campaign targets.
+ */
+export function getAudienceSegments(): Promise<{
+  segments: AudienceSegment[];
+}> {
+  return engineFetch<{ segments: AudienceSegment[] }>("/brand-dna/segments");
 }
 
 export interface DeliverableSummary {

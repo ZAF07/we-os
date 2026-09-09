@@ -1124,11 +1124,12 @@ def _require_known_segment(tenant: str, segment: str, store: DocumentStore) -> N
     Raises:
         HTTPException: 422 if the segment is not one the Brand DNA names.
     """
-    known = (
+    defined = (
         audience_segments(store.read(tenant, DNA_DOCUMENT))
         if store.exists(tenant, DNA_DOCUMENT)
         else []
     )
+    known = [defined_segment.title for defined_segment in defined]
     if segment not in known:
         named = ", ".join(known) if known else "none yet — complete your Brand DNA first"
         raise _http_error(
@@ -1368,17 +1369,23 @@ def brand_dna_segments(identity: Identity) -> dict[str, object]:
     The segments come from the tenant's Brand DNA, so the interface offers
     exactly what the business described rather than a free-text box.
 
+    Each segment carries its title and its description, because the two together
+    are what lets a business tell one group from another when it picks; only the
+    title identifies the segment a campaign targets.
+
     Args:
         identity: The verified identity whose tenant owns the Brand DNA.
 
     Returns:
-        The segment names the Brand DNA defines.
+        The segments the Brand DNA defines, in the order the business listed
+        them.
     """
     store = get_document_store()
     tenant = identity.tenant_id
     if not store.exists(tenant, DNA_DOCUMENT):
         return {"segments": []}
-    return {"segments": audience_segments(store.read(tenant, DNA_DOCUMENT))}
+    segments = audience_segments(store.read(tenant, DNA_DOCUMENT))
+    return {"segments": [segment.model_dump() for segment in segments]}
 
 
 @app.get("/campaigns/{slug}/gate")

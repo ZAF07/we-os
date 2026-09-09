@@ -10,6 +10,17 @@ import { uniqueName } from "./fixtures";
  */
 const CAMPAIGN_NAME = uniqueName("Autumn Referral Push");
 
+/**
+ * The first audience segment the e2e tenant is seeded with, as
+ * `scripts/seed_test_tenants.py` writes it. A segment is a named entry, so the
+ * seed and this spec agree on both halves: the title a campaign stores and the
+ * description shown beside it.
+ */
+const SEGMENT = {
+  title: "Urban beginners",
+  description: "22-35, curious about climbing, have never been to a gym",
+};
+
 test("validation blocks the wizard until required inputs are filled", async ({
   page,
 }) => {
@@ -79,7 +90,6 @@ test("completing the wizard creates a real campaign that appears in the list", a
   await expect(page.getByText("Step 3 of 4")).toBeVisible();
   const segment = page.getByRole("radio").first();
   await expect(segment).toBeVisible();
-  const segmentName = (await segment.textContent()) ?? "";
   await segment.click();
   await page.getByLabel("Campaign budget").fill("4000");
   await page.getByLabel("Start date").fill("2026-09-01");
@@ -91,7 +101,10 @@ test("completing the wizard creates a real campaign that appears in the list", a
   await expect(
     page.getByText("120 refill subscriptions").first(),
   ).toBeVisible();
-  await expect(page.getByText(segmentName.trim())).toBeVisible();
+  // The goal carries the segment's title, not the whole entry the Brand DNA
+  // stores — the title is what identifies a segment downstream.
+  await expect(page.getByText(SEGMENT.title, { exact: true })).toBeVisible();
+  await expect(page.getByText(SEGMENT.description)).toHaveCount(0);
   await page.getByRole("button", { name: "Create campaign" }).click();
 
   await expect(page).toHaveURL(/\/campaigns\/autumn-referral-push/);
@@ -115,5 +128,10 @@ test("the target segment is chosen from the Brand DNA, not typed", async ({
   await page.getByRole("button", { name: "Next →" }).click();
 
   await expect(page.getByRole("radiogroup")).toBeVisible();
-  await expect(page.getByRole("radio").first()).toBeVisible();
+  // Each option is a segment the business authored in its Brand DNA, shown as
+  // the name it gave the group *and* what defines it — one without the other
+  // leaves two groups impossible to tell apart.
+  const first = page.getByRole("radio").first();
+  await expect(first).toContainText(SEGMENT.title);
+  await expect(first).toContainText(SEGMENT.description);
 });

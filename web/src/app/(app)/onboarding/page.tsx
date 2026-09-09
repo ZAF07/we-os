@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { EntryListInput } from "@/components/questionnaire/entry-list-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWizard } from "@/components/wizard/use-wizard";
@@ -20,6 +21,9 @@ import { loadOnboarding, saveAnswers } from "./actions";
 
 /** Input types rendered as a multi-line control rather than a single line. */
 const MULTILINE_TYPES = new Set(["textarea", "list"]);
+
+/** The input type collecting repeatable named entries, one per row. */
+const ENTRY_LIST_TYPE = "entry_list";
 
 /**
  * Renders one published question as its labeled input.
@@ -65,7 +69,15 @@ function QuestionField({
       error={error}
       hint={`Why we ask: ${question.why_we_ask} · A good answer: ${question.help_text}`}
     >
-      {MULTILINE_TYPES.has(question.input_type) ? (
+      {question.input_type === ENTRY_LIST_TYPE ? (
+        <EntryListInput
+          label={question.text}
+          value={value}
+          titlePlaceholder="Name this group"
+          descriptionPlaceholder="What defines them?"
+          onChange={onChange}
+        />
+      ) : MULTILINE_TYPES.has(question.input_type) ? (
         <Textarea {...control} />
       ) : (
         <Input {...control} />

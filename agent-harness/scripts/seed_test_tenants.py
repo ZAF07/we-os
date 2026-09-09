@@ -66,23 +66,27 @@ which only proves the answer won over the organization name
 (``questionnaire/render.py``) if the two differ.
 """
 
-SEGMENT_NAMES = [
-    "Urban 22-35 beginners curious about climbing",
-    "Weekend boulderers plateauing at V4",
+SEGMENTS = [
+    ("Urban beginners", "22-35, curious about climbing, have never been to a gym"),
+    ("Weekend boulderers", "plateauing at V4 and losing interest"),
 ]
-"""The Audience Segments a spec may assert on by name.
+"""The Audience Segments a spec may assert on, as ``(title, description)``.
 
 A campaign targets exactly one segment, and the wizard offers exactly what the
-Brand DNA names — so these strings are the contract between the seed and any
-spec that picks a segment.
+Brand DNA names — so these are the contract between the seed and any spec that
+picks a segment. The title alone identifies the segment; the description is
+shown beside it so the business can tell the groups apart.
 """
+
+SEGMENT_NAMES = [title for title, _ in SEGMENTS]
+"""The segment titles, which are the values a campaign goal stores."""
 
 ANSWERS: dict[str, str] = {
     "q_business_name": TEST_BUSINESS_NAME,
     "q_what_they_sell": ("Indoor climbing gym memberships, beginner courses, and coaching blocks."),
     "q_category": "Fitness and recreation",
     "q_price_point": "SGD 138/month membership; SGD 90 for a four-week beginner course",
-    "q_segments": "\n".join(SEGMENT_NAMES),
+    "q_segments": "\n".join(f"{title} — {description}" for title, description in SEGMENTS),
     "q_pain_points": (
         "Beginners find climbing gyms intimidating and do not know what a first "
         "session involves. Plateaued climbers stop improving and drift away."

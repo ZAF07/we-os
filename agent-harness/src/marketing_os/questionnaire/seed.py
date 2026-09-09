@@ -78,8 +78,8 @@ SEED_QUESTIONS = [
         section=CUSTOMERS,
         text="Who buys from you? Describe each distinct group, most important first.",
         why_we_ask="A campaign targets one specific group of buyers, never everyone.",
-        help_text="Two to four groups, one per line, with what defines each.",
-        input_type="list",
+        help_text="Two to four groups. Name each one, then say what defines it.",
+        input_type="entry_list",
         required=True,
     ),
     Question(

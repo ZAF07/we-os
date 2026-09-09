@@ -151,6 +151,24 @@ def test_create_campaign_rejects_a_segment_the_brand_dna_does_not_name(
     assert "audience_segment" in response.json()["message"]
 
 
+def test_create_campaign_targets_a_segment_by_its_title_alone(
+    client: TestClient,
+) -> None:
+    # The whole entry line is what the Brand DNA stores; a campaign targets the
+    # segment's title, so passing the description with it is not a segment.
+    response = client.post(
+        "/campaigns",
+        json={
+            **COMPLETE_GOAL,
+            "audience_segment": (
+                "Urban beginners — 22-35, curious about climbing, have never been to a gym"
+            ),
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_campaign_slugs_stay_unique_within_a_tenant(client: TestClient) -> None:
     first = client.post("/campaigns", json=COMPLETE_GOAL).json()["id"]
     second = client.post("/campaigns", json=COMPLETE_GOAL).json()["id"]
@@ -235,4 +253,9 @@ def test_archive_404s_for_a_slug_the_tenant_does_not_own(client: TestClient) -> 
 def test_segments_endpoint_offers_what_the_brand_dna_names(client: TestClient) -> None:
     body = client.get("/brand-dna/segments").json()
 
-    assert body["segments"] == ["Urban 22-35 beginners curious about climbing"]
+    assert body["segments"] == [
+        {
+            "title": "Urban beginners",
+            "description": "22-35, curious about climbing, have never been to a gym",
+        }
+    ]
