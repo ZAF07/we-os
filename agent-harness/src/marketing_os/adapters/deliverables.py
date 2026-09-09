@@ -126,6 +126,50 @@ class VersionHistoryReader:
         stored = self._load(tenant, slug, stage_key)
         return stored[-1] if stored else None
 
+    def stages(self, tenant: str, slug: str) -> list[str]:
+        """Return the stage keys a campaign has produced a deliverable for.
+
+        Args:
+            tenant: The tenant that owns the campaign.
+            slug: The campaign slug.
+
+        Returns:
+            The stage keys in mandatory pipeline order.
+
+        Raises:
+            NotImplementedError: Always; every subclass supplies its own.
+        """
+        raise NotImplementedError
+
+    def latest_by_campaign(
+        self, tenant: str, slugs: list[str]
+    ) -> dict[str, dict[str, DeliverableVersion]]:
+        """Return the newest version of every stage, for several campaigns at once.
+
+        The local adapters read from memory or from one file per stage, so there
+        is nothing to batch: the loop is here so the bulk contract is answered
+        identically by every adapter, and only Postgres overrides it with a
+        genuine single query.
+
+        Args:
+            tenant: The tenant that owns the campaigns.
+            slugs: The campaign slugs to read.
+
+        Returns:
+            For each campaign that has produced anything, its newest version per
+            stage.
+        """
+        by_campaign: dict[str, dict[str, DeliverableVersion]] = {}
+        for slug in slugs:
+            latest = {
+                stage_key: version
+                for stage_key in self.stages(tenant, slug)
+                if (version := self.latest(tenant, slug, stage_key)) is not None
+            }
+            if latest:
+                by_campaign[slug] = latest
+        return by_campaign
+
     def version(
         self, tenant: str, slug: str, stage_key: str, version: int
     ) -> DeliverableVersion | None:

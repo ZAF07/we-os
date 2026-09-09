@@ -23,6 +23,7 @@ from marketing_os.campaign.progress import (
     campaign_progress,
     campaign_status,
     produced_deliverables,
+    progress_from_latest,
     stale_keys,
 )
 from marketing_os.governance.pipeline import PIPELINE
@@ -165,3 +166,27 @@ def test_a_superseded_deliverable_is_reported_stale() -> None:
 
 def test_nothing_is_stale_in_a_campaign_written_in_pipeline_order() -> None:
     assert stale_keys(_store("research", "brand-strategy"), TENANT, SLUG) == set()
+
+
+async def test_progress_from_pre_read_deliverables_matches_reading_the_store() -> None:
+    """The bulk-read list path derives exactly what the per-campaign path does.
+
+    ``campaign_progress`` stays the single place status and staleness are
+    decided; feeding it data already read must not be able to answer differently.
+    """
+    for written in (
+        (),
+        ("research",),
+        ("research", "brand-strategy", "campaign-strategy"),
+        tuple(ALL_STAGES),
+        (*ALL_STAGES, "brand-strategy"),
+    ):
+        for waiting in (None, "creative-direction"):
+            store = _store(*written)
+            expected = await _progress_of(store, waiting=waiting)
+            actual = progress_from_latest(
+                store.latest_by_campaign(TENANT, [SLUG]).get(SLUG, {}),
+                human_gate_stages=None,
+                waiting=waiting,
+            )
+            assert actual == expected, (written, waiting)

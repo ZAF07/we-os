@@ -7,6 +7,7 @@ signatures without a network.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -219,3 +220,131 @@ def test_rejects_an_unsigned_token_claiming_none_algorithm(
     )
     with pytest.raises(UnauthenticatedError):
         verifier.verify(token)
+
+
+def _refusal_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """Return the messages logged under the refusal logger, at INFO or above."""
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("marketing_os") and record.levelno >= logging.INFO
+    ]
+
+
+def test_logs_the_failure_class_and_path_when_a_token_has_expired(
+    verifier: JwksTokenVerifier,
+    keypair: tuple[Any, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An expired token's line names the class, the path and the clock offsets."""
+    private_key, _ = keypair
+    token = make_token(private_key, expires_in=-60)
+    with caplog.at_level(logging.INFO, logger="marketing_os"):
+        with pytest.raises(UnauthenticatedError):
+            verifier.verify(token, request_path="/campaigns")
+    lines = _refusal_lines(caplog)
+    assert len(lines) == 1
+    assert "expired" in lines[0]
+    assert "/campaigns" in lines[0]
+    assert "exp=-60s" in lines[0]
+    assert "iat=+0s" in lines[0]
+
+
+def test_logs_a_signature_failure_without_the_token(
+    verifier: JwksTokenVerifier, caplog: pytest.LogCaptureFixture
+) -> None:
+    impostor = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = make_token(impostor)
+    with caplog.at_level(logging.INFO, logger="marketing_os"):
+        with pytest.raises(UnauthenticatedError):
+            verifier.verify(token, request_path="/campaigns/spring-launch")
+    lines = _refusal_lines(caplog)
+    assert len(lines) == 1
+    assert "signature" in lines[0]
+    assert token not in lines[0]
+
+
+def test_logs_a_missing_organization_claim(
+    verifier: JwksTokenVerifier,
+    keypair: tuple[Any, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    private_key, _ = keypair
+    with caplog.at_level(logging.INFO, logger="marketing_os"):
+        with pytest.raises(UnauthenticatedError):
+            verifier.verify(make_token(private_key, org_id=None), request_path="/dna")
+    lines = _refusal_lines(caplog)
+    assert len(lines) == 1
+    assert "no organization" in lines[0]
+    assert "/dna" in lines[0]
+
+
+def test_logs_a_not_yet_valid_token_apart_from_an_expired_one(
+    verifier: JwksTokenVerifier,
+    keypair: tuple[Any, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """``nbf`` far ahead of this clock is its own failure class, not expiry."""
+    private_key, _ = keypair
+    now = int(time.time())
+    token = make_token(private_key, nbf=now + 300)
+    with caplog.at_level(logging.INFO, logger="marketing_os"):
+        with pytest.raises(UnauthenticatedError):
+            verifier.verify(token, request_path="/campaigns")
+    lines = _refusal_lines(caplog)
+    assert len(lines) == 1
+    assert "not yet valid" in lines[0]
+
+
+def test_logs_the_issuer_and_audience_classes_apart(
+    verifier: JwksTokenVerifier,
+    keypair: tuple[Any, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    private_key, _ = keypair
+    with caplog.at_level(logging.INFO, logger="marketing_os"):
+        with pytest.raises(UnauthenticatedError):
+            verifier.verify(make_token(private_key, issuer="https://evil.example"))
+        with pytest.raises(UnauthenticatedError):
+            verifier.verify(make_token(private_key, audience="someone-else"))
+    lines = _refusal_lines(caplog)
+    assert len(lines) == 2
+    assert "issuer" in lines[0]
+    assert "audience" in lines[1]
+
+
+def test_no_refusal_line_contains_the_raw_token(
+    verifier: JwksTokenVerifier,
+    keypair: tuple[Any, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Every refusal class is logged, and none of them echo the token back."""
+    private_key, _ = keypair
+    tokens = [
+        make_token(private_key, expires_in=-60),
+        make_token(private_key, issuer="https://evil.example"),
+        make_token(private_key, audience="someone-else"),
+        make_token(private_key, org_id=None),
+        "not-a-jwt",
+    ]
+    with caplog.at_level(logging.INFO, logger="marketing_os"):
+        for token in tokens:
+            with pytest.raises(UnauthenticatedError):
+                verifier.verify(token, request_path="/campaigns")
+    logged = "\n".join(_refusal_lines(caplog))
+    assert len(_refusal_lines(caplog)) == len(tokens)
+    for token in tokens:
+        assert token not in logged
+    assert "sam@coastcoffee.example" not in logged
+    assert "org_coast" not in logged
+
+
+def test_a_verified_token_logs_nothing(
+    verifier: JwksTokenVerifier,
+    keypair: tuple[Any, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    private_key, _ = keypair
+    with caplog.at_level(logging.INFO, logger="marketing_os"):
+        verifier.verify(make_token(private_key), request_path="/campaigns")
+    assert _refusal_lines(caplog) == []

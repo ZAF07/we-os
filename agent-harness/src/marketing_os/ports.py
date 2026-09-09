@@ -48,7 +48,7 @@ class TokenVerifier(Protocol):
     no vendor SDK appears above this port.
     """
 
-    def verify(self, token: str) -> VerifiedClaims:
+    def verify(self, token: str, request_path: str | None = None) -> VerifiedClaims:
         """Verify a bearer token and return the claims it carries.
 
         The result names the IdP's organization, not a platform tenant: mapping
@@ -57,6 +57,9 @@ class TokenVerifier(Protocol):
 
         Args:
             token: The raw bearer token, without its ``Bearer `` prefix.
+            request_path: The path the token was presented on, for the
+                server-side refusal log; the refusal the caller sees is uniform
+                either way.
 
         Returns:
             The verified claims, including the organization the caller acts for.
@@ -91,6 +94,25 @@ class DocumentStore(Protocol):
 
         Raises:
             DocumentNotFoundError: If no such document exists for the tenant.
+        """
+        ...
+
+    def read_many(self, tenant: str, paths: list[str]) -> dict[str, str]:
+        """Return the text of several documents in one read.
+
+        The bulk form exists so a caller needing many documents at once — the
+        campaign list needs every campaign's goal — pays one round trip rather
+        than one per document. A path with no document is simply absent from the
+        result: the caller asked for a set, not for each one in turn, so a
+        missing member is an answer rather than an error.
+
+        Args:
+            tenant: The tenant the documents belong to.
+            paths: The tenant-relative document paths to read.
+
+        Returns:
+            The content of every document that exists, keyed by the path it was
+            asked for.
         """
         ...
 
@@ -195,6 +217,25 @@ class DeliverableStore(Protocol):
 
         Returns:
             The newest version, or ``None`` when the stage has produced none.
+        """
+        ...
+
+    def latest_by_campaign(
+        self, tenant: str, slugs: list[str]
+    ) -> dict[str, dict[str, DeliverableVersion]]:
+        """Return the newest version of every stage, for several campaigns at once.
+
+        The bulk form of :meth:`latest`, so listing a tenant's campaigns costs
+        one read rather than one per campaign per stage. A campaign that has
+        produced nothing is absent from the result rather than present and empty.
+
+        Args:
+            tenant: The tenant that owns the campaigns.
+            slugs: The campaign slugs to read.
+
+        Returns:
+            For each campaign that has produced anything, its newest version per
+            stage, keyed by stage key.
         """
         ...
 

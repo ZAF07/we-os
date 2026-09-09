@@ -88,7 +88,50 @@ def normalise_document_path(path: str) -> str:
     return "/".join(tenant_relative_segments(path))
 
 
-class FilesystemDocumentStore:
+class BulkDocumentReader:
+    """The bulk read every local adapter shares over its own single-document read.
+
+    Only Postgres gains anything from issuing one statement for many documents;
+    a dict lookup or a file read is already cheap. Sharing the loop here keeps
+    the "a missing document is absent, not an error" rule in one place, so the
+    two local adapters cannot answer it differently from each other.
+    """
+
+    def read(self, tenant: str, path: str) -> str:
+        """Return a document's text.
+
+        Args:
+            tenant: The tenant the document belongs to.
+            path: The tenant-relative document path.
+
+        Returns:
+            The document content.
+
+        Raises:
+            NotImplementedError: Always; every subclass supplies its own.
+        """
+        raise NotImplementedError
+
+    def read_many(self, tenant: str, paths: list[str]) -> dict[str, str]:
+        """Return the text of several documents, skipping any that are absent.
+
+        Args:
+            tenant: The tenant the documents belong to.
+            paths: The tenant-relative document paths to read.
+
+        Returns:
+            The content of every document that exists, keyed by its path.
+        """
+        found: dict[str, str] = {}
+        for path in paths:
+            try:
+                found[path] = self.read(tenant, path)
+            except DocumentNotFoundError:
+                continue
+        return found
+
+
+class FilesystemDocumentStore(BulkDocumentReader):
     """Serves each tenant's documents from its own directory under ``tenants/``.
 
     The tenant is a path segment, so a document can only ever be reached by
@@ -209,7 +252,7 @@ class FilesystemDocumentStore:
         return str(self._resolve(tenant, path))
 
 
-class InMemoryDocumentStore:
+class InMemoryDocumentStore(BulkDocumentReader):
     """Holds documents keyed by ``(tenant, path)``; nothing touches the filesystem.
 
     Keying on the tenant gives the same guarantee as the filesystem adapter's

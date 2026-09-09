@@ -116,11 +116,12 @@ def test_the_passthrough_directory_keeps_the_filesystem_layout_working() -> None
 class _FakeVerifier:
     """A token verifier that accepts anything and reports one organization."""
 
-    def verify(self, token: str) -> VerifiedClaims:
+    def verify(self, token: str, request_path: str | None = None) -> VerifiedClaims:
         """Return fixed claims for any token.
 
         Args:
             token: The bearer token (ignored).
+            request_path: The request path (ignored; nothing is refused here).
 
         Returns:
             Claims naming one signed-in person and their IdP organization.

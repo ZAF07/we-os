@@ -189,3 +189,47 @@ def test_another_campaigns_writes_do_not_make_this_one_stale(store: DeliverableS
 
     assert stale_stages(store, TENANT, SLUG) == []
     assert stale_stages(store, TENANT, "other-campaign") == []
+
+
+def test_latest_by_campaign_reads_every_named_campaign_at_once(store: DeliverableStore) -> None:
+    """The bulk read answers exactly what per-campaign ``latest`` calls would."""
+    store.append(TENANT, SLUG, "research", "# r1")
+    store.append(TENANT, SLUG, "research", "# r2")
+    store.append(TENANT, SLUG, "brand-strategy", "# b1")
+    store.append(TENANT, "second", "research", "# other")
+
+    by_campaign = store.latest_by_campaign(TENANT, [SLUG, "second"])
+
+    assert by_campaign[SLUG]["research"].version == 2
+    assert by_campaign[SLUG]["research"].content == "# r2"
+    assert by_campaign[SLUG]["brand-strategy"].version == 1
+    assert by_campaign["second"]["research"].content == "# other"
+    assert set(by_campaign["second"]) == {"research"}
+
+
+def test_latest_by_campaign_matches_latest_for_every_stage(store: DeliverableStore) -> None:
+    store.append(TENANT, SLUG, "research", "# r1")
+    store.append(TENANT, SLUG, "research", "# r2")
+    store.append(TENANT, SLUG, "creative-direction", "# c1")
+
+    by_campaign = store.latest_by_campaign(TENANT, [SLUG])
+    for stage_key in store.stages(TENANT, SLUG):
+        assert by_campaign[SLUG][stage_key] == store.latest(TENANT, SLUG, stage_key)
+
+
+def test_latest_by_campaign_omits_campaigns_that_produced_nothing(
+    store: DeliverableStore,
+) -> None:
+    store.append(TENANT, SLUG, "research", "# r1")
+    by_campaign = store.latest_by_campaign(TENANT, [SLUG, "never-run"])
+    assert by_campaign.get("never-run", {}) == {}
+
+
+def test_latest_by_campaign_never_crosses_a_tenant(store: DeliverableStore) -> None:
+    store.append(TENANT, SLUG, "research", "# ours")
+    assert store.latest_by_campaign(OTHER_TENANT, [SLUG]).get(SLUG, {}) == {}
+
+
+def test_latest_by_campaign_of_no_campaigns_reads_nothing(store: DeliverableStore) -> None:
+    store.append(TENANT, SLUG, "research", "# ours")
+    assert store.latest_by_campaign(TENANT, []) == {}

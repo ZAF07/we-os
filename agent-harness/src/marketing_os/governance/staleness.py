@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from marketing_os.governance.pipeline import PIPELINE
 from marketing_os.ports import DeliverableStore
+from marketing_os.schemas import DeliverableVersion
 
 
 def stale_stages(store: DeliverableStore, tenant: str, slug: str) -> list[str]:
@@ -48,14 +49,36 @@ def stale_stages(store: DeliverableStore, tenant: str, slug: str) -> list[str]:
         The stale stage keys in mandatory pipeline order, empty when every
         deliverable is current.
     """
-    stale: list[str] = []
+    latest = {
+        stage.key: version
+        for stage in PIPELINE
+        if (version := store.latest(tenant, slug, stage.key)) is not None
+    }
+    return sorted(stale_from_latest(latest), key=[stage.key for stage in PIPELINE].index)
+
+
+def stale_from_latest(latest: dict[str, DeliverableVersion]) -> set[str]:
+    """Return the stale stages among deliverables that have already been read.
+
+    The same walk :func:`stale_stages` performs, over versions a caller read for
+    itself — so listing a portfolio can read every campaign at once and still
+    decide staleness by this one rule.
+
+    Args:
+        latest: The newest version of each stage that has produced one, keyed by
+            stage key; stages that produced nothing are simply absent.
+
+    Returns:
+        The stale stage keys, empty when every deliverable is current.
+    """
+    stale: set[str] = set()
     newest_upstream = 0
     for stage in PIPELINE:
-        latest = store.latest(tenant, slug, stage.key)
-        if latest is None:
+        version = latest.get(stage.key)
+        if version is None:
             continue
-        if latest.sequence < newest_upstream:
-            stale.append(stage.key)
+        if version.sequence < newest_upstream:
+            stale.add(stage.key)
         else:
-            newest_upstream = latest.sequence
+            newest_upstream = version.sequence
     return stale

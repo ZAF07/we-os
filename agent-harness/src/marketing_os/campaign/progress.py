@@ -22,7 +22,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from marketing_os.governance.pipeline import PIPELINE, Stage, apply_approval_policies
-from marketing_os.governance.staleness import stale_stages
+from marketing_os.governance.staleness import stale_from_latest, stale_stages
 from marketing_os.ports import DeliverableStore
 from marketing_os.schemas import DeliverableVersion
 
@@ -171,14 +171,48 @@ async def campaign_progress(
     Returns:
         The campaign's lifecycle status and every stage in pipeline order.
     """
+    latest = {
+        stage.key: deliverables.latest(tenant, slug, stage.key)
+        for stage in apply_approval_policies(PIPELINE, human_gate_stages)
+    }
+    return progress_from_latest(
+        {key: version for key, version in latest.items() if version is not None},
+        human_gate_stages=human_gate_stages,
+        waiting=await awaiting_stage(),
+    )
+
+
+def progress_from_latest(
+    latest: dict[str, DeliverableVersion],
+    *,
+    human_gate_stages: list[str] | None,
+    waiting: str | None,
+) -> CampaignProgress:
+    """Derive a campaign's progress from deliverables that have already been read.
+
+    The same derivation :func:`campaign_progress` performs, over data a caller
+    read for itself. It exists so listing a whole portfolio can read every
+    campaign's newest versions in one query and still decide status and staleness
+    here — the rules stay in one place, only the reading moves.
+
+    Args:
+        latest: The newest version of each stage that has produced one, keyed by
+            stage key; stages that produced nothing are simply absent.
+        human_gate_stages: The stage keys configured to halt at an Approval
+            Gate, or ``None`` to keep each stage's shipped policy (ADR-0015).
+        waiting: The stage a live run is halted at, or ``None`` when none is.
+
+    Returns:
+        The campaign's lifecycle status and every stage in pipeline order.
+    """
     configured = apply_approval_policies(PIPELINE, human_gate_stages)
-    waiting = await awaiting_stage()
-    stale = stale_keys(deliverables, tenant, slug)
-    latest = {stage.key: deliverables.latest(tenant, slug, stage.key) for stage in configured}
-    produced = {key for key, version in latest.items() if version is not None}
+    stale = stale_from_latest(latest)
+    produced = set(latest)
     return CampaignProgress(
         status=campaign_status(produced, stale, waiting),
-        stages=[stage_progress(stage, latest[stage.key], waiting, stale) for stage in configured],
+        stages=[
+            stage_progress(stage, latest.get(stage.key), waiting, stale) for stage in configured
+        ],
     )
 
 
