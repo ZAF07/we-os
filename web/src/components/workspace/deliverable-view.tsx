@@ -1,8 +1,145 @@
 "use client";
 
+import type { ComponentProps } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 import { StatusPill } from "@/components/ui/status-pill";
 import type { DeliverableVersionSummary } from "@/lib/engine";
 import { cn } from "@/lib/utils";
+
+/**
+ * The props `react-markdown` renders an element with.
+ *
+ * It hands every component the syntax-tree node the element came from, on top
+ * of the element's own HTML props.
+ */
+type MarkdownProps<Tag extends keyof React.JSX.IntrinsicElements> =
+  ComponentProps<Tag> & { node?: unknown };
+
+/**
+ * Drops the syntax-tree node from the props of a rendered element.
+ *
+ * The node is a renderer detail rather than an HTML attribute, so it must not
+ * reach the element: spreading it would put a literal `node="[object Object]"`
+ * into the markup of every heading, paragraph and cell. Done here once rather
+ * than in each component below, so there is one place this is handled.
+ *
+ * Args:
+ *   props: The props `react-markdown` supplied.
+ *
+ * Returns:
+ *   The element's own HTML props, with the node removed.
+ */
+function withoutNode<Tag extends keyof React.JSX.IntrinsicElements>(
+  props: MarkdownProps<Tag>,
+): ComponentProps<Tag> {
+  const rest = { ...props };
+  delete rest.node;
+  return rest as ComponentProps<Tag>;
+}
+
+/**
+ * How each markdown element is styled where the deliverable is read.
+ *
+ * Written out element by element rather than left to a prose plugin: Tailwind
+ * v4 rules out `@tailwindcss/typography` as a drop-in, and naming the classes
+ * here keeps the deliverable looking like the rest of the workspace instead of
+ * like a generic article.
+ */
+const MARKDOWN_COMPONENTS = {
+  h1: (props: MarkdownProps<"h1">) => (
+    <h1
+      {...withoutNode(props)}
+      className="mt-5 mb-2 text-[17px] font-bold tracking-tight first:mt-0"
+    />
+  ),
+  h2: (props: MarkdownProps<"h2">) => (
+    <h2
+      {...withoutNode(props)}
+      className="mt-5 mb-2 text-[15px] font-bold tracking-tight first:mt-0"
+    />
+  ),
+  h3: (props: MarkdownProps<"h3">) => (
+    <h3
+      {...withoutNode(props)}
+      className="mt-4 mb-1.5 text-[13.5px] font-bold first:mt-0"
+    />
+  ),
+  h4: (props: MarkdownProps<"h4">) => (
+    <h4
+      {...withoutNode(props)}
+      className="mt-4 mb-1.5 text-[13px] font-bold first:mt-0"
+    />
+  ),
+  p: (props: MarkdownProps<"p">) => (
+    <p {...withoutNode(props)} className="my-2" />
+  ),
+  ul: (props: MarkdownProps<"ul">) => (
+    <ul {...withoutNode(props)} className="my-2 list-disc pl-5" />
+  ),
+  ol: (props: MarkdownProps<"ol">) => (
+    <ol {...withoutNode(props)} className="my-2 list-decimal pl-5" />
+  ),
+  li: (props: MarkdownProps<"li">) => (
+    <li {...withoutNode(props)} className="my-1" />
+  ),
+  strong: (props: MarkdownProps<"strong">) => (
+    <strong {...withoutNode(props)} className="font-semibold text-slate-900" />
+  ),
+  em: (props: MarkdownProps<"em">) => (
+    <em {...withoutNode(props)} className="italic" />
+  ),
+  blockquote: (props: MarkdownProps<"blockquote">) => (
+    <blockquote
+      {...withoutNode(props)}
+      className="my-3 border-l-2 border-slate-300 pl-3 text-slate-600 italic"
+    />
+  ),
+  a: (props: MarkdownProps<"a">) => (
+    <a
+      {...withoutNode(props)}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="text-primary underline underline-offset-2"
+    />
+  ),
+  code: (props: MarkdownProps<"code">) => (
+    <code
+      {...withoutNode(props)}
+      className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[12px]"
+    />
+  ),
+  pre: (props: MarkdownProps<"pre">) => (
+    <pre
+      {...withoutNode(props)}
+      className="my-3 overflow-x-auto rounded-lg bg-slate-100 p-3 font-mono text-[12px]"
+    />
+  ),
+  hr: (props: MarkdownProps<"hr">) => (
+    <hr {...withoutNode(props)} className="my-4 border-slate-200" />
+  ),
+  table: (props: MarkdownProps<"table">) => (
+    <div className="my-3 overflow-x-auto">
+      <table
+        {...withoutNode(props)}
+        className="w-full border-collapse text-left"
+      />
+    </div>
+  ),
+  th: (props: MarkdownProps<"th">) => (
+    <th
+      {...withoutNode(props)}
+      className="border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-semibold"
+    />
+  ),
+  td: (props: MarkdownProps<"td">) => (
+    <td
+      {...withoutNode(props)}
+      className="border border-slate-200 px-2.5 py-1.5"
+    />
+  ),
+};
 
 /**
  * Renders a deliverable's markdown as the business owner reads it.
@@ -11,6 +148,11 @@ import { cn } from "@/lib/utils";
  * summarised or truncated: the decision at the gate is about this document, so
  * hiding part of it would ask for a decision on something the person cannot see.
  *
+ * The markdown is rendered rather than shown as source, because a gate asks the
+ * owner to read a document and `##` and `**` left in place make that harder.
+ * Deliverable content is model-written, so no `rehype-raw` is configured and any
+ * HTML in the source stays inert text rather than becoming markup.
+ *
  * Args:
  *   content: The deliverable's full markdown.
  */
@@ -18,9 +160,11 @@ export function DeliverableContent({ content }: { content: string }) {
   return (
     <article
       aria-label="Deliverable"
-      className="rounded-xl border bg-card px-[22px] py-5 text-[13.5px] leading-relaxed whitespace-pre-wrap text-slate-800"
+      className="rounded-xl border bg-card px-[22px] py-5 text-[13.5px] leading-relaxed text-slate-800"
     >
-      {content}
+      <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+        {content}
+      </Markdown>
     </article>
   );
 }

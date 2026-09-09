@@ -9,13 +9,16 @@ import { defineConfig } from "vitest/config";
  * browser against a real engine. This one runs on a clean checkout with no
  * credentials and no server, so the projections between engine vocabulary and
  * operator vocabulary stay covered whatever the end-to-end suite can reach.
+ *
+ * A jsdom environment so a component that renders a document — the markdown of
+ * a deliverable — can be asserted on as elements rather than as source text.
  */
 export default defineConfig({
   resolve: {
     alias: { "@": path.join(import.meta.dirname, "src") },
   },
   test: {
-    include: ["src/**/*.test.ts"],
-    environment: "node",
+    include: ["src/**/*.test.{ts,tsx}"],
+    environment: "jsdom",
   },
 });
