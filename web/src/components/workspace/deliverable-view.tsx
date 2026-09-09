@@ -104,12 +104,24 @@ const MARKDOWN_COMPONENTS = {
       className="text-primary underline underline-offset-2"
     />
   ),
-  code: (props: MarkdownProps<"code">) => (
-    <code
-      {...withoutNode(props)}
-      className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[12px]"
-    />
-  ),
+  code: (props: MarkdownProps<"code">) => {
+    /**
+     * A fenced block keeps the renderer's `language-*` class and is left plain,
+     * because the `pre` around it already carries the panel styling. Only
+     * inline code — which arrives with no class — gets the pill.
+     */
+    const { className, ...rest } = withoutNode(props);
+    return (
+      <code
+        {...rest}
+        className={cn(
+          "font-mono text-[12px]",
+          className === undefined && "rounded bg-slate-100 px-1 py-0.5",
+          className,
+        )}
+      />
+    );
+  },
   pre: (props: MarkdownProps<"pre">) => (
     <pre
       {...withoutNode(props)}

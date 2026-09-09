@@ -72,4 +72,25 @@ describe("DeliverableContent", () => {
 
     expect(container.querySelector("[node]")).toBeNull();
   });
+
+  it("keeps the language class on a fenced block, and the pill for inline code", () => {
+    const { container } = render(
+      <DeliverableContent
+        content={[
+          "```ts",
+          "const spend = 1;",
+          "```",
+          "",
+          "Inline `code`.",
+        ].join("\n")}
+      />,
+    );
+
+    const fenced = container.querySelector("pre code");
+    expect(fenced?.getAttribute("class")).toContain("language-ts");
+    expect(fenced?.getAttribute("class")).not.toContain("bg-slate-100");
+
+    const inline = container.querySelector("p code");
+    expect(inline?.getAttribute("class")).toContain("bg-slate-100");
+  });
 });
