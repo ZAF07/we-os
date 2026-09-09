@@ -152,4 +152,6 @@ both of its baseline runs) and whose render-time residual issue 03 left open.
 No engine error, 401, 402 or 500 appears anywhere in the run — consistent with
 render time, not a defect.
 
-That residual is worth its own issue rather than being absorbed here.
+That residual is now filed as
+[`.scratch/e2e-suite-flake/issues/04`](../../e2e-suite-flake/issues/04-the-suite-still-drops-a-rotating-spec-under-parallel-load.md),
+with the four-run table and the A/B, rather than being absorbed here.

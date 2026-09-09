@@ -158,6 +158,9 @@ Comments on [01](01-approval-gate-spec-matches-two-brand-strategy-headings.md)
 for the isolation runs that establish it, including an A/B of `calendar.spec.ts`
 against unmodified `d837a3e`.
 
+The suite's residual flake is filed as
+[`.scratch/e2e-suite-flake/issues/04`](../../e2e-suite-flake/issues/04-the-suite-still-drops-a-rotating-spec-under-parallel-load.md).
+
 **Same shape elsewhere, deliberately left alone.** `web/src/app/(app)/campaigns/page.tsx:28`
 and `web/src/app/(app)/onboarding/page.tsx:104` both answer a failed load with
 "Refresh to try again" and no retry button. Neither collapses a failure onto a
