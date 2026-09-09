@@ -57,4 +57,4 @@ None - can start immediately.
 ## Completion
 
 - Completed: 2026-09-09
-- Commit: 1534f4e, with review fixes in 0624b3f
+- Commit: 1534f4e, with review fixes in 0624b3f (merged to main in fa662be)
