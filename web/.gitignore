@@ -4,6 +4,10 @@
 /node_modules
 /.pnp
 .pnp.*
+# pnpm falls back to a project-local store when it cannot hardlink from the
+# project into the store under $HOME. That is a 500MB+ package cache, never
+# part of the project, so it stays out of git wherever it lands.
+/.pnpm-store/
 .yarn/*
 !.yarn/patches
 !.yarn/plugins

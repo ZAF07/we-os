@@ -1,4 +1,7 @@
 logs/
+# pnpm's project-local store fallback (a package cache, not project content).
+# It lands next to whichever package root pnpm resolved, so ignore it anywhere.
+.pnpm-store/
 # Playwright run output
 test-results/
 web/test-results/

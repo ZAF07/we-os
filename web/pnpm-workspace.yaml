@@ -1,3 +1,8 @@
+# Pin the store under $HOME. Without this, pnpm probes whether it can hardlink
+# from this project into the default store and, when that probe fails (a
+# sandboxed or otherwise restricted install), silently falls back to a
+# project-local .pnpm-store holding a 500MB+ package cache.
+storeDir: ~/Library/pnpm/store
 allowBuilds:
   sharp: true
   unrs-resolver: true
