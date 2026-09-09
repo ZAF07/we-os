@@ -12,7 +12,9 @@ import { cn } from "@/lib/utils";
  * claim about other businesses that nothing backs yet.
  *
  * The one component that renders a tier, so every place that shows one
- * agrees. Today that is the Pricing page alone.
+ * agrees: Pricing and Get Started. Its button says "Launch" — the action that
+ * will one day open checkout, and today opens sign-up carrying the tier — so
+ * the two pages cannot disagree on what pressing it means.
  *
  * Args:
  *   tier: The tier to show.
@@ -62,7 +64,7 @@ export function TierCard({ tier }: { tier: Tier }) {
         variant={tier.highlighted ? "default" : "outline"}
         className="w-full"
       >
-        <Link href={signUpHref(tier)}>Get started</Link>
+        <Link href={signUpHref(tier)}>Launch</Link>
       </Button>
     </article>
   );

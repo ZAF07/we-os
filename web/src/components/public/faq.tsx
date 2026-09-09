@@ -37,7 +37,7 @@ const QUESTIONS = [
 /**
  * Renders the questions people ask before paying, with honest answers.
  *
- * One component for the Landing and the Pricing page, so the answers — in
+ * One component for the Landing, Pricing and Get Started, so the answers — in
  * particular that nothing is published yet — are the same wherever they are
  * read.
  */

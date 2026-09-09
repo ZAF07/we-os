@@ -46,8 +46,7 @@ export const TIERS: readonly Tier[] = [
  * Builds the sign-up address for a tier.
  *
  * The tier travels as a query parameter holding the lowercase tier name, so a
- * visitor's choice is not lost between the page and the sign-up form. Nothing
- * reads it yet; it is carried until billing exists.
+ * visitor's choice is not lost between the page and the sign-up form.
  *
  * Args:
  *   tier: The tier the visitor chose.

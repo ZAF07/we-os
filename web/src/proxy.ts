@@ -2,13 +2,14 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 /**
- * The public half: the Landing, Pricing, and the sign-in and sign-up flows
- * with Clerk's own callback handling. Everything else is the app half and requires a
- * signed-in user.
+ * The public half: the Landing, Pricing, Get Started, and the sign-in and
+ * sign-up flows with Clerk's own callback handling. Everything else is the app
+ * half and requires a signed-in user.
  */
 const isPublicRoute = createRouteMatcher([
   "/",
   "/pricing",
+  "/get-started",
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);
