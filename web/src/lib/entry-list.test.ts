@@ -39,6 +39,51 @@ describe("parseEntries", () => {
     expect(parseEntries("")).toEqual([BLANK_ENTRY]);
     expect(parseEntries("   \n  ")).toEqual([BLANK_ENTRY]);
   });
+
+  // An answer written before this question collected entries is prose, not
+  // entry lines. Splitting it per line turns one paragraph into a dozen junk
+  // rows, which is the very "chopped-up prose" this control exists to end — so
+  // prose is read as the shape it actually has.
+  it("reads a markdown-heading blob as one entry per heading", () => {
+    const blob = [
+      "### 1. Small agencies",
+      "Agencies managing many clients with small teams.",
+      "",
+      "Typical buyers:",
+      "- Agency founders",
+      "",
+      "### 2. In-house teams",
+      "Growing businesses with one or two marketers.",
+    ].join("\n");
+
+    expect(parseEntries(blob)).toEqual([
+      {
+        title: "Small agencies",
+        description:
+          "Agencies managing many clients with small teams.\nTypical buyers:\n- Agency founders",
+      },
+      {
+        title: "In-house teams",
+        description: "Growing businesses with one or two marketers.",
+      },
+    ]);
+  });
+
+  it("reads unstructured prose as a single entry, never one row per line", () => {
+    const prose =
+      "Busy parents in the suburbs.\nThey want quick weeknight meals.";
+
+    expect(parseEntries(prose)).toEqual([
+      {
+        title: "Busy parents in the suburbs.",
+        description: "They want quick weeknight meals.",
+      },
+    ]);
+  });
+
+  it("still reads a well-formed entry list as one entry per line", () => {
+    expect(parseEntries(ANSWER)).toEqual(ENTRIES);
+  });
 });
 
 describe("formatEntries", () => {
@@ -61,6 +106,32 @@ describe("formatEntries", () => {
 
   it("round-trips what was parsed", () => {
     expect(formatEntries(parseEntries(ANSWER))).toBe(ANSWER);
+  });
+
+  // One entry is one line. A description carrying newlines would otherwise be
+  // read back as several entries, shattering the entry it came from — so the
+  // newlines are folded away as it is written.
+  it("keeps one entry on one line, whatever the description contains", () => {
+    const written = formatEntries([
+      { title: "Small agencies", description: "Many clients.\nSmall teams." },
+    ]);
+
+    expect(written).toBe("Small agencies — Many clients. Small teams.");
+    expect(parseEntries(written)).toHaveLength(1);
+  });
+
+  it("round-trips a prose answer it had to rescue, without shattering it", () => {
+    const blob = [
+      "### 1. Small agencies",
+      "Many clients, small teams.",
+      "Typical buyers:",
+      "- Agency founders",
+      "### 2. In-house teams",
+      "One or two marketers.",
+    ].join("\n");
+
+    const rescued = parseEntries(blob);
+    expect(parseEntries(formatEntries(rescued))).toHaveLength(rescued.length);
   });
 });
 

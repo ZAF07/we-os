@@ -32,17 +32,84 @@ export const BLANK_ENTRY: Entry = { title: "", description: "" };
  * Args:
  *   answer: The saved answer text.
  *
+ * An answer written before this question collected entries is prose, not entry
+ * lines. Reading that per line would turn one paragraph into a dozen junk rows
+ * — the "chopped-up prose" this control exists to end — so an answer that is
+ * not already an entry list is read as the shape it actually has: one entry
+ * per markdown heading if it has headings, otherwise a single entry.
+ *
+ * Args:
+ *   answer: The saved answer text.
+ *
  * Returns:
- *   One entry per non-blank line, in the order they were written; a single
+ *   The entries the answer describes, in the order they were written; a single
  *   blank entry when the answer holds none, so the control has a row to type
  *   into.
  */
 export function parseEntries(answer: string): Entry[] {
-  const entries = answer
-    .split("\n")
-    .filter((line) => line.trim() !== "")
-    .map(splitEntry);
-  return entries.length > 0 ? entries : [{ ...BLANK_ENTRY }];
+  const lines = answer.split("\n").filter((line) => line.trim() !== "");
+  if (lines.length === 0) return [{ ...BLANK_ENTRY }];
+  if (lines.some(isHeading)) return parseHeadingBlocks(lines);
+  if (lines.every(isEntryLine)) return lines.map(splitEntry);
+  return [splitEntry(lines.join(" — "))];
+}
+
+/** Matches a markdown heading, optionally numbered — `### 1. Small agencies`. */
+const HEADING_RE = /^#{1,6}\s+(?:\d+[.)]\s*)?(.*)$/;
+
+/**
+ * Reports whether a line is a markdown heading, which names an entry.
+ *
+ * Args:
+ *   line: One line of the answer.
+ *
+ * Returns:
+ *   Whether the line opens a new entry.
+ */
+function isHeading(line: string): boolean {
+  return HEADING_RE.test(line.trim());
+}
+
+/**
+ * Reports whether a line is already a well-formed `Title — description` entry.
+ *
+ * Args:
+ *   line: One line of the answer.
+ *
+ * Returns:
+ *   Whether the line carries a title and a description of its own.
+ */
+function isEntryLine(line: string): boolean {
+  return SEPARATOR_RE.test(line.trim());
+}
+
+/**
+ * Reads a heading-structured answer as one entry per heading.
+ *
+ * Args:
+ *   lines: The answer's non-blank lines.
+ *
+ * Returns:
+ *   One entry per heading, its description being every line up to the next
+ *   heading. Lines before the first heading are dropped, having no entry to
+ *   belong to.
+ */
+function parseHeadingBlocks(lines: string[]): Entry[] {
+  const entries: Entry[] = [];
+  for (const line of lines) {
+    const heading = HEADING_RE.exec(line.trim());
+    if (heading !== null) {
+      entries.push({ title: heading[1].trim(), description: "" });
+      continue;
+    }
+    const current = entries[entries.length - 1];
+    if (current === undefined) continue;
+    current.description =
+      current.description === ""
+        ? line.trim()
+        : `${current.description}\n${line.trim()}`;
+  }
+  return entries;
 }
 
 /**
@@ -78,14 +145,16 @@ function splitEntry(line: string): Entry {
  * Returns:
  *   One line per titled entry. An entry with no title is dropped — an entry
  *   is named or it is nothing — and a title with no description is written
- *   on its own.
+ *   on its own. A description's own newlines are folded to spaces, because one
+ *   entry is one line: left in, they would be read back as separate entries
+ *   and shatter the entry they came from.
  */
 export function formatEntries(entries: Entry[]): string {
   return entries
     .filter((entry) => entry.title.trim() !== "")
     .map((entry) => {
       const title = entry.title.trim();
-      const description = entry.description.trim();
+      const description = entry.description.replace(/\s+/g, " ").trim();
       return description === "" ? title : `${title}${SEPARATOR}${description}`;
     })
     .join("\n");
