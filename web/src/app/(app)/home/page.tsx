@@ -26,6 +26,7 @@ export const dynamic = "force-dynamic";
 
 const TAG_CLASSES: Record<QueueTag, string> = {
   Decision: "bg-indigo-50 text-indigo-700",
+  Setup: "bg-amber-100 text-amber-800",
   Stale: statusPillClasses("Stale"),
 };
 
@@ -51,8 +52,8 @@ export default async function HomePage() {
   }
   if (data.tier === null) redirect("/get-started");
 
-  const { campaigns, usage } = data;
-  const queue = toQueue(campaigns);
+  const { campaigns, usage, completeness } = data;
+  const queue = toQueue(campaigns, completeness);
   const active = toActiveCampaigns(campaigns);
 
   return (

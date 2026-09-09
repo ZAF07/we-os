@@ -125,3 +125,22 @@ test("a decision made in the Workspace is reflected on Home without a refresh", 
   await page.goto("/home");
   await expect(queue.locator(`a[href="/campaigns/${slug}"]`)).toBeVisible();
 });
+
+test("a complete Brand DNA leaves Home and the nav unmarked", async ({
+  page,
+}) => {
+  // The seeded business has answered every Required question, so the gate is
+  // open and neither the badge nor the Setup item has anything to say. The
+  // other half — an unfinished Brand DNA — is covered in `onboarding.spec.ts`,
+  // against the blank tenant that is genuinely incomplete.
+  //
+  // It is not covered here by withdrawing an answer: this tenant's gate is
+  // shared, and a closed gate makes the engine refuse `POST /campaigns/*/run`
+  // with a 409 for every spec running beside this one.
+  await page.goto("/home");
+
+  await expect(page.getByLabel(/Brand DNA answers still needed/)).toHaveCount(
+    0,
+  );
+  await expect(page.getByText("Setup", { exact: true })).toHaveCount(0);
+});

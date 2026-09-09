@@ -141,6 +141,45 @@ test("required-field validation blocks advancing past an incomplete step", async
   await expect(page.getByText("Step 1 of 5")).toBeVisible();
 });
 
+// Declared while the tenant is still short of a complete Brand DNA, and before
+// the spec below completes it. Home is asserted here rather than in
+// `home.spec.ts` because this project owns the only tenant that is genuinely
+// incomplete: withdrawing an answer from the seeded business instead would
+// close its gate, and the engine then refuses `POST /campaigns/*/run` with a
+// 409 for every spec running beside it.
+test("an unfinished Brand DNA is on Home's queue and badged in the nav", async ({
+  page,
+}) => {
+  await page.goto("/home");
+
+  // The gate blocks every campaign stage there is, so it rides the nav and
+  // shows on every route, not only on Home.
+  const badge = page.getByLabel(/Brand DNA answers still needed/);
+  await expect(badge).toBeVisible();
+  await page.goto("/campaigns");
+  await expect(badge).toBeVisible();
+
+  // On Home it is a queue item, so a business with no campaigns yet is told
+  // the one thing that is actually waiting on it rather than "nothing is".
+  await page.goto("/home");
+  await expect(page.getByText("Setup", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      /Brand DNA is not filled in yet|still needed in your Brand DNA/,
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("Nothing is waiting on you.")).toHaveCount(0);
+
+  // The meta line names what is owed, which is the point of it: the business
+  // learns what is missing without leaving Home.
+  await expect(page.getByText(/Business name/)).toBeVisible();
+
+  const fillItIn = page.getByRole("link", { name: "Fill it in" });
+  await expect(fillItIn).toHaveAttribute("href", "/brand");
+  await fillItIn.click();
+  await expect(page).toHaveURL("/brand");
+});
+
 test("answers save partway and are still there on return", async ({ page }) => {
   await page.goto("/onboarding");
 

@@ -30,6 +30,9 @@ interface NavItem {
   icon: LucideIcon;
 }
 
+/** The route the Brand DNA badge counts against. */
+const BRAND_HREF = "/brand";
+
 const NAV_ITEMS: NavItem[] = [
   { href: "/home", label: "Home", icon: Home },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
@@ -54,13 +57,22 @@ function isActive(href: string, pathname: string): boolean {
 }
 
 /**
- * Renders the primary nav links with active state and the Home badge.
+ * Renders the primary nav links with active state and the Brand DNA badge.
  *
  * Args:
+ *   brandFieldsOwed: How many Required Brand DNA fields the business still
+ *     owes. The badge is the gate made visible from anywhere in the app, so it
+ *     rides the nav rather than one screen; zero hides it.
  *   onNavigate: Optional callback fired on link click (closes the
  *     mobile drawer).
  */
-function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+function NavLinks({
+  brandFieldsOwed,
+  onNavigate,
+}: {
+  brandFieldsOwed: number;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
 
   return (
@@ -82,6 +94,14 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           >
             <item.icon className="size-4 shrink-0" strokeWidth={2} />
             <span className="flex-1">{item.label}</span>
+            {item.href === BRAND_HREF && brandFieldsOwed > 0 && (
+              <span
+                aria-label={`${brandFieldsOwed} Brand DNA answers still needed`}
+                className="rounded-full bg-amber-100 px-1.5 text-[10.5px] font-bold text-amber-800"
+              >
+                {brandFieldsOwed}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -133,9 +153,17 @@ function UserCard() {
  * whether it has one. There is no list of paths to keep in step.
  *
  * Args:
+ *   brandFieldsOwed: How many Required Brand DNA fields the business still
+ *     owes, read by the layout because a client component cannot fetch.
  *   children: The active route's content.
  */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  brandFieldsOwed,
+  children,
+}: {
+  brandFieldsOwed: number;
+  children: React.ReactNode;
+}) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
@@ -155,7 +183,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </SheetTitle>
             </SheetHeader>
             <div className="flex flex-1 flex-col">
-              <NavLinks onNavigate={() => setDrawerOpen(false)} />
+              <NavLinks
+                brandFieldsOwed={brandFieldsOwed}
+                onNavigate={() => setDrawerOpen(false)}
+              />
               <UserCard />
             </div>
           </SheetContent>
@@ -166,7 +197,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="px-[18px] pt-4 pb-3">
           <BrandMark />
         </div>
-        <NavLinks />
+        <NavLinks brandFieldsOwed={brandFieldsOwed} />
         <UserCard />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

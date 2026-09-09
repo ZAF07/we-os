@@ -1,17 +1,20 @@
 "use server";
 
 import {
+  getBrandDnaCompleteness,
   getMe,
   getUsage,
   listCampaigns,
   EngineError,
   type CampaignSummary,
+  type DnaCompleteness,
   type UsageReport,
 } from "@/lib/engine";
 
 export interface HomeData {
   campaigns: CampaignSummary[];
   usage: UsageReport | null;
+  completeness: DnaCompleteness | null;
   tier: string | null;
 }
 
@@ -29,22 +32,32 @@ export interface HomeData {
  * that call failed and the person left — is sent back to finish rather than
  * shown a Home it has not finished setting up (ADR-0027).
  *
+ * Brand DNA completeness comes along for the same reason: a complete Brand DNA
+ * gates every campaign stage there is, so an unfinished one is the one thing
+ * waiting on a business that has no campaigns yet. It is optional too — a read
+ * that fails costs the queue item, not the screen.
+ *
  * Returns:
- *   The campaigns, the usage report (null when it could not be read), and the
- *   tier the business recorded (null when it never did).
+ *   The campaigns, the usage report (null when it could not be read), what the
+ *   Brand DNA still owes (null when that could not be read), and the tier the
+ *   business recorded (null when it never did).
  *
  * Throws:
  *   EngineError: When the campaigns or the tier cannot be read, since there
  *     is no useful Home without them.
  */
 export async function loadHome(): Promise<HomeData> {
-  const [{ campaigns }, usage, me] = await Promise.all([
+  const [{ campaigns }, usage, completeness, me] = await Promise.all([
     listCampaigns(),
     getUsage().catch((error: unknown) => {
       if (error instanceof EngineError) return null;
       throw error;
     }),
+    getBrandDnaCompleteness().catch((error: unknown) => {
+      if (error instanceof EngineError) return null;
+      throw error;
+    }),
     getMe(),
   ]);
-  return { campaigns, usage, tier: me.tier };
+  return { campaigns, usage, completeness, tier: me.tier };
 }

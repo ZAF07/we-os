@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { CampaignSummary, UsageReport } from "@/lib/engine";
+import type {
+  CampaignSummary,
+  DnaCompleteness,
+  UsageReport,
+} from "@/lib/engine";
 import { progressWidth, toActiveCampaigns, toQueue, toStats } from "@/lib/home";
 
 /**
@@ -165,5 +169,102 @@ describe("progressWidth", () => {
 
   it("does not divide by zero when a campaign reports no stages", () => {
     expect(progressWidth(0, 0)).toBe("0%");
+  });
+});
+
+describe("toQueue with Brand DNA completeness", () => {
+  /**
+   * Builds a completeness report as the engine reports one.
+   *
+   * Args:
+   *   answered: How many Required answers are in.
+   *   missingFields: The names of the Required fields still owed.
+   *
+   * Returns:
+   *   The report.
+   */
+  function completeness(
+    answered: number,
+    missingFields: string[],
+  ): DnaCompleteness {
+    return {
+      complete: missingFields.length === 0,
+      questionnaire_version: 1,
+      required_total: answered + missingFields.length,
+      required_answered: answered,
+      missing: missingFields.map((field, index) => ({
+        question_id: `q_${index}`,
+        field,
+        label: `Question ${index}?`,
+      })),
+      unanswered_new_questions: [],
+    };
+  }
+
+  it("puts a Setup item on the queue when Required answers are owed", () => {
+    const queue = toQueue(
+      [],
+      completeness(0, ["Business name", "What you sell"]),
+    );
+
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({
+      tag: "Setup",
+      title: "Your Brand DNA is not filled in yet",
+      meta: "Business name, What you sell",
+      cta: "Fill it in",
+      href: "/brand",
+    });
+  });
+
+  it("says how many answers are left once the business has started", () => {
+    const queue = toQueue([], completeness(3, ["Pricing", "Languages"]));
+
+    expect(queue[0].title).toBe("2 answers still needed in your Brand DNA");
+  });
+
+  it("says one answer in the singular", () => {
+    const queue = toQueue([], completeness(4, ["Pricing"]));
+
+    expect(queue[0].title).toBe("1 answer still needed in your Brand DNA");
+  });
+
+  it("names the first three missing fields and counts the rest", () => {
+    const queue = toQueue(
+      [],
+      completeness(0, ["One", "Two", "Three", "Four", "Five"]),
+    );
+
+    expect(queue[0].meta).toBe("One, Two, Three +2 more");
+  });
+
+  it("sorts after a decision but before stale work", () => {
+    const queue = toQueue(
+      [
+        campaign("stale-one", {
+          status: "running",
+          blocked_reason: "Plan rests on a decision you have since re-opened.",
+        }),
+        campaign("gate-one", {
+          status: "awaiting_approval",
+          blocked_reason: "Strategy is waiting for your approval.",
+        }),
+      ],
+      completeness(0, ["Business name"]),
+    );
+
+    expect(queue.map((item) => item.tag)).toEqual([
+      "Decision",
+      "Setup",
+      "Stale",
+    ]);
+  });
+
+  it("leaves the queue alone once every Required answer is in", () => {
+    expect(toQueue([], completeness(5, []))).toEqual([]);
+  });
+
+  it("leaves the queue alone when completeness could not be read", () => {
+    expect(toQueue([], null)).toEqual([]);
   });
 });
