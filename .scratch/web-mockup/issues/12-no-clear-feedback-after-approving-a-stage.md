@@ -156,3 +156,26 @@ Decisions:
   the next gate. Re-opening does not — it is not a decision at a gate.
 - The stage a decision sets going is shown as running from the moment the
   decision is accepted until the stream replays; then the stream wins.
+
+**2026-09-10 — code review (`/code-review` against main)**
+
+Spec review found three real defects in the first cut, all fixed:
+1. The optimistic running mark was set only by approve/revise and never
+   cleared, so a later re-run or re-open would briefly show the stage the
+   *last approval* started. Now every action that resumes or starts a run
+   names the stage it sets going (re-run and re-open name their own stage;
+   start names none).
+2. If the re-attached stream errored before its first message, the hook
+   carried the gate's `halted` flag forward and the rail read "Waiting for
+   your decision" while the run was in fact working. The error path now only
+   trusts flags from the same attachment; otherwise it reports the feed lost.
+3. During the replay after a decision, `resuming` dropped on the first
+   replayed event, so the list briefly tracked the *old* events (including
+   the old gate summary — a header flicker and a spare refresh). The hook now
+   keeps the prior feed until the replay has got past it.
+
+Tests added for each, plus a reload-after-approval replay test (acceptance
+criterion "correct across a page reload during the post-approval window",
+which previously had only the engine-seam test).
+
+Standards: see issue 11's comment.

@@ -2252,9 +2252,11 @@ def stream_run(run_id: str, identity: Identity) -> StreamingResponse:
     background job — see ``POST /run``): this endpoint does **not** launch a run, it
     tails the run's JSONL trace. A client attaching late is replayed the events
     already recorded from the top of the trace, then followed live until the terminal
-    ``run.summary`` event, at which point the stream closes. Because it only reads the
-    durable trace, any number of observers can attach to the same run concurrently,
-    and a finished run replays and closes.
+    ``run.summary`` event, at which point the stream closes. A summary that says the
+    run is waiting at an Approval Gate is not terminal: the same run may be resumed
+    and append more, so the stream reads through it and closes once the run is no
+    longer live. Because it only reads the durable trace, any number of observers
+    can attach to the same run concurrently, and a finished run replays and closes.
 
     Args:
         run_id: The id of the run to observe.

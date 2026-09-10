@@ -91,9 +91,10 @@ export function Workspace({
   // Bumped whenever an action resumes the run, so the progress stream attaches
   // again rather than staying closed on the gate the run has already left.
   const [attempt, setAttempt] = useState(0);
-  // The stage the last decision set going. Shown as running from the moment
-  // the decision is accepted until the re-attached stream says what the run is
-  // actually doing — which is the window the person most wants an answer in.
+  // The stage the last accepted action set going. Shown as running from the
+  // moment the action is accepted until the re-attached stream says what the
+  // run is actually doing — which is the window the person most wants an
+  // answer in.
   const [expectedKey, setExpectedKey] = useState<string | null>(null);
   const [pending, startAction] = useTransition();
 
@@ -165,10 +166,14 @@ export function Workspace({
     return () => clearInterval(timer);
   }, [working, router]);
 
+  // Every action that resumes or starts a run names the stage it sets going:
+  // the next one on approval, the same one again on a revision or re-open, or
+  // none when it is not known. Naming it up front is what lets the Stages list
+  // answer "what is it doing now?" before the stream does.
   const submit = useCallback(
     (
       action: () => Promise<{ error: string | null }>,
-      onAccepted?: () => void,
+      startsKey: string | null,
     ) => {
       setError(null);
       startAction(async () => {
@@ -177,7 +182,7 @@ export function Workspace({
           setError(result.error);
           return;
         }
-        onAccepted?.();
+        setExpectedKey(startsKey);
         setAttempt((previous) => previous + 1);
         router.refresh();
       });
@@ -185,18 +190,16 @@ export function Workspace({
     [router],
   );
 
-  // A decision at a gate resumes the run into a known stage: the next one on
-  // approval, the same one again on a revision. Naming it up front is what lets
-  // the Stages list answer "what is it doing now?" before the stream does.
+  // A decision at a gate also clears the picked stage: having decided, the
+  // person wants to see where the run goes next, not stay parked.
   const decide = useCallback(
     (
       action: () => Promise<{ error: string | null }>,
       startsKey: string | null,
-    ) =>
-      submit(action, () => {
-        setExpectedKey(startsKey);
-        setPickedKey(null);
-      }),
+    ) => {
+      setPickedKey(null);
+      submit(action, startsKey);
+    },
     [submit],
   );
 
@@ -253,7 +256,10 @@ export function Workspace({
             shownContent={shownContent}
             pending={pending}
             onRerun={() =>
-              submit(() => startRunAction(campaign.id, selected.key))
+              submit(
+                () => startRunAction(campaign.id, selected.key),
+                selected.key,
+              )
             }
             onShowVersion={showVersion}
           />
@@ -302,9 +308,12 @@ export function Workspace({
               )
             }
             onReopen={(stageKey, feedback) =>
-              submit(() => reopenStageAction(campaign.id, stageKey, feedback))
+              submit(
+                () => reopenStageAction(campaign.id, stageKey, feedback),
+                stageKey,
+              )
             }
-            onStart={() => submit(() => startRunAction(campaign.id))}
+            onStart={() => submit(() => startRunAction(campaign.id), null)}
           />
         </div>
       </div>

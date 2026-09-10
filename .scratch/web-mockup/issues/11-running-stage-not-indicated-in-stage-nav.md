@@ -115,3 +115,16 @@ Decisions:
 - The selected stage carries `aria-current="step"`; running and selected are
   independent marks and both read correctly when they coincide.
 - The phase chip containing the running stage pulses too.
+
+**2026-09-10 — code review (`/code-review` against main)**
+
+Standards: one hard finding — the stream endpoint's docstring in `app.py`
+still said the stream closes at the first `run.summary`; fixed. Judgement
+calls: the phase chip's `running` prop had no direct test (assertion added);
+the hook's state type re-spelled `RunFeed` (now derived from it);
+`GATE_OUTCOME` is a third spelling of `awaiting_approval` on the engine
+(kept — `runlog` owns the line protocol it reads and importing from
+`adapters/runs` would invert that dependency).
+
+Spec: no gaps against this issue's acceptance criteria. See issue 12's
+comment for the shared findings on the resume window.

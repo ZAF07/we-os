@@ -29,13 +29,24 @@ const STAGE_ENDED = new Set([
   TERMINAL_EVENT,
 ]);
 
-const EMPTY: RunFeed = {
+const EMPTY_FEED: RunFeed = {
   events: [],
   finished: false,
   halted: false,
   disconnected: false,
   resuming: false,
 };
+
+/**
+ * What the hook holds between renders: the feed for one attachment, plus the
+ * events the previous attachment had seen, so a resumed run's replay can be
+ * told apart from what it does next.
+ */
+interface Attachment extends Omit<RunFeed, "resuming"> {
+  runId: string | null;
+  attempt: number;
+  replayed: RunEvent[];
+}
 
 /**
  * Names the stage a run is working on, read from what the stream has said.
@@ -82,9 +93,13 @@ export function runningStage(events: RunEvent[]): string | null {
  * so the page must attach again or it would never hear what happens next: the
  * version it asked for would land, and the screen would keep showing the one
  * it refused until someone reloaded. `attempt` is what says "this run has been
- * resumed"; changing it re-attaches. Until the re-attached stream replays, the
- * feed keeps showing what the run did before the gate, flagged `resuming`, so
- * the moment after a decision is not the moment the page goes blank.
+ * resumed"; changing it re-attaches.
+ *
+ * A re-attached stream replays everything the page already saw before it says
+ * anything new. Until it has got past that, the feed keeps showing what the
+ * run did before the gate, flagged `resuming` — so the moment after a decision
+ * is not the moment the page goes blank, and the replay of the old gate is
+ * not mistaken for the run halting again.
  *
  * Args:
  *   runId: The run to follow, or null when nothing is in flight.
@@ -96,17 +111,11 @@ export function runningStage(events: RunEvent[]): string | null {
  *   whether the run was resumed and the stream has not caught up yet.
  */
 export function useRunEvents(runId: string | null, attempt = 0): RunFeed {
-  const [feed, setFeed] = useState<{
-    runId: string | null;
-    attempt: number;
-    events: RunEvent[];
-    finished: boolean;
-    halted: boolean;
-    disconnected: boolean;
-  }>({
+  const [feed, setFeed] = useState<Attachment>({
     runId,
     attempt,
     events: [],
+    replayed: [],
     finished: false,
     halted: false,
     disconnected: false,
@@ -120,34 +129,45 @@ export function useRunEvents(runId: string | null, attempt = 0): RunFeed {
       const event = JSON.parse(message.data) as RunEvent;
       const summary = event.event === TERMINAL_EVENT;
       const finished = summary && event.outcome !== GATE_OUTCOME;
-      setFeed((seen) => ({
-        runId,
-        attempt,
-        events:
-          seen.runId === runId && seen.attempt === attempt
-            ? [...seen.events, event]
-            : [event],
-        finished,
-        halted: summary && !finished,
-        disconnected: false,
-      }));
+      setFeed((seen) => {
+        const sameRun = seen.runId === runId;
+        const sameAttempt = sameRun && seen.attempt === attempt;
+        return {
+          runId,
+          attempt,
+          events: sameAttempt ? [...seen.events, event] : [event],
+          replayed: sameAttempt ? seen.replayed : sameRun ? seen.events : [],
+          finished,
+          halted: summary && !finished,
+          disconnected: false,
+        };
+      });
       if (finished) source.close();
     };
     source.onerror = () => {
       source.close();
-      setFeed((seen) => ({
-        ...seen,
-        runId,
-        attempt,
-        disconnected: !seen.finished && !seen.halted,
-      }));
+      setFeed((seen) => {
+        const sameAttempt = seen.runId === runId && seen.attempt === attempt;
+        const ended = sameAttempt && (seen.finished || seen.halted);
+        return {
+          ...seen,
+          runId,
+          attempt,
+          finished: sameAttempt && seen.finished,
+          halted: sameAttempt && seen.halted,
+          disconnected: !ended,
+        };
+      });
     };
     return () => source.close();
   }, [runId, attempt]);
 
-  if (feed.runId !== runId) return EMPTY;
+  if (feed.runId !== runId) return EMPTY_FEED;
   if (feed.attempt !== attempt) {
-    return { ...EMPTY, events: feed.events, resuming: true };
+    return { ...EMPTY_FEED, events: feed.events, resuming: true };
+  }
+  if (!feed.disconnected && feed.events.length <= feed.replayed.length) {
+    return { ...EMPTY_FEED, events: feed.replayed, resuming: true };
   }
   return {
     events: feed.events,

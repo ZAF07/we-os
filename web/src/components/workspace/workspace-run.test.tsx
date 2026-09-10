@@ -13,6 +13,7 @@ import type { Campaign, CampaignStage } from "@/lib/engine";
 
 const loadStage = vi.fn();
 const approveStageAction = vi.fn();
+const startRunAction = vi.fn();
 
 vi.mock("@clerk/nextjs", () => ({
   useClerk: () => ({ loaded: true }),
@@ -40,7 +41,8 @@ vi.mock("@/app/(app)/campaigns/[slug]/actions", () => ({
     approveStageAction(slug, runId, stageKey),
   reopenStageAction: vi.fn(),
   reviseStageAction: vi.fn(),
-  startRunAction: vi.fn(),
+  startRunAction: async (slug: string, stageKey: string | null) =>
+    startRunAction(slug, stageKey),
 }));
 
 const { Workspace } = await import("@/components/workspace/workspace");
@@ -174,6 +176,7 @@ beforeEach(() => {
   loadStage.mockReset();
   loadStage.mockResolvedValue(EMPTY_VIEW);
   approveStageAction.mockReset();
+  startRunAction.mockReset();
   FakeEventSource.opened = [];
   vi.stubGlobal("EventSource", FakeEventSource);
 });
@@ -193,6 +196,39 @@ describe("the stage a run is working on", () => {
       "Not started",
     );
     expect(stageEntry("Brand strategy").textContent).toContain("Not started");
+
+    // The phase chip holding the running stage pulses; the others do not.
+    expect(
+      screen.getByRole("button", { name: /^1\s?Research$/ }).innerHTML,
+    ).toContain("animate-pulse");
+    expect(
+      screen.getByRole("button", { name: /^2\s?Strategy$/ }).innerHTML,
+    ).not.toContain("animate-pulse");
+  });
+
+  it("is read correctly by a page reloaded after an approval", async () => {
+    render(<Workspace campaign={AT_BRAND_GATE} runId="run-1" />);
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+
+    // The stream replays the whole trace: the first segment, the gate the run
+    // halted at, then what it did once approved.
+    await emit({ event: "stage.start", stage: "research" });
+    await emit({ event: "stage.done", stage: "research" });
+    await emit({ event: "stage.start", stage: "brand-strategy" });
+    await emit({ event: "stage.done", stage: "brand-strategy" });
+    await emit({ event: "run.summary", outcome: "awaiting_approval" });
+    await emit({ event: "stage.approved", stage: "brand-strategy" });
+    await emit({ event: "stage.start", stage: "campaign-strategy" });
+
+    expect(stageEntry("Campaign strategy").textContent).toContain(
+      "In progress",
+    );
+    expect(stageEntry("Brand strategy").textContent).not.toContain(
+      "In progress",
+    );
+    const log = screen.getByRole("log", { name: "Run progress" });
+    expect(log.textContent).toContain("Working");
+    expect(log.textContent).toContain("You approved Brand strategy.");
   });
 
   it("moves with the run and clears when the run ends", async () => {
@@ -267,14 +303,95 @@ describe("approving a stage", () => {
       "In progress",
     );
 
-    // Once the replay lands, the stream is the source of truth again.
+    // The replay repeats what the page already saw, gate summary included.
+    // None of it is news: the list keeps saying what the approval started, and
+    // the replayed gate is not mistaken for the run halting again.
     await emit({ event: "stage.start", stage: "research" });
     await emit({ event: "stage.done", stage: "research" });
-    await emit({ event: "stage.approved", stage: "brand-strategy" });
-    await emit({ event: "stage.start", stage: "campaign-strategy" });
-    expect(log.textContent).toContain("You approved Brand strategy.");
+    await emit({ event: "run.summary", outcome: "awaiting_approval" });
+    expect(log.textContent).toContain("Working");
+    expect(log.textContent).not.toContain("Waiting for your decision");
     expect(stageEntry("Campaign strategy").textContent).toContain(
       "In progress",
+    );
+
+    // Past the replay, the stream is the source of truth again.
+    await emit({ event: "stage.approved", stage: "brand-strategy" });
+    expect(log.textContent).toContain("You approved Brand strategy.");
+    await emit({ event: "stage.start", stage: "campaign-strategy" });
+    expect(stageEntry("Campaign strategy").textContent).toContain(
+      "In progress",
+    );
+  });
+
+  it("says the feed was lost, not that the run is waiting, if re-attaching fails", async () => {
+    approveStageAction.mockResolvedValue({ error: null });
+    render(<Workspace campaign={AT_BRAND_GATE} runId="run-1" />);
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+    await emit({ event: "stage.start", stage: "research" });
+    await emit({ event: "run.summary", outcome: "awaiting_approval" });
+    expect(
+      screen.getByRole("log", { name: "Run progress" }).textContent,
+    ).toContain("Waiting for your decision");
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(2));
+    await act(async () => {
+      FakeEventSource.opened[1].onerror?.();
+    });
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Lost the live feed",
+    );
+    expect(screen.queryByText("Waiting for your decision")).toBeNull();
+  });
+
+  it("marks the stage a re-run sets going, not the one a past approval did", async () => {
+    approveStageAction.mockResolvedValue({ error: null });
+    startRunAction.mockResolvedValue({ error: null });
+    const { rerender } = render(
+      <Workspace campaign={AT_BRAND_GATE} runId="run-1" />,
+    );
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(2));
+    expect(stageEntry("Campaign strategy").textContent).toContain(
+      "In progress",
+    );
+
+    // Later, a stale Research is re-run from its banner. What is starting now
+    // is Research, whatever the last approval started.
+    const stale = campaign(
+      [
+        stage("research", "Research", {
+          state: "stale",
+          stale: true,
+          latest_version: 1,
+        }),
+        stage("brand-strategy", "Strategy", {
+          state: "completed",
+          latest_version: 1,
+        }),
+        stage("campaign-strategy", "Strategy"),
+        stage("performance-plan", "Plan"),
+      ],
+      "running",
+    );
+    loadStage.mockResolvedValue({
+      deliverable: { name: "research.md", path: "x", content: "# R" },
+      versions: [],
+    });
+    rerender(<Workspace campaign={stale} runId="run-1" />);
+    fireEvent.click(stageEntry("Research findings"));
+    fireEvent.click(await screen.findByRole("button", { name: /Re-run/ }));
+    await waitFor(() => expect(startRunAction).toHaveBeenCalledTimes(1));
+
+    expect(stageEntry("Research findings").textContent).toContain(
+      "In progress",
+    );
+    expect(stageEntry("Campaign strategy").textContent).toContain(
+      "Not started",
     );
   });
 
