@@ -8,6 +8,6 @@ test-results
 playwright-report
 
 # Secrets never enter an image. The compose stack passes what the app needs as
-# environment instead.
-.env.local
-.env
+# environment, and hands the production build its public values as build
+# arguments — so no .env file of any flavour is copied in.
+.env*

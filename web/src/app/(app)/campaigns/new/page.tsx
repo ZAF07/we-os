@@ -128,10 +128,8 @@ export default function NewCampaignPage() {
     };
   }, []);
 
-  // Not before the session is ready to be used: the load is a server action,
-  // which the middleware cannot renew, so on a page opened cold it must wait
-  // for the browser script to refresh the token. A page whose script has
-  // already loaded waits for nothing and loads in its first render, as before.
+  // A server action cannot renew a stale token, so the load waits for the
+  // session to be ready (see useSessionReady); a ready page waits for nothing.
   const sessionReady = useSessionReady();
   useEffect(() => {
     if (!sessionReady) return;

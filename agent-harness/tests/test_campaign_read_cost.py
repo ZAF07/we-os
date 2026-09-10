@@ -35,12 +35,17 @@ from conftest import (
 from conftest import (
     SLUG,
     TENANT,
+    CountingPool,
+    PoolBackend,
     authenticate,
     clear_prototype_adapters,
     install_prototype_adapters,
     install_scripted_graph,
+    seed_campaigns,
+    slow_down_reads,
+    write_all_agent_specs,
 )
-from test_campaign_list_cost import CountingPool, _PoolBackend, _seed_campaigns, _slow_down_reads
+from marketing_os.config import Settings
 
 
 @pytest.fixture
@@ -94,7 +99,7 @@ def test_the_single_campaign_payload_agrees_with_the_list_across_a_mixed_portfol
 
     stages = [stage.key for stage in PIPELINE]
     deliverables = get_deliverable_store()
-    slugs = _seed_campaigns(get_document_store(), 5)
+    slugs = seed_campaigns(get_document_store(), 5)
 
     for stage_key in stages[:3]:
         deliverables.append(TENANT, slugs[1], stage_key, f"# {stage_key}")
@@ -133,6 +138,53 @@ def test_the_single_campaign_payload_agrees_with_the_list_across_a_mixed_portfol
         assert gate == {"ok": True, "issues": []}, slug
 
 
+def test_a_campaign_waiting_on_a_person_reads_the_same_on_every_path(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The awaiting-approval case, which needs a real run halted at a gate.
+
+    The single read, the stage report and the list must all say the campaign
+    is waiting, and name the same stage — the one state that costs a checkpoint
+    read on every path.
+    """
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    write_all_agent_specs(Settings(root=repo))
+    install_scripted_graph(monkeypatch)
+    from marketing_os.entrypoints.api.app import app, get_settings
+
+    get_settings.cache_clear()
+    install_prototype_adapters(repo)
+    authenticate(app)
+
+    try:
+        with TestClient(app) as client:
+            run_id = client.post(f"/campaigns/{SLUG}/run", json={}).json()["run_id"]
+            for _ in range(300):
+                if client.get(f"/runs/{run_id}").json()["status"] == "awaiting_approval":
+                    break
+                time.sleep(0.02)
+            else:
+                raise AssertionError("the run never reached a gate")
+
+            single = client.get(f"/campaigns/{SLUG}").json()
+            report = client.get(f"/campaigns/{SLUG}/stages").json()
+            listed = next(
+                entry
+                for entry in client.get("/campaigns").json()["campaigns"]
+                if entry["id"] == SLUG
+            )
+    finally:
+        get_settings.cache_clear()
+        clear_prototype_adapters()
+
+    assert single["status"] == "awaiting_approval"
+    assert report["status"] == single["status"] == listed["status"]
+    assert report["stages"] == single["stages"]
+    assert _progress_of(single["stages"]) == listed["stage_progress"]
+    waiting = [stage["key"] for stage in single["stages"] if stage["state"] == "awaiting_approval"]
+    assert waiting == [listed["stage_progress"]["current_stage_key"]]
+
+
 def test_a_created_campaign_reads_back_exactly_as_it_was_returned(client: TestClient) -> None:
     """Creation describes the campaign without reading it back; the two must agree."""
     created = client.post("/campaigns", json=COMPLETE_GOAL).json()
@@ -141,6 +193,7 @@ def test_a_created_campaign_reads_back_exactly_as_it_was_returned(client: TestCl
 
 
 def test_reading_an_unknown_campaign_is_a_404_on_every_path(client: TestClient) -> None:
+    """A slug the tenant does not own is absent, whichever endpoint asks."""
     assert client.get("/campaigns/never-created").status_code == 404
     assert client.get("/campaigns/never-created/stages").status_code == 404
     assert client.post("/campaigns/never-created/archive").status_code == 404
@@ -160,7 +213,7 @@ def test_reading_one_campaign_costs_the_same_number_of_statements_whatever_it_ha
     get_settings.cache_clear()
 
     counting = CountingPool(postgres_pool)
-    use_backend(_PoolBackend(counting, repo))
+    use_backend(PoolBackend(counting, repo))
     authenticate(app)
 
     documents = PostgresDocumentStore(postgres_pool)
@@ -169,7 +222,7 @@ def test_reading_one_campaign_costs_the_same_number_of_statements_whatever_it_ha
 
     try:
         with TestClient(app) as client:
-            (slug,) = _seed_campaigns(documents, 1)
+            (slug,) = seed_campaigns(documents, 1)
             deliverables.append(TENANT, slug, stages[0], "# r")
             counting.statements.clear()
             assert client.get(f"/campaigns/{slug}").status_code == 200
@@ -223,9 +276,9 @@ async def test_a_gate_read_is_answered_while_a_slowed_create_and_read_are_in_fli
     install_prototype_adapters(repo)
     authenticate(app)
 
-    _slow_down_reads(get_document_store(), monkeypatch, ("list", "write", "read_many"), seconds=0.4)
-    _slow_down_reads(get_deliverable_store(), monkeypatch, ("latest_by_campaign",), seconds=0.4)
-    _slow_down_reads(get_registry(), monkeypatch, ("active_for_campaign",), seconds=0.4)
+    slow_down_reads(get_document_store(), monkeypatch, ("list", "write", "read_many"), seconds=0.4)
+    slow_down_reads(get_deliverable_store(), monkeypatch, ("latest_by_campaign",), seconds=0.4)
+    slow_down_reads(get_registry(), monkeypatch, ("active_for_campaign",), seconds=0.4)
 
     transport = ASGITransport(app=app)
     slow_paths_done = asyncio.Event()
@@ -234,6 +287,7 @@ async def test_a_gate_read_is_answered_while_a_slowed_create_and_read_are_in_fli
         async with AsyncClient(transport=transport, base_url="http://engine") as client:
 
             async def _create_and_read() -> tuple[Any, Any]:
+                """Run the two slowed paths together, marking when both are done."""
                 try:
                     return await asyncio.gather(
                         client.post("/campaigns", json=COMPLETE_GOAL),

@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import time
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -22,6 +24,7 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
 
+from marketing_os.campaign.goal import CampaignGoal, render_campaign_goal
 from marketing_os.config import Settings
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE, render_brand_dna
 from marketing_os.schemas import (
@@ -836,3 +839,179 @@ def postgres_pool(postgres_dsn: str, postgres_superuser_dsn: str) -> Iterator[An
         connection.execute(f"TRUNCATE {', '.join(TABLES)}")
     with ConnectionPool(postgres_dsn, open=True) as pool:
         yield pool
+
+
+"""What a store call costs, made visible.
+
+The cost tests count the statements a request issues against a real Postgres
+adapter, and slow a store's calls down so that one left on the event loop shows
+up as latency on an unrelated request. Shared here because the list and the
+single-campaign paths pin the same two properties.
+"""
+
+
+class CountingConnection:
+    """Wraps a pooled connection, counting every statement executed on it."""
+
+    def __init__(self, connection: Any, statements: list[str]) -> None:
+        """Initialise the wrapper.
+
+        Args:
+            connection: The real pooled connection.
+            statements: The shared list every executed statement is appended to.
+        """
+        self._connection = connection
+        self._statements = statements
+
+    def execute(self, query: str, *args: Any, **kwargs: Any) -> Any:
+        """Record a statement and run it on the wrapped connection.
+
+        Args:
+            query: The SQL to execute.
+            *args: Positional arguments for the real ``execute``.
+            **kwargs: Keyword arguments for the real ``execute``.
+
+        Returns:
+            Whatever the real ``execute`` returns.
+        """
+        self._statements.append(query)
+        return self._connection.execute(query, *args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate anything else to the wrapped connection.
+
+        Args:
+            name: The attribute to read.
+
+        Returns:
+            The wrapped connection's attribute.
+        """
+        return getattr(self._connection, name)
+
+
+class CountingPool:
+    """Wraps a connection pool so a test can count the statements a call issues."""
+
+    def __init__(self, pool: Any) -> None:
+        """Initialise the wrapper.
+
+        Args:
+            pool: The real ``psycopg_pool.ConnectionPool``.
+        """
+        self._pool = pool
+        self.statements: list[str] = []
+
+    def connection(self) -> Any:
+        """Return a context manager yielding a counting connection.
+
+        Returns:
+            A context manager over the wrapped pool's connection.
+        """
+
+        @contextmanager
+        def _counting() -> Iterator[Any]:
+            with self._pool.connection() as connection:
+                yield CountingConnection(connection, self.statements)
+
+        return _counting()
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate anything else to the wrapped pool.
+
+        Args:
+            name: The attribute to read.
+
+        Returns:
+            The wrapped pool's attribute.
+        """
+        return getattr(self._pool, name)
+
+
+def seed_campaigns(documents: Any, count: int, *, tenant: str = TENANT) -> list[str]:
+    """Write ``count`` campaign goals straight to the store.
+
+    Seeding through the store rather than the API keeps the setup out of the
+    measurement, and the list derives campaigns from the goal documents anyway.
+
+    Args:
+        documents: The document store to write into.
+        count: How many campaigns to write.
+        tenant: The tenant that owns them.
+
+    Returns:
+        The slugs written, in the order they were written.
+    """
+    slugs = []
+    for index in range(count):
+        slug = f"campaign-{index:03d}"
+        goal = CampaignGoal(**{**COMPLETE_GOAL_BODY, "name": f"Campaign {index}"})
+        documents.write(tenant, f"campaigns/{slug}/goal.md", render_campaign_goal(goal))
+        slugs.append(slug)
+    return slugs
+
+
+def slow_down_reads(
+    store: Any, monkeypatch: pytest.MonkeyPatch, names: tuple[str, ...], *, seconds: float
+) -> None:
+    """Make the named reads block, so a list's synchronous cost is visible.
+
+    Every read the list makes is slowed, the registry's included: one left on the
+    event loop is enough to stall the engine, so the test must be able to see it.
+
+    Args:
+        store: The object whose reads to slow.
+        monkeypatch: The pytest monkeypatch fixture.
+        names: The method names to slow.
+        seconds: How long each read blocks for.
+    """
+    for name in names:
+        original = getattr(store, name)
+
+        def _slow(*args: Any, _original: Any = original, **kwargs: Any) -> Any:
+            time.sleep(seconds)
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(store, name, _slow)
+
+
+class PoolBackend:
+    """A Postgres backend over a pool a test supplies, with an in-memory checkpointer.
+
+    The counting test needs its own wrapped pool and no checkpointer connection,
+    which the real backend opens for itself.
+    """
+
+    def __init__(self, pool: Any, root: Path) -> None:
+        """Initialise the backend.
+
+        Args:
+            pool: The pool every adapter is built over.
+            root: The hermetic repository root, for the usage ledger's settings.
+        """
+        from langgraph.checkpoint.memory import MemorySaver
+
+        from marketing_os.adapters.postgres import (
+            PostgresAnswerStore,
+            PostgresDeliverableStore,
+            PostgresDocumentStore,
+            PostgresQuestionnaireStore,
+            PostgresRunStore,
+            PostgresTenantDirectory,
+            PostgresUsageLedger,
+        )
+        from marketing_os.config import Settings
+
+        self.documents = PostgresDocumentStore(pool)
+        self.deliverables = PostgresDeliverableStore(pool)
+        self.tenants = PostgresTenantDirectory(pool)
+        self.runs = PostgresRunStore(pool)
+        self.questionnaires = PostgresQuestionnaireStore(pool)
+        self.answers = PostgresAnswerStore(pool)
+        self.usage = PostgresUsageLedger(pool, Settings(root=root))
+        self.checkpointer = MemorySaver()
+
+    async def open(self) -> None:
+        """Do nothing: the pool this backend was handed is already open."""
+
+    async def close(self) -> None:
+        """Do nothing: the test owns the pool's lifetime."""

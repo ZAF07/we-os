@@ -977,6 +977,7 @@ class _CampaignRecord:
     """One campaign as the stores hold it, before anything is derived from it.
 
     Attributes:
+        slug: The campaign slug.
         goal: The campaign's goal, always carrying a name.
         latest: The newest version of each stage that has produced one, keyed
             by stage key; stages that produced nothing are absent.
@@ -986,6 +987,7 @@ class _CampaignRecord:
             it is resolved by the caller.
     """
 
+    slug: str
     goal: CampaignGoal
     latest: dict[str, DeliverableVersion]
     archived: bool
@@ -999,7 +1001,7 @@ def _read_campaign(
     deliverables: DeliverableStore,
     registry: RunRegistry,
 ) -> _CampaignRecord | None:
-    """Read everything describing one campaign needs, in three store reads.
+    """Read one campaign from the stores, in three reads whatever it has produced.
 
     One read of the goal and the archive marker together, one of the newest
     version of every stage, and one of the campaign's live run — the same
@@ -1028,6 +1030,7 @@ def _read_campaign(
         return None
     live = registry.active_for_campaign(tenant, slug)
     return _CampaignRecord(
+        slug=slug,
         goal=_named_goal(documents[goal_document], slug),
         latest=deliverables.latest_by_campaign(tenant, [slug]).get(slug, {}),
         archived=archive_marker in documents,
@@ -1056,12 +1059,11 @@ async def _require_campaign(tenant: str, slug: str) -> _CampaignRecord:
     return record
 
 
-async def _describe_campaign(tenant: str, slug: str, record: _CampaignRecord) -> dict[str, object]:
+async def _describe_campaign(tenant: str, record: _CampaignRecord) -> dict[str, object]:
     """Describe one campaign: its goal, its lifecycle status, and every stage.
 
     Args:
         tenant: The tenant that owns the campaign.
-        slug: The campaign slug.
         record: The campaign as read from the stores.
 
     Returns:
@@ -1069,7 +1071,7 @@ async def _describe_campaign(tenant: str, slug: str, record: _CampaignRecord) ->
     """
     stages, status = await _stage_report(tenant, record)
     return {
-        "id": slug,
+        "id": record.slug,
         **record.goal.model_dump(),
         "status": ARCHIVED if record.archived else status,
         "stages": stages,
@@ -1130,8 +1132,8 @@ async def create_campaign(body: CreateCampaign, identity: Identity) -> dict[str,
         )
 
     slug = await asyncio.to_thread(_write_new_campaign, tenant, goal, get_document_store())
-    created = _CampaignRecord(goal=goal, latest={}, archived=False, halted=None)
-    return await _describe_campaign(tenant, slug, created)
+    created = _CampaignRecord(slug=slug, goal=goal, latest={}, archived=False, halted=None)
+    return await _describe_campaign(tenant, created)
 
 
 def _write_new_campaign(tenant: str, goal: CampaignGoal, store: DocumentStore) -> str:
@@ -1397,7 +1399,7 @@ async def get_campaign(slug: str, identity: Identity) -> dict[str, object]:
     """
     tenant = identity.tenant_id
     record = await _require_campaign(tenant, slug)
-    return await _describe_campaign(tenant, slug, record)
+    return await _describe_campaign(tenant, record)
 
 
 @app.post("/campaigns/{slug}/archive")
@@ -1426,7 +1428,7 @@ async def archive_campaign(slug: str, identity: Identity) -> dict[str, object]:
         f"campaigns/{slug}/{_ARCHIVE_MARKER}",
         "Archived. The campaign and its deliverables stay readable.\n",
     )
-    return await _describe_campaign(tenant, slug, replace(record, archived=True))
+    return await _describe_campaign(tenant, replace(record, archived=True))
 
 
 @app.get("/brand-dna/segments")

@@ -29,121 +29,19 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from conftest import (
-    COMPLETE_GOAL_BODY as COMPLETE_GOAL,
-)
-from conftest import (
     SLUG,
     TENANT,
+    CountingPool,
+    PoolBackend,
     authenticate,
     clear_prototype_adapters,
     install_prototype_adapters,
     install_scripted_graph,
+    seed_campaigns,
+    slow_down_reads,
     write_all_agent_specs,
 )
 from marketing_os.config import Settings
-
-
-class CountingConnection:
-    """Wraps a pooled connection, counting every statement executed on it."""
-
-    def __init__(self, connection: Any, statements: list[str]) -> None:
-        """Initialise the wrapper.
-
-        Args:
-            connection: The real pooled connection.
-            statements: The shared list every executed statement is appended to.
-        """
-        self._connection = connection
-        self._statements = statements
-
-    def execute(self, query: str, *args: Any, **kwargs: Any) -> Any:
-        """Record a statement and run it on the wrapped connection.
-
-        Args:
-            query: The SQL to execute.
-            *args: Positional arguments for the real ``execute``.
-            **kwargs: Keyword arguments for the real ``execute``.
-
-        Returns:
-            Whatever the real ``execute`` returns.
-        """
-        self._statements.append(query)
-        return self._connection.execute(query, *args, **kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        """Delegate anything else to the wrapped connection.
-
-        Args:
-            name: The attribute to read.
-
-        Returns:
-            The wrapped connection's attribute.
-        """
-        return getattr(self._connection, name)
-
-
-class CountingPool:
-    """Wraps a connection pool so a test can count the statements a call issues."""
-
-    def __init__(self, pool: Any) -> None:
-        """Initialise the wrapper.
-
-        Args:
-            pool: The real ``psycopg_pool.ConnectionPool``.
-        """
-        self._pool = pool
-        self.statements: list[str] = []
-
-    def connection(self) -> Any:
-        """Return a context manager yielding a counting connection.
-
-        Returns:
-            A context manager over the wrapped pool's connection.
-        """
-        from contextlib import contextmanager
-
-        @contextmanager
-        def _counting() -> Iterator[Any]:
-            with self._pool.connection() as connection:
-                yield CountingConnection(connection, self.statements)
-
-        return _counting()
-
-    def __getattr__(self, name: str) -> Any:
-        """Delegate anything else to the wrapped pool.
-
-        Args:
-            name: The attribute to read.
-
-        Returns:
-            The wrapped pool's attribute.
-        """
-        return getattr(self._pool, name)
-
-
-def _seed_campaigns(documents: Any, count: int, *, tenant: str = TENANT) -> list[str]:
-    """Write ``count`` campaign goals straight to the store.
-
-    Seeding through the store rather than the API keeps the setup out of the
-    measurement, and the list derives campaigns from the goal documents anyway.
-
-    Args:
-        documents: The document store to write into.
-        count: How many campaigns to write.
-        tenant: The tenant that owns them.
-
-    Returns:
-        The slugs written, in the order they were written.
-    """
-    from marketing_os.campaign.goal import CampaignGoal, render_campaign_goal
-
-    slugs = []
-    for index in range(count):
-        slug = f"campaign-{index:03d}"
-        goal = CampaignGoal(**{**COMPLETE_GOAL, "name": f"Campaign {index}"})
-        documents.write(tenant, f"campaigns/{slug}/goal.md", render_campaign_goal(goal))
-        slugs.append(slug)
-    return slugs
 
 
 @pytest.fixture
@@ -177,7 +75,7 @@ def test_the_list_is_identical_across_a_mixed_portfolio(client: TestClient) -> N
 
     stages = [stage.key for stage in PIPELINE]
     deliverables = get_deliverable_store()
-    slugs = _seed_campaigns(get_document_store(), 5)
+    slugs = seed_campaigns(get_document_store(), 5)
 
     for stage_key in stages[:3]:
         deliverables.append(TENANT, slugs[1], stage_key, f"# {stage_key}")
@@ -256,7 +154,7 @@ def test_a_campaign_waiting_on_a_person_says_so_in_the_list(
 def test_an_archived_campaign_stays_off_the_list(client: TestClient) -> None:
     from marketing_os.entrypoints.api.app import get_document_store
 
-    slugs = _seed_campaigns(get_document_store(), 3)
+    slugs = seed_campaigns(get_document_store(), 3)
     before = [campaign["id"] for campaign in client.get("/campaigns").json()["campaigns"]]
     assert set(slugs) <= set(before)
     client.post(f"/campaigns/{slugs[1]}/archive")
@@ -277,7 +175,7 @@ def test_listing_costs_the_same_number_of_statements_at_1_and_50_campaigns(
     get_settings.cache_clear()
 
     counting = CountingPool(postgres_pool)
-    backend = _PoolBackend(counting, repo)
+    backend = PoolBackend(counting, repo)
     use_backend(backend)
     authenticate(app)
 
@@ -286,13 +184,13 @@ def test_listing_costs_the_same_number_of_statements_at_1_and_50_campaigns(
 
     try:
         with TestClient(app) as client:
-            _seed_campaigns(documents, 1)
+            seed_campaigns(documents, 1)
             deliverables.append(TENANT, "campaign-000", "research", "# r")
             counting.statements.clear()
             assert client.get("/campaigns").status_code == 200
             with_one = len(counting.statements)
 
-            _seed_campaigns(documents, 50)
+            seed_campaigns(documents, 50)
             for index in range(50):
                 deliverables.append(TENANT, f"campaign-{index:03d}", "research", "# r")
             counting.statements.clear()
@@ -332,9 +230,9 @@ async def test_a_concurrent_request_is_answered_while_a_large_list_is_in_flight(
     authenticate(app)
 
     store = get_document_store()
-    _seed_campaigns(store, 100)
-    _slow_down_reads(store, monkeypatch, ("read", "read_many", "exists", "list"), seconds=0.002)
-    _slow_down_reads(get_registry(), monkeypatch, ("active",), seconds=0.5)
+    seed_campaigns(store, 100)
+    slow_down_reads(store, monkeypatch, ("read", "read_many", "exists", "list"), seconds=0.002)
+    slow_down_reads(get_registry(), monkeypatch, ("active",), seconds=0.5)
 
     transport = ASGITransport(app=app)
     listing_done = asyncio.Event()
@@ -369,70 +267,3 @@ async def test_a_concurrent_request_is_answered_while_a_large_list_is_in_flight(
     assert max(latencies) < 0.25, (
         f"an unrelated request waited {max(latencies):.2f}s behind the list"
     )
-
-
-def _slow_down_reads(
-    store: Any, monkeypatch: pytest.MonkeyPatch, names: tuple[str, ...], *, seconds: float
-) -> None:
-    """Make the named reads block, so a list's synchronous cost is visible.
-
-    Every read the list makes is slowed, the registry's included: one left on the
-    event loop is enough to stall the engine, so the test must be able to see it.
-
-    Args:
-        store: The object whose reads to slow.
-        monkeypatch: The pytest monkeypatch fixture.
-        names: The method names to slow.
-        seconds: How long each read blocks for.
-    """
-    for name in names:
-        original = getattr(store, name)
-
-        def _slow(*args: Any, _original: Any = original, **kwargs: Any) -> Any:
-            time.sleep(seconds)
-            return _original(*args, **kwargs)
-
-        monkeypatch.setattr(store, name, _slow)
-
-
-class _PoolBackend:
-    """A Postgres backend over a pool a test supplies, with an in-memory checkpointer.
-
-    The counting test needs its own wrapped pool and no checkpointer connection,
-    which the real backend opens for itself.
-    """
-
-    def __init__(self, pool: Any, root: Path) -> None:
-        """Initialise the backend.
-
-        Args:
-            pool: The pool every adapter is built over.
-            root: The hermetic repository root, for the usage ledger's settings.
-        """
-        from langgraph.checkpoint.memory import MemorySaver
-
-        from marketing_os.adapters.postgres import (
-            PostgresAnswerStore,
-            PostgresDeliverableStore,
-            PostgresDocumentStore,
-            PostgresQuestionnaireStore,
-            PostgresRunStore,
-            PostgresTenantDirectory,
-            PostgresUsageLedger,
-        )
-        from marketing_os.config import Settings
-
-        self.documents = PostgresDocumentStore(pool)
-        self.deliverables = PostgresDeliverableStore(pool)
-        self.tenants = PostgresTenantDirectory(pool)
-        self.runs = PostgresRunStore(pool)
-        self.questionnaires = PostgresQuestionnaireStore(pool)
-        self.answers = PostgresAnswerStore(pool)
-        self.usage = PostgresUsageLedger(pool, Settings(root=root))
-        self.checkpointer = MemorySaver()
-
-    async def open(self) -> None:
-        """Do nothing: the pool this backend was handed is already open."""
-
-    async def close(self) -> None:
-        """Do nothing: the test owns the pool's lifetime."""
