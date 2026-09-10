@@ -402,7 +402,8 @@ function StageNav({
  * A stage with nothing produced is in one of two situations, and the pane
  * says which: the run is working on it now, or the run has not reached it.
  * Telling a person that a running stage still waits on approvals reads as
- * their approval not having registered.
+ * their approval not having registered. For the same reason a stale stage
+ * the run is already re-doing is not offered a re-run.
  *
  * Args:
  *   stage: The selected stage.
@@ -446,7 +447,9 @@ function StageDocument({
 
   return (
     <div className="max-w-[720px]">
-      {stage.stale && <StaleBanner onRerun={onRerun} pending={pending} />}
+      {stage.stale && !running && (
+        <StaleBanner onRerun={onRerun} pending={pending} />
+      )}
       <div className="flex items-center gap-2">
         <StatusPill status={stageStatus(stage.state, running)} />
         {stage.latest_version !== null && (

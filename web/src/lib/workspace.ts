@@ -86,7 +86,7 @@ export function stageTitle(stageKey: string): string {
  *   interface shows for the state, defaulting to Not started for a state it
  *   does not recognise rather than rendering a raw engine string.
  */
-export function stageStatus(state: string, running = false): Status {
+export function stageStatus(state: string, running: boolean): Status {
   if (running) return "In progress";
   return STAGE_STATUSES[state] ?? "Not started";
 }

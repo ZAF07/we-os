@@ -117,14 +117,14 @@ describe("toPhases", () => {
 
 describe("stageStatus", () => {
   it("speaks the operator's vocabulary, never the engine's state string", () => {
-    expect(stageStatus("pending")).toBe("Not started");
-    expect(stageStatus("completed")).toBe("Approved");
-    expect(stageStatus("awaiting_approval")).toBe("Ready for review");
-    expect(stageStatus("stale")).toBe("Stale");
+    expect(stageStatus("pending", false)).toBe("Not started");
+    expect(stageStatus("completed", false)).toBe("Approved");
+    expect(stageStatus("awaiting_approval", false)).toBe("Ready for review");
+    expect(stageStatus("stale", false)).toBe("Stale");
   });
 
   it("falls back to Not started rather than rendering an unknown engine state", () => {
-    expect(stageStatus("something-new")).toBe("Not started");
+    expect(stageStatus("something-new", false)).toBe("Not started");
   });
 
   it("reads In progress while the run is on the stage, whatever the engine says", () => {
