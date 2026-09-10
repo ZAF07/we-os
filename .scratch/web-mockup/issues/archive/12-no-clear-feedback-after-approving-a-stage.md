@@ -1,6 +1,6 @@
 # 12 — After approving a stage, the user cannot tell that the run moved on or what runs next
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Symptom
@@ -105,16 +105,16 @@ Triage may decide to merge the two.
 
 ## Acceptance criteria
 
-- [ ] After clicking Approve, the UI confirms the approval was accepted and the
+- [x] After clicking Approve, the UI confirms the approval was accepted and the
       run resumed — without a window showing a "Working" header over nothing.
-- [ ] The stage that is now running is identifiable in the Stages list, and the
+- [x] The stage that is now running is identifiable in the Stages list, and the
       other stages' statuses read correctly alongside it.
-- [ ] Before approving, the user can see which stage the approval will start
+- [x] Before approving, the user can see which stage the approval will start
       (or a decision not to do this is recorded on this issue).
-- [ ] The behaviour is correct across a page reload during the post-approval
+- [x] The behaviour is correct across a page reload during the post-approval
       window.
-- [ ] A test covers the fixed behaviour (component/e2e as appropriate).
-- [ ] `make check` passes, and `make test-e2e` passes (change touches `web/`).
+- [x] A test covers the fixed behaviour (component/e2e as appropriate).
+- [x] `make check` passes, and `make test-e2e` passes (change touches `web/`).
 
 ## Comments
 
@@ -179,3 +179,29 @@ criterion "correct across a page reload during the post-approval window",
 which previously had only the engine-seam test).
 
 Standards: see issue 11's comment.
+
+## Completion
+
+- Completed: 2026-09-10
+- Commits: 6a214ed (the fix), a7cb680 (code-review fixes)
+
+Evidence per criterion:
+- Approval confirmed, no "Working" over nothing — "keeps the progress feed on
+  screen and marks the next stage as started" in
+  `web/src/components/workspace/workspace-run.test.tsx`: the rail keeps its
+  lines through the re-attach and the replay; the browser spec asserts the
+  replayed "You approved Brand strategy." line.
+- Running stage identifiable, others correct — same test, plus "marks the
+  stage a re-run sets going, not the one a past approval did".
+- Next stage named before approving — "names the stage the approval will
+  start, before the click"; `web/tests/workspace.spec.ts` asserts "Approving
+  starts Campaign strategy." and, at the next gate, "…Performance plan.".
+- Correct across a reload in the post-approval window — the tailer now reads
+  through a gate summary (`test_tail_trace_replays_past_a_gate_summary_when_the_run_was_resumed`,
+  `…follows_a_live_run_through_its_gate_summary`), and "is read correctly by a
+  page reloaded after an approval" covers the page.
+- Tests — the above; the browser spec "approving a stage resumes the run into
+  the next one" verifies the whole path in the running app (production build).
+- Gates — `make check` (658 passed, 111 skipped), `make test-postgres` (769
+  passed), `make test-e2e` 73 passed after each commit; web `pnpm test:unit`
+  135 passed, lint, typecheck and format:check clean.

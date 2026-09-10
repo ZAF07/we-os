@@ -1,6 +1,6 @@
 # 11 — The stage a run is currently working on is not indicated in the Stages list
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Symptom
@@ -78,16 +78,16 @@ approval-moment feedback gaps. Fixing this issue resolves part of that one.
 
 ## Acceptance criteria
 
-- [ ] During an in-flight run, the executing stage is visibly distinguished in
+- [x] During an in-flight run, the executing stage is visibly distinguished in
       the left Stages list — not shown as "Not started".
-- [ ] The running indicator is distinguishable from the *selected* stage
+- [x] The running indicator is distinguishable from the *selected* stage
       highlight; a stage can be both at once and read correctly.
-- [ ] The indication is correct after a page reload mid-run, or the decision
+- [x] The indication is correct after a page reload mid-run, or the decision
       not to support that is recorded on this issue.
-- [ ] Stages that are genuinely pending, completed, awaiting approval, or stale
+- [x] Stages that are genuinely pending, completed, awaiting approval, or stale
       keep their existing presentation.
-- [ ] A test covers the fixed behaviour (component/e2e as appropriate).
-- [ ] `make check` passes, and `make test-e2e` passes (change touches `web/`).
+- [x] A test covers the fixed behaviour (component/e2e as appropriate).
+- [x] `make check` passes, and `make test-e2e` passes (change touches `web/`).
 
 ## Comments
 
@@ -128,3 +128,28 @@ the hook's state type re-spelled `RunFeed` (now derived from it);
 
 Spec: no gaps against this issue's acceptance criteria. See issue 12's
 comment for the shared findings on the resume window.
+
+## Completion
+
+- Completed: 2026-09-10
+- Commits: 6a214ed (the fix), a7cb680 (code-review fixes)
+
+Evidence per criterion:
+- Executing stage distinguished, not "Not started" —
+  `web/src/components/workspace/workspace-run.test.tsx` "is marked in the
+  Stages list once the stream says it started"; `StageNav` reads the running
+  stage as "In progress" with a pulsing dot.
+- Distinguishable from selection — "is still marked when a person is reading
+  a different stage": the selected entry carries `aria-current="step"`, the
+  running one reads "In progress"; both hold when they coincide.
+- Correct after a reload mid-run — derived from the stream, which replays
+  from the top on attach: "is read correctly by a page reloaded after an
+  approval", plus the tailer tests in
+  `agent-harness/tests/test_observability.py`. Decision recorded in Comments.
+- Other states unchanged — `stageStatus` untouched; `web/tests/workspace.spec.ts`
+  "lifecycle status renders separately from stage progress" still reads
+  "Not started".
+- Tests — the above, plus `use-run-events.test.ts` for `runningStage`.
+- Gates — `make check` (658 passed, 111 skipped), `make test-postgres` (769
+  passed), `make test-e2e` 73 passed after each commit; web `pnpm test:unit`
+  135 passed, lint, typecheck and format:check clean.
