@@ -1,6 +1,6 @@
 # PRD: we-OS SaaS foundation — tenancy, persistence, approval gates, and FE↔engine wiring
 
-Status: ready-for-agent
+Status: completed
 Category: feature
 Date: 2026-08-20
 
@@ -225,3 +225,8 @@ From the business owner's perspective: **they answer honest questions about thei
 - **Start the Meta Business Verification and TikTok audit applications now**, in parallel with this work. They are calendar time, not engineering time, and they gate a later PRD entirely.
 - The engine itself is in good shape and this PRD does not relitigate it: the pipeline, gate, QA loop, cancellation, tracing and web-search fallback chain are green (189 passed, 1 skipped; ruff and mypy clean) and are being *rehomed*, not rebuilt.
 - The correction that a Tenant is one business — not an agency managing many — **simplifies** this work: no customer-selection UI, no per-customer routing, and the Brand DNA is a singleton on the tenant rather than a collection.
+
+## Completion
+
+- Completed: 2026-09-10
+- Commit: 9f603d9
