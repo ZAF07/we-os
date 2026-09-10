@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
  *   label: The step name.
  *   done: Whether the step is completed.
  *   active: Whether the step is the selected/current one.
+ *   running: Whether the system is working on this step right now; the dot
+ *     pulses, independently of selection.
  *   onClick: Optional handler; when present the chip is a button.
  *
  * Returns:
@@ -21,12 +23,14 @@ export function StepTab({
   label,
   done,
   active,
+  running = false,
   onClick,
 }: {
   mark: string;
   label: string;
   done: boolean;
   active: boolean;
+  running?: boolean;
   onClick?: () => void;
 }) {
   const className = cn(
@@ -41,9 +45,10 @@ export function StepTab({
           "flex size-4 items-center justify-center rounded-full border-[1.5px] text-[9.5px] font-bold",
           done
             ? "border-emerald-500 bg-emerald-500 text-white"
-            : active
+            : active || running
               ? "border-primary bg-primary text-white"
               : "border-slate-300 bg-card text-slate-400",
+          running && "animate-pulse",
         )}
       >
         {done ? "✓" : mark}

@@ -1,6 +1,6 @@
 # 11 — The stage a run is currently working on is not indicated in the Stages list
 
-Status: needs-triage
+Status: ready-for-agent
 Type: bug
 
 ## Symptom
@@ -88,3 +88,30 @@ approval-moment feedback gaps. Fixing this issue resolves part of that one.
       keep their existing presentation.
 - [ ] A test covers the fixed behaviour (component/e2e as appropriate).
 - [ ] `make check` passes, and `make test-e2e` passes (change touches `web/`).
+
+## Comments
+
+**2026-09-10 — diagnosis (branch `workspace-running-stage-feedback`)**
+
+Feedback loop: a vitest component test,
+`web/src/components/workspace/workspace-run.test.tsx`, renders the real
+Workspace with a fake `EventSource` and plays trace events through it. Red on
+the exact symptom — the Stages entry read "Research findingsNot started" after
+a `stage.start` for research. Six tests, ~2 s, deterministic.
+
+Cause, confirmed by the loop: no running state existed on the client. The
+status map had no case for it, and `StageNav` never saw the run's events —
+only `RunProgress` did.
+
+Decisions:
+- **Running is derived on the client from the stream**, not added to the
+  engine's stage state. The engine's stage states say how far work has got
+  (ADR-0017); "what is it doing this second" is what the Run Trace is for
+  (CONTEXT.md). The stream replays from the top on every attach, so a page
+  reloaded mid-run re-derives it correctly — the "events are lost on refresh"
+  worry does not hold.
+- The running stage reads **"In progress"** with a pulsing dot, the existing
+  operator status for work underway, rather than a new taxonomy entry.
+- The selected stage carries `aria-current="step"`; running and selected are
+  independent marks and both read correctly when they coincide.
+- The phase chip containing the running stage pulses too.

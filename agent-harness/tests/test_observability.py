@@ -307,6 +307,83 @@ async def test_tail_trace_replays_then_follows_appended_events(tmp_path: Path) -
     assert [event["event"] for event in events] == ["stage.start", "stage.done", "run.summary"]
 
 
+async def test_tail_trace_replays_past_a_gate_summary_when_the_run_was_resumed(
+    tmp_path: Path,
+) -> None:
+    trace = tmp_path / "run.jsonl"
+    _write_trace(
+        trace,
+        [
+            {"event": "stage.start", "stage": "research"},
+            {"event": "stage.done", "stage": "research"},
+            {"event": "run.summary", "outcome": "awaiting_approval", "stage": "brand-strategy"},
+            {"event": "stage.approved", "stage": "brand-strategy"},
+            {"event": "stage.start", "stage": "campaign-strategy"},
+            {"event": "run.summary", "outcome": "ok"},
+        ],
+    )
+
+    events = [event async for event in tail_trace(trace, is_live=lambda: False, poll_interval=0.01)]
+
+    assert [event["event"] for event in events] == [
+        "stage.start",
+        "stage.done",
+        "run.summary",
+        "stage.approved",
+        "stage.start",
+        "run.summary",
+    ]
+
+
+async def test_tail_trace_follows_a_live_run_through_its_gate_summary(tmp_path: Path) -> None:
+    trace = tmp_path / "run.jsonl"
+    _write_trace(
+        trace,
+        [
+            {"event": "stage.start", "stage": "research"},
+            {"event": "run.summary", "outcome": "awaiting_approval", "stage": "brand-strategy"},
+        ],
+    )
+    live = {"running": True}
+
+    async def resume_then_finish() -> None:
+        """Append the resumed run's events while the tailer is following, then end it."""
+        await asyncio.sleep(0.02)
+        _append_event(trace, {"event": "stage.approved", "stage": "brand-strategy"})
+        await asyncio.sleep(0.02)
+        _append_event(trace, {"event": "run.summary", "outcome": "ok"})
+        live["running"] = False
+
+    resumer = asyncio.create_task(resume_then_finish())
+    events = [
+        event
+        async for event in tail_trace(trace, is_live=lambda: live["running"], poll_interval=0.01)
+    ]
+    await resumer
+
+    assert [event["event"] for event in events] == [
+        "stage.start",
+        "run.summary",
+        "stage.approved",
+        "run.summary",
+    ]
+
+
+async def test_tail_trace_closes_on_a_halted_run_at_its_gate_summary(tmp_path: Path) -> None:
+    trace = tmp_path / "run.jsonl"
+    _write_trace(
+        trace,
+        [
+            {"event": "stage.start", "stage": "research"},
+            {"event": "run.summary", "outcome": "awaiting_approval", "stage": "brand-strategy"},
+        ],
+    )
+
+    events = [event async for event in tail_trace(trace, is_live=lambda: False, poll_interval=0.01)]
+
+    assert [event["event"] for event in events] == ["stage.start", "run.summary"]
+
+
 async def test_tail_trace_closes_on_interrupted_run_with_no_summary(tmp_path: Path) -> None:
     trace = tmp_path / "run.jsonl"
     _write_trace(trace, [{"event": "stage.start", "stage": "research"}])
