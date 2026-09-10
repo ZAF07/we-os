@@ -254,6 +254,7 @@ export function Workspace({
             view={view}
             shownVersion={shownVersion}
             shownContent={shownContent}
+            running={selected.key === runningKey}
             pending={pending}
             onRerun={() =>
               submit(
@@ -359,7 +360,7 @@ function StageNav({
       {stages.map((stage) => {
         const active = stage.key === selectedKey;
         const running = stage.key === runningKey;
-        const status = running ? "In progress" : stageStatus(stage.state);
+        const status = stageStatus(stage.state, running);
         return (
           <button
             key={stage.key}
@@ -398,11 +399,18 @@ function StageNav({
 /**
  * Renders the selected stage: its deliverable, or an honest empty state.
  *
+ * A stage with nothing produced is in one of two situations, and the pane
+ * says which: the run is working on it now, or the run has not reached it.
+ * Telling a person that a running stage still waits on approvals reads as
+ * their approval not having registered. For the same reason a stale stage
+ * the run is already re-doing is not offered a re-run.
+ *
  * Args:
  *   stage: The selected stage.
  *   view: Its deliverable and versions, or null while loading.
  *   shownVersion: The historical version being shown, if any.
  *   shownContent: That version's content, or null while loading.
+ *   running: Whether the run is working on this stage right now.
  *   pending: Whether an action is in flight.
  *   onRerun: Starts a run to clear staleness.
  *   onShowVersion: Shows a historical version.
@@ -412,6 +420,7 @@ function StageDocument({
   view,
   shownVersion,
   shownContent,
+  running,
   pending,
   onRerun,
   onShowVersion,
@@ -420,6 +429,7 @@ function StageDocument({
   view: StageView | null;
   shownVersion: number | null;
   shownContent: string | null;
+  running: boolean;
   pending: boolean;
   onRerun: () => void;
   onShowVersion: (version: number) => void;
@@ -437,9 +447,11 @@ function StageDocument({
 
   return (
     <div className="max-w-[720px]">
-      {stage.stale && <StaleBanner onRerun={onRerun} pending={pending} />}
+      {stage.stale && !running && (
+        <StaleBanner onRerun={onRerun} pending={pending} />
+      )}
       <div className="flex items-center gap-2">
-        <StatusPill status={stageStatus(stage.state)} />
+        <StatusPill status={stageStatus(stage.state, running)} />
         {stage.latest_version !== null && (
           <span className="text-[12px] text-muted-foreground">
             {shownVersion !== null && shownVersion !== stage.latest_version
@@ -454,8 +466,9 @@ function StageDocument({
 
       {view.deliverable === null ? (
         <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-[18px] py-4 text-[13px] text-muted-foreground">
-          Nothing produced yet. This stage runs once everything before it is
-          approved.
+          {running
+            ? "This stage is running now. Its output appears here when it finishes."
+            : "Nothing produced yet. This stage runs once everything before it is approved."}
         </p>
       ) : shownVersion !== null && shownVersion !== stage.latest_version ? (
         shownContent === null ? (

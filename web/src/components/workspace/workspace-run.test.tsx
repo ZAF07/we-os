@@ -272,6 +272,103 @@ describe("the stage a run is working on", () => {
   });
 });
 
+describe("the document pane of the stage a run is working on", () => {
+  /**
+   * Finds the document pane by the stage heading it shows.
+   *
+   * Args:
+   *   title: The stage's title as the interface names it.
+   *
+   * Returns:
+   *   The pane holding the status pill, the heading, and the deliverable.
+   */
+  function pane(title: string): HTMLElement {
+    const heading = screen.getByRole("heading", { level: 2, name: title });
+    return heading.parentElement as HTMLElement;
+  }
+
+  it("says the stage is running, not that it waits on approvals", async () => {
+    render(<Workspace campaign={FRESH} runId="run-1" />);
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+    await emit({ event: "stage.start", stage: "research" });
+
+    // Everything before this stage is approved — that is why the run is on
+    // it. The pane must not claim otherwise.
+    await screen.findByText(/This stage is running now/);
+    const researchPane = pane("Research findings");
+    expect(researchPane.textContent).not.toContain("Nothing produced yet");
+    expect(researchPane.textContent).toContain("In progress");
+    expect(researchPane.textContent).not.toContain("Not started");
+  });
+
+  it("keeps the approval precondition for a stage the run has not reached", async () => {
+    render(<Workspace campaign={FRESH} runId="run-1" />);
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+    await emit({ event: "stage.start", stage: "research" });
+
+    fireEvent.click(stageEntry("Brand strategy"));
+    await screen.findByText(/Nothing produced yet/);
+
+    const brandStrategyPane = pane("Brand strategy");
+    expect(brandStrategyPane.textContent).toContain("Nothing produced yet");
+    expect(brandStrategyPane.textContent).not.toContain("running now");
+    expect(brandStrategyPane.textContent).toContain("Not started");
+  });
+
+  it("stops saying the stage is running once the run has left it", async () => {
+    render(<Workspace campaign={FRESH} runId="run-1" />);
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+    await emit({ event: "stage.start", stage: "research" });
+    await screen.findByText(/running now/);
+
+    await emit({ event: "stage.failed", stage: "research" });
+
+    const researchPane = pane("Research findings");
+    expect(researchPane.textContent).not.toContain("running now");
+    expect(researchPane.textContent).toContain("Not started");
+  });
+
+  it("says the stage an approval set going is running, before the stream catches up", async () => {
+    approveStageAction.mockResolvedValue({ error: null });
+    render(<Workspace campaign={AT_BRAND_GATE} runId="run-1" />);
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+    await emit({ event: "stage.start", stage: "brand-strategy" });
+    await emit({ event: "run.summary", outcome: "awaiting_approval" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(2));
+    fireEvent.click(stageEntry("Campaign strategy"));
+
+    // The re-attached stream has said nothing yet. The pane already says the
+    // approval started this stage, in the window the person most wants it.
+    await screen.findByText(/This stage is running now/);
+    expect(pane("Campaign strategy").textContent).toContain("In progress");
+  });
+
+  it("does not offer to re-run a stale stage the run is already re-doing", async () => {
+    startRunAction.mockResolvedValue({ error: null });
+    const stale = campaign([
+      stage("research", "Research", {
+        state: "stale",
+        stale: true,
+        latest_version: 1,
+      }),
+      stage("brand-strategy", "Strategy"),
+    ]);
+    loadStage.mockResolvedValue({
+      deliverable: { name: "research.md", path: "x", content: "# R" },
+      versions: [],
+    });
+    render(<Workspace campaign={stale} runId="run-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Re-run/ }));
+    await waitFor(() => expect(startRunAction).toHaveBeenCalledTimes(1));
+
+    expect(screen.queryByRole("button", { name: /Re-run/ })).toBeNull();
+    expect(pane("Research findings").textContent).toContain("In progress");
+  });
+});
+
 describe("approving a stage", () => {
   it("names the stage the approval will start, before the click", async () => {
     render(<Workspace campaign={AT_BRAND_GATE} runId="run-1" />);
