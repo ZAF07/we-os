@@ -179,6 +179,20 @@ test.describe("approval gate", () => {
       name: /^Campaign strategy/,
     });
     await expect(campaignStrategy).not.toContainText("Not started");
+
+    // Opening the stage the run is on says so too. It must not claim the
+    // stage still waits on approvals — the approval just given is what set it
+    // going. Only the wrong sentence is ruled out, since by the time the pane
+    // is read the stage may already have produced its deliverable.
+    await campaignStrategy.click();
+    const campaignStrategyPane = page
+      .getByRole("heading", { level: 2, name: "Campaign strategy" })
+      .locator("..");
+    await expect(campaignStrategyPane).toBeVisible();
+    await expect(campaignStrategyPane).not.toContainText(
+      "Nothing produced yet",
+    );
+    await expect(campaignStrategyPane).not.toContainText("Not started");
     await expect(
       stageNav.getByRole("button", { name: /^Brand strategy/ }),
     ).toContainText("Approved", { timeout: 120_000 });

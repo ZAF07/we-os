@@ -272,6 +272,64 @@ describe("the stage a run is working on", () => {
   });
 });
 
+describe("the document pane of the stage a run is working on", () => {
+  /**
+   * Finds the document pane by the stage heading it shows.
+   *
+   * Args:
+   *   title: The stage's title as the interface names it.
+   *
+   * Returns:
+   *   The pane holding the status pill, the heading, and the deliverable.
+   */
+  function pane(title: string): HTMLElement {
+    const heading = screen.getByRole("heading", { level: 2, name: title });
+    return heading.parentElement as HTMLElement;
+  }
+
+  it("says the stage is running, not that it waits on approvals", async () => {
+    render(<Workspace campaign={FRESH} runId="run-1" />);
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+    await emit({ event: "stage.start", stage: "research" });
+    await screen.findByText(/Nothing produced yet|running now/);
+
+    // Everything before this stage is approved — that is why the run is on
+    // it. The pane must not claim otherwise.
+    const document = pane("Research findings");
+    expect(document.textContent).toContain("This stage is running now");
+    expect(document.textContent).not.toContain("Nothing produced yet");
+    expect(document.textContent).toContain("In progress");
+    expect(document.textContent).not.toContain("Not started");
+  });
+
+  it("keeps the approval precondition for a stage the run has not reached", async () => {
+    render(<Workspace campaign={FRESH} runId="run-1" />);
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+    await emit({ event: "stage.start", stage: "research" });
+
+    fireEvent.click(stageEntry("Brand strategy"));
+    await screen.findByText(/Nothing produced yet/);
+
+    const document = pane("Brand strategy");
+    expect(document.textContent).toContain("Nothing produced yet");
+    expect(document.textContent).not.toContain("running now");
+    expect(document.textContent).toContain("Not started");
+  });
+
+  it("stops saying the stage is running once the run has left it", async () => {
+    render(<Workspace campaign={FRESH} runId="run-1" />);
+    await waitFor(() => expect(FakeEventSource.opened).toHaveLength(1));
+    await emit({ event: "stage.start", stage: "research" });
+    await screen.findByText(/running now/);
+
+    await emit({ event: "stage.failed", stage: "research" });
+
+    const document = pane("Research findings");
+    expect(document.textContent).not.toContain("running now");
+    expect(document.textContent).toContain("Not started");
+  });
+});
+
 describe("approving a stage", () => {
   it("names the stage the approval will start, before the click", async () => {
     render(<Workspace campaign={AT_BRAND_GATE} runId="run-1" />);

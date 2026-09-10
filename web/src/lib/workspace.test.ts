@@ -126,6 +126,12 @@ describe("stageStatus", () => {
   it("falls back to Not started rather than rendering an unknown engine state", () => {
     expect(stageStatus("something-new")).toBe("Not started");
   });
+
+  it("reads In progress while the run is on the stage, whatever the engine says", () => {
+    expect(stageStatus("pending", true)).toBe("In progress");
+    expect(stageStatus("stale", true)).toBe("In progress");
+    expect(stageStatus("pending", false)).toBe("Not started");
+  });
 });
 
 describe("stageTitle and deliverableName", () => {

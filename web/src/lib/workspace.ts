@@ -73,14 +73,21 @@ export function stageTitle(stageKey: string): string {
 /**
  * Converts an engine stage state into the operator's status label.
  *
+ * The engine has no running state — it reports a stage as pending until it
+ * has produced something — so whether the run is working on the stage right
+ * now is known only from the run's events, and is passed in alongside.
+ *
  * Args:
  *   state: The engine's stage state.
+ *   running: Whether the run is working on this stage right now.
  *
  * Returns:
- *   The status the interface shows, defaulting to Not started for a state it
+ *   In progress while the run is on the stage; otherwise the status the
+ *   interface shows for the state, defaulting to Not started for a state it
  *   does not recognise rather than rendering a raw engine string.
  */
-export function stageStatus(state: string): Status {
+export function stageStatus(state: string, running = false): Status {
+  if (running) return "In progress";
   return STAGE_STATUSES[state] ?? "Not started";
 }
 
