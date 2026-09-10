@@ -34,6 +34,12 @@ COMPOSE = docker compose --env-file web/.env.local -f docker-compose.e2e.yml
 # prerequisite is web/.env.local, which holds the shared test instance's Clerk
 # credentials (see web/.env.local.example).
 #
+# The web app here is `web-built`: a production build (`next build`, served by
+# `next start`) with the source copied into the image, so every route is
+# compiled before the first request and there is no dev cache to write during
+# the suite. It is rebuilt every time, so it always tests the working tree as
+# it stands. The fast loop below serves the working tree live instead.
+#
 # The stack is torn down whether the suite passes or fails, so a red run never
 # leaves containers holding ports — nor an image nobody will use again.
 #
@@ -46,7 +52,7 @@ COMPOSE = docker compose --env-file web/.env.local -f docker-compose.e2e.yml
 CAFFEINATE = $(if $(shell command -v caffeinate 2>/dev/null),caffeinate -i,)
 
 test-e2e:
-	$(CAFFEINATE) $(COMPOSE) up --build --wait engine web
+	$(CAFFEINATE) $(COMPOSE) up --build --wait engine web-built
 	cd web && E2E_STACK=compose $(CAFFEINATE) pnpm test; \
 		status=$$?; \
 		cd .. && $(MAKE) e2e-down; \
@@ -55,6 +61,11 @@ test-e2e:
 # The same stack, left running — for driving the app by hand or re-running the
 # suite without paying the startup cost each time. Run the suite against it with
 # `cd web && E2E_STACK=compose pnpm test`.
+#
+# The web app here is `web`, the dev server over a bind mount of web/, so a
+# frontend edit is tested with no rebuild — the one thing the gate's production
+# build cannot offer. Everything else in the stack is an image, and stale until
+# rebuilt.
 #
 # Sweeps orphans afterwards for the same reason `e2e-down` does: this target
 # rebuilds too, so iterating on the engine here would otherwise strand a 577 MB
