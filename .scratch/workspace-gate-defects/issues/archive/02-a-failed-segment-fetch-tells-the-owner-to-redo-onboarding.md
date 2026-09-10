@@ -1,6 +1,6 @@
 # 02 — A failed segment fetch tells the business owner their Brand DNA is empty, and never retries
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Symptom
@@ -126,12 +126,10 @@ needs an explicit wait, add it, but do not paper over a wizard that stays broken
       the full-suite run that previously failed them.)
 - [x] Web gates pass — `pnpm typecheck`, `pnpm lint`, `pnpm format:check`,
       `pnpm test:unit`. (All four green; 113 unit tests, up from 108.)
-- [ ] `make test-e2e` passes. **Not satisfied, and deliberately left unticked.**
-      The suite is still red: the best run since the fix is 72 passed / 1 failed
-      (`calendar.spec.ts:34`), down from 70 / 3 before it. Both of this issue's specs pass in every run since the fix. The
-      remaining failure is the pre-existing parallel-load flake — established by
-      an A/B against unmodified `main`, see Comments — but the criterion as
-      written says the suite passes, and it does not.
+- [x] `make test-e2e` passes. (2026-09-10, on main at `f2e68ad` after the
+      residual flake was fixed in `773e464` / issue 04: **73 passed, 0 failed**,
+      exit 0, 1.4 min. Web gates re-run green the same day: typecheck, lint,
+      format:check, 115 unit tests. Fix commit: `76127d3`.)
 
 ## Blocked by
 
@@ -159,7 +157,7 @@ for the isolation runs that establish it, including an A/B of `calendar.spec.ts`
 against unmodified `d837a3e`.
 
 The suite's residual flake is filed as
-[`.scratch/e2e-suite-flake/issues/04`](../../e2e-suite-flake/issues/04-the-suite-still-drops-a-rotating-spec-under-parallel-load.md).
+[`.scratch/e2e-suite-flake/issues/04`](../../../e2e-suite-flake/issues/archive/04-the-suite-still-drops-a-rotating-spec-under-parallel-load.md).
 
 **Same shape elsewhere, deliberately left alone.** `web/src/app/(app)/campaigns/page.tsx:28`
 and `web/src/app/(app)/onboarding/page.tsx:104` both answer a failed load with
@@ -193,3 +191,8 @@ the first. Two loads racing to answer this field is not reachable through the UI
 The test that shipped asserts that invariant instead — the button is gone while a
 retry is in flight — which is the honest guarantee and the one worth locking
 down. The ref is still correct for the mount-teardown path.
+
+## Completion
+
+- Completed: 2026-09-10
+- Commit: 76127d3 (fix, on main directly); status change committed with this file

@@ -306,8 +306,10 @@ necessarily renewed a stale token (a restored tab after a minute idle shows
 and the engine's create and single-campaign reads still run their store
 calls on the event loop (issue 03 moved only the list).
 
-Branch `diag/e2e-flake-04`, uncommitted, in a worktree under the session
-scratchpad; a copy of the patch is at `.scratch/e2e-suite-flake/04-fix.patch`.
+Landed as `773e464` on branch `diag/e2e-flake-04`, merged to main in
+`4c9c1d5` (2026-09-10). The interim patch copy at
+`.scratch/e2e-suite-flake/04-fix.patch` was deleted once the merge landed. The
+follow-ups named above are filed as issues 05, 06 and 07 in this folder.
 
 
 ## Completion

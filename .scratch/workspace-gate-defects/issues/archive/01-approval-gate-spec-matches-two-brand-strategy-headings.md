@@ -1,6 +1,6 @@
 # 01 — The approval-gate spec matches two "Brand strategy" headings and fails under strict mode
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Symptom
@@ -104,12 +104,10 @@ carrying its own title is the point of `2537c9a`.
       this issue — both headings stay. (Diff touches only the spec.)
 - [x] Web gates pass — `pnpm typecheck`, `pnpm lint`, `pnpm format:check`,
       `pnpm test:unit`. (All four green; 113 unit tests.)
-- [ ] `make test-e2e` passes. **Not satisfied, and deliberately left unticked.**
-      The suite is still red: the best run since the fix is 72 passed / 1 failed
-      (`calendar.spec.ts:34`), down from 70 / 3 before it. This issue's spec passes in every run since the fix. The
-      remaining failure is the pre-existing parallel-load flake — established by
-      an A/B against unmodified `main`, see Comments — but the criterion as
-      written says the suite passes, and it does not.
+- [x] `make test-e2e` passes. (2026-09-10, on main at `f2e68ad` after the
+      residual flake was fixed in `773e464` / issue 04: **73 passed, 0 failed**,
+      exit 0, 1.4 min. Web gates re-run green the same day: typecheck, lint,
+      format:check, 115 unit tests. Fix commit: `76127d3`.)
 
 ## Blocked by
 
@@ -153,5 +151,10 @@ No engine error, 401, 402 or 500 appears anywhere in the run — consistent with
 render time, not a defect.
 
 That residual is now filed as
-[`.scratch/e2e-suite-flake/issues/04`](../../e2e-suite-flake/issues/04-the-suite-still-drops-a-rotating-spec-under-parallel-load.md),
+[`.scratch/e2e-suite-flake/issues/04`](../../../e2e-suite-flake/issues/archive/04-the-suite-still-drops-a-rotating-spec-under-parallel-load.md),
 with the four-run table and the A/B, rather than being absorbed here.
+
+## Completion
+
+- Completed: 2026-09-10
+- Commit: 76127d3 (fix, on main directly); status change committed with this file
