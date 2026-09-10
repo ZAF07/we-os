@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -115,21 +115,56 @@ function NavLinks({
  * The name and business come from Clerk's session, so the shell reflects who is
  * actually signed in.
  */
-function UserCard() {
+/**
+ * Reports whether the component has mounted in the browser.
+ *
+ * `false` on the server and during hydration, `true` from the first render
+ * after it — the one moment the server and the client are guaranteed to
+ * agree on, whatever else has happened in the browser by then.
+ */
+function useMounted(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+}
+
+/**
+ * Renders the signed-in person and their business at the foot of the rail.
+ *
+ * Clerk's `UserButton` renders its fallback until the Clerk script has
+ * loaded, and its real host once it has. On the server the script has never
+ * loaded, so the fallback is what gets serialised — but in the browser the
+ * script can finish before React hydrates, and then the button hydrates as
+ * its host against markup that holds the fallback. React answers a mismatch
+ * by throwing the server tree away and re-rendering the whole page on the
+ * client, which resets every component's state — a wizard mid-way through
+ * its steps goes back to the first one. So the button is only rendered once
+ * mounted: until then this shows the same fallback the server did.
+ */
+export function UserCard() {
   const { user } = useUser();
   const { organization } = useOrganization();
+  const mounted = useMounted();
   const businessName = organization?.name ?? "Your business";
+
+  const avatarFallback = (
+    <div className="flex size-7 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+      M
+    </div>
+  );
 
   return (
     <div className="mt-auto flex items-center gap-2.5 border-t px-3.5 py-3">
-      <UserButton
-        appearance={{ elements: { userButtonAvatarBox: "size-7" } }}
-        fallback={
-          <div className="flex size-7 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
-            M
-          </div>
-        }
-      />
+      {mounted ? (
+        <UserButton
+          appearance={{ elements: { userButtonAvatarBox: "size-7" } }}
+          fallback={avatarFallback}
+        />
+      ) : (
+        avatarFallback
+      )}
       <div className="min-w-0 leading-tight">
         <div className="truncate text-[13px] font-semibold">
           {user?.fullName ??
