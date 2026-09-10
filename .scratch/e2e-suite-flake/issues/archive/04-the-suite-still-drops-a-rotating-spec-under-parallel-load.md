@@ -1,6 +1,6 @@
 # 04 — The e2e suite still drops a rotating spec or two under parallel load
 
-Status: ready-for-human
+Status: completed
 Type: bug
 
 ## Symptom
@@ -309,3 +309,8 @@ calls on the event loop (issue 03 moved only the list).
 Branch `diag/e2e-flake-04`, uncommitted, in a worktree under the session
 scratchpad; a copy of the patch is at `.scratch/e2e-suite-flake/04-fix.patch`.
 
+
+## Completion
+
+- Completed: 2026-09-10
+- Commit: 773e464 (merged to main in 4c9c1d5)
