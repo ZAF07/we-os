@@ -1,3 +1,4 @@
+import { act } from "react";
 import {
   cleanup,
   fireEvent,
@@ -10,6 +11,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AudienceSegment } from "@/lib/engine";
 
 const loadAudienceSegments = vi.fn();
+
+/**
+ * Whether Clerk's browser script has loaded, as the page sees it — the state
+ * the session-readiness hook answers from. Read on every render, so a test
+ * flips it and re-renders to play the script finishing after the page mounted.
+ */
+let clerkLoaded = true;
+
+/** How many times the page has rendered, counted at the hook it calls once per render. */
+let renders = 0;
+
+vi.mock("@clerk/nextjs", () => ({
+  useClerk: () => {
+    renders += 1;
+    return { loaded: clerkLoaded };
+  },
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -94,7 +112,47 @@ async function goToSegmentStep() {
 }
 
 afterEach(cleanup);
-beforeEach(() => loadAudienceSegments.mockReset());
+beforeEach(() => {
+  loadAudienceSegments.mockReset();
+  clerkLoaded = true;
+  renders = 0;
+});
+
+describe("the new-campaign wizard's first load", () => {
+  it("waits for the session to be ready, then asks for the segments once", async () => {
+    clerkLoaded = false;
+    loadAudienceSegments.mockResolvedValue([SEGMENT]);
+    const { rerender } = render(<NewCampaignPage />);
+    await act(async () => {});
+
+    // The page is up, but the script has not refreshed the token yet: a server
+    // action fired now would be refused as expired.
+    expect(loadAudienceSegments).not.toHaveBeenCalled();
+
+    clerkLoaded = true;
+    rerender(<NewCampaignPage />);
+    await waitFor(() => expect(loadAudienceSegments).toHaveBeenCalledTimes(1));
+
+    // Readiness is a one-way door: later renders do not ask again.
+    rerender(<NewCampaignPage />);
+    await act(async () => {});
+    expect(loadAudienceSegments).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for the segments in its first render when the session is already ready", async () => {
+    let rendersBeforeTheLoad = 0;
+    loadAudienceSegments.mockImplementation(async () => {
+      rendersBeforeTheLoad = renders;
+      return [SEGMENT];
+    });
+    render(<NewCampaignPage />);
+    await waitFor(() => expect(loadAudienceSegments).toHaveBeenCalledTimes(1));
+
+    // No render was spent waiting: a page whose script has loaded — every
+    // client-side navigation — loads exactly as it did before the wait existed.
+    expect(rendersBeforeTheLoad).toBe(1);
+  });
+});
 
 describe("the new-campaign wizard's audience segments", () => {
   it("offers the segments the Brand DNA names", async () => {

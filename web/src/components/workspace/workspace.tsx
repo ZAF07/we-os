@@ -18,6 +18,7 @@ import {
 import type { Campaign, CampaignStage } from "@/lib/engine";
 import { statusLabel } from "@/lib/campaigns";
 import { statusDotClass } from "@/lib/status";
+import { useSessionReady } from "@/lib/use-session-ready";
 import {
   defaultStageKey,
   stageAwaitingApproval,
@@ -102,7 +103,13 @@ export function Workspace({
 
   const latestVersion = selected?.latest_version ?? null;
 
+  // Not before the session is ready to be used: the load is a server action,
+  // which the middleware cannot renew, so on a page opened cold it must wait
+  // for the browser script to refresh the token. A page whose script has
+  // already loaded waits for nothing and loads in its first render, as before.
+  const sessionReady = useSessionReady();
   useEffect(() => {
+    if (!sessionReady) return;
     let current = true;
     loadStage(campaign.id, selectedKey)
       .then((stageView) => {
@@ -120,7 +127,7 @@ export function Workspace({
     return () => {
       current = false;
     };
-  }, [campaign.id, selectedKey, latestVersion]);
+  }, [sessionReady, campaign.id, selectedKey, latestVersion]);
 
   useEffect(() => {
     if (finished) router.refresh();

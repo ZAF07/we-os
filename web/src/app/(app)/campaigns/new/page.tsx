@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useWizard } from "@/components/wizard/use-wizard";
 import { Field, WizardShell } from "@/components/wizard/wizard";
 import type { AudienceSegment, CampaignGoalInput } from "@/lib/engine";
+import { useSessionReady } from "@/lib/use-session-ready";
 import { cn } from "@/lib/utils";
 
 import { createCampaignAction, loadAudienceSegments } from "../actions";
@@ -127,7 +128,15 @@ export default function NewCampaignPage() {
     };
   }, []);
 
-  useEffect(startSegmentLoad, [startSegmentLoad]);
+  // Not before the session is ready to be used: the load is a server action,
+  // which the middleware cannot renew, so on a page opened cold it must wait
+  // for the browser script to refresh the token. A page whose script has
+  // already loaded waits for nothing and loads in its first render, as before.
+  const sessionReady = useSessionReady();
+  useEffect(() => {
+    if (!sessionReady) return;
+    return startSegmentLoad();
+  }, [sessionReady, startSegmentLoad]);
 
   const abandonSegmentLoad = useRef<(() => void) | null>(null);
 
