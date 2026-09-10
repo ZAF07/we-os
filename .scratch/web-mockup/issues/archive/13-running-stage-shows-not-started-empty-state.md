@@ -1,6 +1,6 @@
 # 13 — A running stage's document pane says it is waiting on approvals it already has
 
-Status: needs-triage
+Status: completed
 Type: bug
 
 ## Symptom
@@ -80,3 +80,64 @@ The engine's per-stage vocabulary (`pending | completed | awaiting_approval |
 stale`) still has no `running` member — issue 11 resolved this by deriving the
 running stage on the client from run events. Follow that same resolution here
 rather than reopening the engine-side question.
+
+## Acceptance criteria
+
+- [x] While the run is working on the selected stage and it has produced
+      nothing, the pane says the stage is running now, not that it waits on
+      upstream approvals.
+- [x] The status pill on that pane reads "In progress", not "Not started".
+- [x] A stage the run has not reached keeps the approval-precondition copy
+      and the "Not started" pill.
+- [x] The running copy clears once the run leaves the stage.
+- [x] The running state on the pane is derived client-side from run events,
+      as issue 11 did — no engine change.
+- [x] Tests cover the fixed behaviour; the two tests named above still hold
+      or gained counterparts.
+- [x] Web gates (unit, lint, typecheck, format) pass and `make test-e2e`
+      passes.
+
+## Comments
+
+**2026-09-10 — diagnosis and fix** (branch `fix/running-stage-document-pane`)
+
+Feedback loop: three vitest component tests in
+`web/src/components/workspace/workspace-run.test.tsx` at the fake-EventSource
+seam issue 11 built. Red on the exact symptom in ~3 s: after a `stage.start`
+for Research, the pane's text was "Not startedResearch findingsNothing
+produced yet. This stage runs once everything before it is approved."
+Minimal repro: one `stage.start` event, the selected stage, an empty view.
+
+Hypotheses, ranked: (1) `StageDocument` is never told which stage the run is
+on, so it cannot branch — confirmed by the loop; (2) `stageStatus` has no
+running case because the engine has none — true, but by design since issue
+11, and the client already derives it; (3) the pane was stuck on "Loading…" —
+ruled out by the received text.
+
+Fix: `stageStatus(state, running)` owns the running case, so the Stages list
+and the pane read it from one place; `StageDocument` takes `running` and its
+empty state says "This stage is running now. Its output appears here when it
+finishes." The `resuming` window after an approval is covered for free, since
+`runningKey` already substitutes the expected stage there.
+
+On the two tests the issue named: neither asserted the wrong state. Both
+render with no run in flight, where the approval-precondition copy is right,
+so they were left as they are and gained running-stage counterparts.
+
+Code review (standards + spec) raised: `document` shadowed as a test
+variable (renamed); the `running` default let a call site omit the mark
+(now required); no pane test for the resume window (added); a stale stage
+being re-run still offered a re-run above an "In progress" pill (banner now
+hidden while running, with a test). Judged optional and left: a landmark
+role on the pane so tests need not walk from the heading.
+
+## Completion
+
+- Completed: 2026-09-11
+- Commit: a305d69 (fix) and 9ab2c19 (review follow-ups) on
+  `fix/running-stage-document-pane`, merged to main with `--no-ff`.
+- Evidence: five component tests in `workspace-run.test.tsx` ("the document
+  pane of the stage a run is working on"), `stageStatus` unit test for the
+  running flag, e2e approve test rules out the wrong sentence on the pane;
+  web unit suite 141 passed, eslint/tsc/prettier clean, `make test-e2e`
+  equivalent run from the branch: 73 passed (rebased on 54b9af6).
