@@ -1,6 +1,6 @@
 # 08 — The tenantless Launch spec races the Welcome redirect
 
-Status: ready-for-agent
+Status: completed
 Type: bug
 
 ## Symptom
@@ -76,10 +76,10 @@ Check the sibling specs in the same file for the same pattern.
 
 ## Acceptance criteria
 
-- [ ] `tenantless.spec.ts:129` no longer asserts an intermediate redirect URL as a destination.
-- [ ] The spec still proves Launch carries the chosen tier, and still asserts the landing on `/home` with the Home heading.
-- [ ] Any sibling spec asserting a pass-through URL is corrected the same way.
-- [ ] `make test-e2e` passes end to end, including the `chromium-tenantless` project.
+- [x] `tenantless.spec.ts:129` no longer asserts an intermediate redirect URL as a destination.
+- [x] The spec still proves Launch carries the chosen tier, and still asserts the landing on `/home` with the Home heading.
+- [x] Any sibling spec asserting a pass-through URL is corrected the same way.
+- [x] `make test-e2e` passes end to end, including the `chromium-tenantless` project.
 
 ## Comments
 
@@ -152,3 +152,8 @@ and this spec (line 129) among them. The probe spec is deleted; no `PROBE-08`
 tag remains outside this file. Web `prettier`, `eslint` and `tsc` pass on the
 spec. The engine is untouched, so `make check` and `make test-postgres` were
 not re-run for this change.
+
+## Completion
+
+- Completed: 2026-09-10
+- Commit: 43ec7f0 (the fix), d131547 (review fix); merged into `main` with `--no-ff` in the merge commit this file arrives in.
