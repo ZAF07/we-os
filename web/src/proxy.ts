@@ -30,6 +30,14 @@ const isWelcome = createRouteMatcher(["/welcome"]);
  * they were. `auth.protect()` would answer 404, which is right for an API but
  * leaves a person with no way to reach the login screen.
  *
+ * The address is kept as a path, not as `request.url`: Next fills that in
+ * with the address the server is bound to, which under `next dev --hostname
+ * 0.0.0.0` (the e2e stack) is `0.0.0.0:3000` rather than the host the browser
+ * used. Clerk resolves a relative return URL against the browser-facing URL,
+ * but refuses an absolute one whose origin it does not know and sends the
+ * person to Home instead — which is how a transient session miss turned into
+ * a spec landing on the wrong screen.
+ *
  * A signed-in session whose token carries no organization claim — a Tenantless
  * Session, a new person between authenticating and naming their business — may
  * reach only Welcome and the public routes. Anything else in the app half goes
@@ -49,7 +57,9 @@ export default clerkMiddleware(async (auth, request) => {
   }
   if (isPublicRoute(request)) return;
   if (!userId) {
-    return redirectToSignIn({ returnBackUrl: request.url });
+    return redirectToSignIn({
+      returnBackUrl: request.nextUrl.pathname + request.nextUrl.search,
+    });
   }
   if (!orgId && !isWelcome(request)) {
     return NextResponse.redirect(new URL("/welcome", request.url));

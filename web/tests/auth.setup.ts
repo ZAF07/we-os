@@ -3,6 +3,8 @@ import path from "node:path";
 import { clerk, clerkSetup } from "@clerk/testing/playwright";
 import { expect, test as setup } from "@playwright/test";
 
+import { saveRenewableSession } from "./session-state";
+
 // The two sign-ins must not overlap: run in parallel they race each other
 // through Clerk's sign-in flow and both storage states come out wrong.
 setup.describe.configure({ mode: "serial" });
@@ -42,6 +44,16 @@ export const BLANK_STORAGE_STATE = path.join(
  * first paint rather than on anything the product did. Doing it once here,
  * serially, costs a few seconds and takes the whole class of flake off the
  * table.
+ *
+ * The Workspace and the run stream are reached only by a slug the seed cannot
+ * know, so they are warmed with one that does not exist: the route compiles
+ * the same whether it then renders a campaign or "not found". The Workspace is
+ * the heaviest route there is — its client bundle carries the markdown
+ * renderer — and every campaign-creating spec lands on it right after
+ * "Create campaign", inside a 5 s assertion. Before it was listed here, the
+ * first of them to arrive paid its compile, 3 s alone and up to 10 s under
+ * parallel load, and a different spec failed each run depending on which one
+ * got there first.
  */
 const SEEDED_ROUTES = [
   "/campaigns",
@@ -50,6 +62,8 @@ const SEEDED_ROUTES = [
   "/brand",
   "/performance",
   "/onboarding",
+  "/campaigns/warm-up-slug-that-does-not-exist",
+  "/api/runs/warm-up-run-that-does-not-exist/stream",
 ];
 
 /** The blank tenant's specs only ever leave `/onboarding` for `/brand`. */
@@ -92,7 +106,7 @@ for (const identity of IDENTITIES) {
     await expect(page).toHaveURL(/\/home$/);
     await expect(page.locator("aside").getByText("We-OS")).toBeVisible();
 
-    await page.context().storageState({ path: identity.storageState });
+    await saveRenewableSession(page.context(), identity.storageState);
 
     for (const route of identity.routes) {
       await page.goto(route);

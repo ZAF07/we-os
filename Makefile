@@ -36,9 +36,18 @@ COMPOSE = docker compose --env-file web/.env.local -f docker-compose.e2e.yml
 #
 # The stack is torn down whether the suite passes or fails, so a red run never
 # leaves containers holding ports — nor an image nobody will use again.
+#
+# A suite run is a few unattended minutes, and on a laptop that is long enough
+# for macOS to decide the machine is idle: on battery it sleeps a minute after
+# the display goes dark. The stack, the browsers and Playwright's own timeouts
+# all freeze together, and on wake every spec that was mid-navigation times out
+# with nothing in any log to explain it. `caffeinate -i` holds off idle sleep
+# for exactly as long as the command it wraps; elsewhere it is simply absent.
+CAFFEINATE = $(if $(shell command -v caffeinate 2>/dev/null),caffeinate -i,)
+
 test-e2e:
-	$(COMPOSE) up --build --wait engine web
-	cd web && E2E_STACK=compose pnpm test; \
+	$(CAFFEINATE) $(COMPOSE) up --build --wait engine web
+	cd web && E2E_STACK=compose $(CAFFEINATE) pnpm test; \
 		status=$$?; \
 		cd .. && $(MAKE) e2e-down; \
 		exit $$status

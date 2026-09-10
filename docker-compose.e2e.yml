@@ -120,6 +120,10 @@ services:
       - /app/.next
     environment:
       ENGINE_BASE_URL: http://engine:8000
+      # No persistent Turbopack cache: this container is thrown away with the
+      # stack, and writing the cache mid-suite stalls the dev server (see
+      # web/next.config.ts).
+      DEV_FILESYSTEM_CACHE: "0"
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:?set it in web/.env.local}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?set it in web/.env.local}
       NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in

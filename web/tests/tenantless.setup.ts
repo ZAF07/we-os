@@ -7,6 +7,7 @@ import {
   allowOrganizationCreationFor,
   deleteOrganizationsOf,
 } from "./clerk-backend";
+import { saveRenewableSession } from "./session-state";
 import { TENANTLESS_EMAIL, TENANTLESS_SKIP_REASON } from "./tenantless-user";
 
 /**
@@ -81,5 +82,5 @@ setup("authenticate the tenantless user", async ({ page }) => {
   await page.goto("/home");
   await expect(page).toHaveURL("/get-started");
 
-  await page.context().storageState({ path: TENANTLESS_STORAGE_STATE });
+  await saveRenewableSession(page.context(), TENANTLESS_STORAGE_STATE);
 });
