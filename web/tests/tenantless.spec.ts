@@ -147,11 +147,16 @@ test("a business whose tier was never recorded is sent from Home to choose, and 
   expect(redirectPath(response)).not.toContain("/welcome");
   await expect(page).toHaveURL("/get-started");
 
-  await page
+  // Welcome with a tier, for a session that already has a business, is a
+  // pass-through: it records the tier and continues to Home in one hop, gone
+  // from the address bar in about 50 ms — too brief to assert on. So the tier
+  // Launch carries is checked on the link, and that Welcome recorded it is
+  // what landing on Home proves: Home sends a business without one back here.
+  const launch = page
     .getByRole("article", { name: "Strategist" })
-    .getByRole("link", { name: "Launch" })
-    .click();
-  await expect(page).toHaveURL("/welcome?tier=strategist");
+    .getByRole("link", { name: "Launch" });
+  await expect(launch).toHaveAttribute("href", "/welcome?tier=strategist");
+  await launch.click();
   await expect(page).toHaveURL("/home", { timeout: 60_000 });
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 });
