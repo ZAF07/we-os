@@ -151,7 +151,8 @@ test("a business whose tier was never recorded is sent from Home to choose, and 
   // pass-through: it records the tier and continues to Home in one hop, gone
   // from the address bar in about 50 ms — too brief to assert on. So the tier
   // Launch carries is checked on the link, and that Welcome recorded it is
-  // what landing on Home proves: Home sends a business without one back here.
+  // what landing on Home proves, since Home sends a business without a tier
+  // back to Get Started.
   const launch = page
     .getByRole("article", { name: "Strategist" })
     .getByRole("link", { name: "Launch" });

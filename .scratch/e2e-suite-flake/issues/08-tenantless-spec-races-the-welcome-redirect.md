@@ -143,3 +143,12 @@ pass-through assertion, keep the landing on `/home` and the Home heading.
 Under the same 300 ms delay the fixed assertion passed 5/5. No sibling spec
 asserts a pass-through: every other `toHaveURL` in `web/tests` follows a
 `goto` or a click to a destination that stays.
+
+**2026-09-10 — verified.** The fixed spec file ran five times in isolation
+against the production-build stack: 26/26 (the sign-in setup plus five specs
+× 5). `make test-e2e` on the branch, with `main` merged in, from a fresh
+stack: **73 passed** in 1.5 min, the `chromium-tenantless` project included
+and this spec (line 129) among them. The probe spec is deleted; no `PROBE-08`
+tag remains outside this file. Web `prettier`, `eslint` and `tsc` pass on the
+spec. The engine is untouched, so `make check` and `make test-postgres` were
+not re-run for this change.
