@@ -21,6 +21,7 @@ import { statusDotClass } from "@/lib/status";
 import { useSessionReady } from "@/lib/use-session-ready";
 import {
   defaultStageKey,
+  nextStageKey,
   stageAwaitingApproval,
   stageStatus,
   stageTitle,
@@ -35,7 +36,7 @@ import {
 } from "./deliverable-view";
 import { ApprovalGate, ApprovedPanel } from "./decision-panel";
 import { RunProgress } from "./run-progress";
-import { useRunEvents } from "./use-run-events";
+import { runningStage, useRunEvents } from "./use-run-events";
 
 /**
  * Renders the Workspace: where the business owner reads what the system
@@ -44,6 +45,11 @@ import { useRunEvents } from "./use-run-events";
  * Everything shown comes from the engine. The stepper renders operator Phases
  * driven by the Phase each stage reports, and the campaign's lifecycle status
  * renders separately — two axes, not one (ADR-0017).
+ *
+ * The stage a run is working on is a third thing, read from the run's stream
+ * rather than from the campaign: the engine's stage states say how far work
+ * has got, not what is happening this second. The stream replays from the top
+ * on every attach, so a page reloaded mid-run reads it correctly too.
  *
  * Args:
  *   campaign: The campaign as the engine reports it.
@@ -61,7 +67,8 @@ export function Workspace({
   // Null until a person picks a stage. Their choice wins from then on; before
   // that the Workspace follows the campaign, so a run reaching a gate puts the
   // decision in front of them instead of leaving them on whatever stage was
-  // current when the page loaded.
+  // current when the page loaded. Deciding at a gate clears the pick: having
+  // decided, they want to see where the run goes next, not stay parked.
   const [pickedKey, setPickedKey] = useState<string | null>(null);
   const followedKey = defaultStageKey(campaign.stages) ?? "";
   const selectedKey =
@@ -84,12 +91,22 @@ export function Workspace({
   // Bumped whenever an action resumes the run, so the progress stream attaches
   // again rather than staying closed on the gate the run has already left.
   const [attempt, setAttempt] = useState(0);
+  // The stage the last accepted action set going. Shown as running from the
+  // moment the action is accepted until the re-attached stream says what the
+  // run is actually doing — which is the window the person most wants an
+  // answer in.
+  const [expectedKey, setExpectedKey] = useState<string | null>(null);
   const [pending, startAction] = useTransition();
 
   const selected =
     campaign.stages.find((stage) => stage.key === selectedKey) ??
     campaign.stages[0];
-  const { events, finished, disconnected } = useRunEvents(runId, attempt);
+  const { events, finished, halted, disconnected, resuming } = useRunEvents(
+    runId,
+    attempt,
+  );
+  const runningKey =
+    runId === null ? null : resuming ? expectedKey : runningStage(events);
 
   // The deliverable is re-read whenever the stage's newest version changes, so
   // a stage that produced one while the page was open stops reading "nothing
@@ -128,8 +145,8 @@ export function Workspace({
   }, [sessionReady, campaign.id, selectedKey, latestVersion]);
 
   useEffect(() => {
-    if (finished) router.refresh();
-  }, [finished, router]);
+    if (finished || halted) router.refresh();
+  }, [finished, halted, router]);
 
   // While a run is actually working, the page reconciles by polling as well as
   // by the stream. The stream is the responsive path but it can miss a wakeup: a
@@ -149,8 +166,15 @@ export function Workspace({
     return () => clearInterval(timer);
   }, [working, router]);
 
+  // Every action that resumes or starts a run names the stage it sets going:
+  // the next one on approval, the same one again on a revision or re-open, or
+  // none when it is not known. Naming it up front is what lets the Stages list
+  // answer "what is it doing now?" before the stream does.
   const submit = useCallback(
-    (action: () => Promise<{ error: string | null }>) => {
+    (
+      action: () => Promise<{ error: string | null }>,
+      startsKey: string | null,
+    ) => {
       setError(null);
       startAction(async () => {
         const result = await action();
@@ -158,11 +182,25 @@ export function Workspace({
           setError(result.error);
           return;
         }
+        setExpectedKey(startsKey);
         setAttempt((previous) => previous + 1);
         router.refresh();
       });
     },
     [router],
+  );
+
+  // A decision at a gate also clears the picked stage: having decided, the
+  // person wants to see where the run goes next, not stay parked.
+  const decide = useCallback(
+    (
+      action: () => Promise<{ error: string | null }>,
+      startsKey: string | null,
+    ) => {
+      setPickedKey(null);
+      submit(action, startsKey);
+    },
+    [submit],
   );
 
   const showVersion = (version: number) => {
@@ -195,6 +233,7 @@ export function Workspace({
               label={phase.name}
               done={phase.status === "Approved"}
               active={phase.stages.some((stage) => stage.key === selectedKey)}
+              running={phase.stages.some((stage) => stage.key === runningKey)}
               onClick={() => setSelectedKey(phase.stages[0].key)}
             />
           ))}
@@ -205,6 +244,7 @@ export function Workspace({
         <StageNav
           stages={campaign.stages}
           selectedKey={selectedKey}
+          runningKey={runningKey}
           onSelect={setSelectedKey}
         />
 
@@ -216,7 +256,10 @@ export function Workspace({
             shownContent={shownContent}
             pending={pending}
             onRerun={() =>
-              submit(() => startRunAction(campaign.id, selected.key))
+              submit(
+                () => startRunAction(campaign.id, selected.key),
+                selected.key,
+              )
             }
             onShowVersion={showVersion}
           />
@@ -236,6 +279,7 @@ export function Workspace({
             <RunProgress
               events={events}
               finished={finished}
+              halted={halted}
               disconnected={disconnected}
             />
           )}
@@ -246,19 +290,30 @@ export function Workspace({
             runId={runId}
             pending={pending}
             onApprove={(activeRunId, stageKey) =>
-              submit(() =>
-                approveStageAction(campaign.id, activeRunId, stageKey),
+              decide(
+                () => approveStageAction(campaign.id, activeRunId, stageKey),
+                nextStageKey(campaign.stages, stageKey),
               )
             }
             onRevise={(activeRunId, stageKey, feedback) =>
-              submit(() =>
-                reviseStageAction(campaign.id, activeRunId, stageKey, feedback),
+              decide(
+                () =>
+                  reviseStageAction(
+                    campaign.id,
+                    activeRunId,
+                    stageKey,
+                    feedback,
+                  ),
+                stageKey,
               )
             }
             onReopen={(stageKey, feedback) =>
-              submit(() => reopenStageAction(campaign.id, stageKey, feedback))
+              submit(
+                () => reopenStageAction(campaign.id, stageKey, feedback),
+                stageKey,
+              )
             }
-            onStart={() => submit(() => startRunAction(campaign.id))}
+            onStart={() => submit(() => startRunAction(campaign.id), null)}
           />
         </div>
       </div>
@@ -272,18 +327,25 @@ export function Workspace({
  * The stepper groups stages into Phases; this list is where the individual
  * stages under a Phase are reachable, named as the interface names them.
  *
+ * Two marks are independent here: the selected stage is the one being read,
+ * and the running stage is the one the system is working on. They are often
+ * different, and both must read correctly when they coincide.
+ *
  * Args:
  *   stages: The campaign's stages in pipeline order.
  *   selectedKey: The stage currently shown.
+ *   runningKey: The stage a run is working on, or null when none is.
  *   onSelect: Shows a stage.
  */
 function StageNav({
   stages,
   selectedKey,
+  runningKey,
   onSelect,
 }: {
   stages: CampaignStage[];
   selectedKey: string;
+  runningKey: string | null;
   onSelect: (key: string) => void;
 }) {
   return (
@@ -296,11 +358,13 @@ function StageNav({
       </div>
       {stages.map((stage) => {
         const active = stage.key === selectedKey;
-        const status = stageStatus(stage.state);
+        const running = stage.key === runningKey;
+        const status = running ? "In progress" : stageStatus(stage.state);
         return (
           <button
             key={stage.key}
             onClick={() => onSelect(stage.key)}
+            aria-current={active ? "step" : undefined}
             className={cn(
               "flex w-full cursor-pointer gap-[9px] rounded-lg p-2 text-left",
               active ? "bg-indigo-50" : "hover:bg-slate-100",
@@ -310,6 +374,7 @@ function StageNav({
               className={cn(
                 "mt-[5px] size-[7px] shrink-0 rounded-full",
                 statusDotClass(status),
+                running && "animate-pulse",
               )}
             />
             <span>
@@ -444,9 +509,11 @@ function DecisionRail({
   onStart: () => void;
 }) {
   if (stage.state === "awaiting_approval" && runId !== null) {
+    const next = nextStageKey(campaign.stages, stage.key);
     return (
       <ApprovalGate
         stageName={stageTitle(stage.key)}
+        nextStageName={next === null ? null : stageTitle(next)}
         onApprove={() => onApprove(runId, stage.key)}
         onRevise={(feedback) => onRevise(runId, stage.key, feedback)}
         pending={pending}

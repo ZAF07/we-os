@@ -174,3 +174,22 @@ export function defaultStageKey(stages: CampaignStage[]): string | null {
   if (produced.length > 0) return produced[produced.length - 1].key;
   return stages[0]?.key ?? null;
 }
+
+/**
+ * Names the stage the pipeline moves to once a given stage is approved.
+ *
+ * Args:
+ *   stages: The campaign's stages in pipeline order.
+ *   key: The stage being approved.
+ *
+ * Returns:
+ *   The next stage's key, or null when the stage is the last one or unknown.
+ */
+export function nextStageKey(
+  stages: CampaignStage[],
+  key: string,
+): string | null {
+  const index = stages.findIndex((stage) => stage.key === key);
+  if (index === -1) return null;
+  return stages[index + 1]?.key ?? null;
+}

@@ -11,19 +11,25 @@ import { useState } from "react";
  * nothing to act on would re-run the stage identically and charge for it
  * (ADR-0015).
  *
+ * The stage an approval sets going is named before the click, so the person
+ * deciding knows what their decision starts rather than learning it afterwards.
+ *
  * Args:
  *   stageName: The stage being decided, as the interface names it.
+ *   nextStageName: The stage approving starts, or null when this is the last.
  *   onApprove: Approves the deliverable and resumes the run.
  *   onRevise: Sends the deliverable back with feedback.
  *   pending: Whether a decision is already being sent.
  */
 export function ApprovalGate({
   stageName,
+  nextStageName,
   onApprove,
   onRevise,
   pending,
 }: {
   stageName: string;
+  nextStageName: string | null;
   onApprove: () => void;
   onRevise: (feedback: string) => void;
   pending: boolean;
@@ -38,8 +44,11 @@ export function ApprovalGate({
       </div>
       <div className="mt-1 text-sm font-bold">Approve {stageName}</div>
       <div className="mt-2 rounded-lg border border-indigo-200 bg-card px-2.5 py-2 text-xs text-indigo-700">
-        Approving continues the run into the next stage. Sending it back
-        produces a new version — the one you refused stays readable.
+        {nextStageName
+          ? `Approving starts ${nextStageName}.`
+          : "Approving finishes the run — this is the last stage."}{" "}
+        Sending it back produces a new version — the one you refused stays
+        readable.
       </div>
 
       {revising ? (

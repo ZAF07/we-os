@@ -4,6 +4,7 @@ import type { CampaignStage } from "@/lib/engine";
 import {
   defaultStageKey,
   deliverableName,
+  nextStageKey,
   stageAwaitingApproval,
   stageStatus,
   stageTitle,
@@ -176,5 +177,23 @@ describe("defaultStageKey", () => {
 
   it("has no stage to open on when the campaign reports none", () => {
     expect(defaultStageKey([])).toBeNull();
+  });
+});
+
+describe("nextStageKey", () => {
+  const stages = [
+    stage("research", "Research"),
+    stage("brand-strategy", "Strategy"),
+    stage("campaign-strategy", "Strategy"),
+  ];
+
+  it("names the stage approving a given one starts", () => {
+    expect(nextStageKey(stages, "research")).toBe("brand-strategy");
+    expect(nextStageKey(stages, "brand-strategy")).toBe("campaign-strategy");
+  });
+
+  it("has nothing to start after the last stage, or after an unknown one", () => {
+    expect(nextStageKey(stages, "campaign-strategy")).toBeNull();
+    expect(nextStageKey(stages, "no-such-stage")).toBeNull();
   });
 });

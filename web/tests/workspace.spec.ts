@@ -160,12 +160,45 @@ test.describe("approval gate", () => {
     ).toBeVisible();
     await expect(page.getByLabel("Deliverable")).not.toBeEmpty();
 
+    // The decision names what it starts before it is made, and the rail says
+    // the run is waiting rather than calling a halt a finish.
+    await expect(
+      page.getByText("Approving starts Campaign strategy."),
+    ).toBeVisible();
+    await expect(page.getByRole("log", { name: "Run progress" })).toContainText(
+      "Waiting for your decision",
+    );
+
     await approve.click();
 
+    // The moment the approval is accepted, the Stages list says which stage
+    // the run moved on to — it is never left reading "Not started" — and the
+    // rail keeps its feed and returns to Working rather than going blank.
     const stageNav = page.getByRole("navigation", { name: "Stages" });
+    const campaignStrategy = stageNav.getByRole("button", {
+      name: /^Campaign strategy/,
+    });
+    await expect(campaignStrategy).not.toContainText("Not started");
     await expect(
       stageNav.getByRole("button", { name: /^Brand strategy/ }),
     ).toContainText("Approved", { timeout: 120_000 });
+
+    // The stream reads through the gate the run left, so the rail narrates
+    // the resumed run rather than stopping at the halt it replayed.
+    const log = page.getByRole("log", { name: "Run progress" });
+    await expect(log).toContainText("You approved Brand strategy.", {
+      timeout: 120_000,
+    });
+
+    // Campaign strategy is gated too: the run halts there next, and the
+    // Workspace follows it to the new decision.
+    await expect(campaignStrategy).toContainText("Ready for review", {
+      timeout: 120_000,
+    });
+    await expect(campaignStrategy).toHaveAttribute("aria-current", "step");
+    await expect(
+      page.getByText("Approving starts Performance plan."),
+    ).toBeVisible();
   });
 
   test("requesting changes produces a second version carrying the feedback", async ({

@@ -1,6 +1,6 @@
 # 11 — The stage a run is currently working on is not indicated in the Stages list
 
-Status: needs-triage
+Status: completed
 Type: bug
 
 ## Symptom
@@ -78,13 +78,78 @@ approval-moment feedback gaps. Fixing this issue resolves part of that one.
 
 ## Acceptance criteria
 
-- [ ] During an in-flight run, the executing stage is visibly distinguished in
+- [x] During an in-flight run, the executing stage is visibly distinguished in
       the left Stages list — not shown as "Not started".
-- [ ] The running indicator is distinguishable from the *selected* stage
+- [x] The running indicator is distinguishable from the *selected* stage
       highlight; a stage can be both at once and read correctly.
-- [ ] The indication is correct after a page reload mid-run, or the decision
+- [x] The indication is correct after a page reload mid-run, or the decision
       not to support that is recorded on this issue.
-- [ ] Stages that are genuinely pending, completed, awaiting approval, or stale
+- [x] Stages that are genuinely pending, completed, awaiting approval, or stale
       keep their existing presentation.
-- [ ] A test covers the fixed behaviour (component/e2e as appropriate).
-- [ ] `make check` passes, and `make test-e2e` passes (change touches `web/`).
+- [x] A test covers the fixed behaviour (component/e2e as appropriate).
+- [x] `make check` passes, and `make test-e2e` passes (change touches `web/`).
+
+## Comments
+
+**2026-09-10 — diagnosis (branch `workspace-running-stage-feedback`)**
+
+Feedback loop: a vitest component test,
+`web/src/components/workspace/workspace-run.test.tsx`, renders the real
+Workspace with a fake `EventSource` and plays trace events through it. Red on
+the exact symptom — the Stages entry read "Research findingsNot started" after
+a `stage.start` for research. Six tests, ~2 s, deterministic.
+
+Cause, confirmed by the loop: no running state existed on the client. The
+status map had no case for it, and `StageNav` never saw the run's events —
+only `RunProgress` did.
+
+Decisions:
+- **Running is derived on the client from the stream**, not added to the
+  engine's stage state. The engine's stage states say how far work has got
+  (ADR-0017); "what is it doing this second" is what the Run Trace is for
+  (CONTEXT.md). The stream replays from the top on every attach, so a page
+  reloaded mid-run re-derives it correctly — the "events are lost on refresh"
+  worry does not hold.
+- The running stage reads **"In progress"** with a pulsing dot, the existing
+  operator status for work underway, rather than a new taxonomy entry.
+- The selected stage carries `aria-current="step"`; running and selected are
+  independent marks and both read correctly when they coincide.
+- The phase chip containing the running stage pulses too.
+
+**2026-09-10 — code review (`/code-review` against main)**
+
+Standards: one hard finding — the stream endpoint's docstring in `app.py`
+still said the stream closes at the first `run.summary`; fixed. Judgement
+calls: the phase chip's `running` prop had no direct test (assertion added);
+the hook's state type re-spelled `RunFeed` (now derived from it);
+`GATE_OUTCOME` is a third spelling of `awaiting_approval` on the engine
+(kept — `runlog` owns the line protocol it reads and importing from
+`adapters/runs` would invert that dependency).
+
+Spec: no gaps against this issue's acceptance criteria. See issue 12's
+comment for the shared findings on the resume window.
+
+## Completion
+
+- Completed: 2026-09-10
+- Commits: 6a214ed (the fix), a7cb680 (code-review fixes)
+
+Evidence per criterion:
+- Executing stage distinguished, not "Not started" —
+  `web/src/components/workspace/workspace-run.test.tsx` "is marked in the
+  Stages list once the stream says it started"; `StageNav` reads the running
+  stage as "In progress" with a pulsing dot.
+- Distinguishable from selection — "is still marked when a person is reading
+  a different stage": the selected entry carries `aria-current="step"`, the
+  running one reads "In progress"; both hold when they coincide.
+- Correct after a reload mid-run — derived from the stream, which replays
+  from the top on attach: "is read correctly by a page reloaded after an
+  approval", plus the tailer tests in
+  `agent-harness/tests/test_observability.py`. Decision recorded in Comments.
+- Other states unchanged — `stageStatus` untouched; `web/tests/workspace.spec.ts`
+  "lifecycle status renders separately from stage progress" still reads
+  "Not started".
+- Tests — the above, plus `use-run-events.test.ts` for `runningStage`.
+- Gates — `make check` (658 passed, 111 skipped), `make test-postgres` (769
+  passed), `make test-e2e` 73 passed after each commit; web `pnpm test:unit`
+  135 passed, lint, typecheck and format:check clean.

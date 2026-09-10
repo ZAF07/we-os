@@ -59,18 +59,24 @@ export function describeEvent(event: RunEvent): string | null {
  * work may well still be going, and the honest thing is to say the page stopped
  * hearing about it and how to catch up.
  *
+ * A run halted at a gate is neither working nor finished: it is waiting on the
+ * person reading this, and the header says so.
+ *
  * Args:
  *   events: The trace events seen so far.
  *   finished: Whether the run has reached its terminal event.
+ *   halted: Whether the run is holding at an Approval Gate.
  *   disconnected: Whether the stream dropped before the run finished.
  */
 export function RunProgress({
   events,
   finished,
+  halted,
   disconnected,
 }: {
   events: RunEvent[];
   finished: boolean;
+  halted: boolean;
   disconnected: boolean;
 }) {
   const lines = events
@@ -79,7 +85,9 @@ export function RunProgress({
       (line): line is { index: number; text: string } => line.text !== null,
     );
 
-  if (lines.length === 0 && finished) return null;
+  if (lines.length === 0 && (finished || halted)) return null;
+
+  const working = !finished && !halted;
 
   if (disconnected) {
     return (
@@ -104,10 +112,14 @@ export function RunProgress({
       className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3.5"
     >
       <div className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-indigo-700 uppercase">
-        {!finished && (
+        {working && (
           <span className="size-2 animate-pulse rounded-full bg-indigo-600" />
         )}
-        {finished ? "Run finished" : "Working"}
+        {finished
+          ? "Run finished"
+          : halted
+            ? "Waiting for your decision"
+            : "Working"}
       </div>
       <ol className="mt-2 flex flex-col gap-1 text-[12.5px] text-indigo-900">
         {lines.slice(-8).map((line) => (

@@ -19,6 +19,14 @@ from pathlib import Path
 from typing import Any
 
 TERMINAL_EVENT = "run.summary"
+GATE_OUTCOME = "awaiting_approval"
+"""The summary outcome of a run halted at an Approval Gate.
+
+Such a summary ends a *segment* of the trace, not the trace: approving or
+revising resumes the same run, which appends to the same file. Spelled here
+rather than imported from the runner so this module keeps owning the line
+protocol it reads.
+"""
 _TAIL_POLL_SECONDS = 0.25
 
 
@@ -163,6 +171,13 @@ async def tail_trace(
     summary and no live task) therefore replays and closes rather than polling
     forever.
 
+    A summary whose outcome is ``awaiting_approval`` is not treated as terminal. A
+    run halted at an Approval Gate may be resumed, and the resumed run appends to
+    the same trace — so stopping there would replay a resumed run only up to its
+    first gate and never show what it did after being approved. Liveness settles
+    it instead: a halted run is not live, so the tailer drains and closes; a
+    resumed run is live again, so the tailer reads on through the gate summary.
+
     Only complete, newline-terminated lines are yielded, so a line still mid-write by
     the run is never emitted half-formed. Liveness is sampled *before* each read, so a
     run that finishes between reads is drained one final time before the stream ends;
@@ -189,7 +204,7 @@ async def tail_trace(
                 emitted += 1
                 event = json.loads(line)
                 yield event
-                if event.get("event") == terminal_event:
+                if event.get("event") == terminal_event and event.get("outcome") != GATE_OUTCOME:
                     return
         if not was_live:
             return
