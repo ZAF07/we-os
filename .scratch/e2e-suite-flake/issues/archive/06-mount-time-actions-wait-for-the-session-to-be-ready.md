@@ -96,4 +96,4 @@ are as they were.
 ## Completion
 
 - Completed: 2026-09-10
-- Commit: bec7658, with review fixes in 511877c on branch `e2e-flake-followups`
+- Commit: bec7658, with review fixes in 511877c on branch `e2e-flake-followups` (merged to main in 9a4fc6f)

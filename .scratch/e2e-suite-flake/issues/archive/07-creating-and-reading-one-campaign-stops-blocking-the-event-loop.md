@@ -110,4 +110,4 @@ the marker in a thread and describes `replace(record, archived=True)`.
 ## Completion
 
 - Completed: 2026-09-10
-- Commit: 1bd2e4b, with review fixes in 511877c on branch `e2e-flake-followups`
+- Commit: 1bd2e4b, with review fixes in 511877c on branch `e2e-flake-followups` (merged to main in 9a4fc6f)

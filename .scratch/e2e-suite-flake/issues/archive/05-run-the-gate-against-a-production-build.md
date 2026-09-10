@@ -167,4 +167,4 @@ Not diagnosed here; most likely the tenantless specs' sign-in/sign-out churn.
 ## Completion
 
 - Completed: 2026-09-10
-- Commit: e56043e, with review fixes in 511877c and the Home spec wait in 0a4d668 on branch `e2e-flake-followups`
+- Commit: e56043e, with review fixes in 511877c and the Home spec wait in 0a4d668 on branch `e2e-flake-followups` (merged to main in 9a4fc6f)
