@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useWizard } from "@/components/wizard/use-wizard";
 import { Field, WizardShell } from "@/components/wizard/wizard";
 import type { AudienceSegment, CampaignGoalInput } from "@/lib/engine";
+import { useSessionReady } from "@/lib/use-session-ready";
 import { cn } from "@/lib/utils";
 
 import { createCampaignAction, loadAudienceSegments } from "../actions";
@@ -127,7 +128,13 @@ export default function NewCampaignPage() {
     };
   }, []);
 
-  useEffect(startSegmentLoad, [startSegmentLoad]);
+  // A server action cannot renew a stale token, so the load waits for the
+  // session to be ready (see useSessionReady); a ready page waits for nothing.
+  const sessionReady = useSessionReady();
+  useEffect(() => {
+    if (!sessionReady) return;
+    return startSegmentLoad();
+  }, [sessionReady, startSegmentLoad]);
 
   const abandonSegmentLoad = useRef<(() => void) | null>(null);
 

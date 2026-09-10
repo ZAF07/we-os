@@ -128,6 +128,8 @@ A task is done when:
 
 `make test-e2e` is the gate. It builds the images, starts Postgres + engine + web, seeds the two test tenants, runs the browser suite, and tears the stack down. Use it after any feature and always before pushing.
 
+The gate serves the web app from a **production build**: the `web-built` service is `next build` + `next start`, with the source copied into the image. Every route is compiled before the first request and there is no dev cache to write, so no spec pays a compile inside an assertion. It is rebuilt on every run, so it always tests the working tree as it stands, frontend edits included.
+
 `make e2e-test-reset` is **not an alternative to it** — it runs no tests. It re-establishes the two test tenants' fixture state (~3s) so the suite can be re-run against a stack left up by `make e2e-up`, instead of paying a full restart. It exists because the suite dirties its own fixture: the onboarding specs need a tenant that has answered nothing, and one of them fills that tenant in.
 
 The fast loop, for iterating:
@@ -138,13 +140,15 @@ make e2e-test-reset && cd web && E2E_STACK=compose pnpm test    # repeat
 make e2e-down                                                  # when done
 ```
 
-**The trap: the fast loop does not rebuild images.** Only `web/` is bind-mounted and served by `pnpm dev`, so frontend source is live; nothing else is. If the change touched the engine, either Dockerfile, `package.json`, or any dependency, the running stack serves stale code and the fast loop goes green on what you already replaced. Rebuild with `make test-e2e` or `make e2e-up`.
+The fast loop serves the web app differently: the `web` service is `next dev` over a bind mount of `web/`, so a frontend edit is live with no rebuild. Both services come from the one `web/Dockerfile` (the `dependencies` stage for the fast loop, `production` for the gate) and the one `docker-compose.e2e.yml`, so they cannot drift.
 
-| Changed                      | Run                                    |
-| ---------------------------- | -------------------------------------- |
-| `web/` source only           | Fast loop is fine                      |
-| Engine, Dockerfiles, deps    | `make test-e2e` — must rebuild         |
-| Pre-push, or unsure          | `make test-e2e`                        |
+**The trap: the fast loop does not rebuild images.** Only `web/` is live; nothing else is. If the change touched the engine, either Dockerfile, `package.json`, or any dependency, the running stack serves stale code and the fast loop goes green on what you already replaced. Rebuild with `make test-e2e` or `make e2e-up`.
+
+| Changed                      | Run                                                  |
+| ---------------------------- | ---------------------------------------------------- |
+| `web/` source only           | Fast loop is fine; `make test-e2e` rebuilds it anyway |
+| Engine, Dockerfiles, deps    | `make test-e2e` — must rebuild                       |
+| Pre-push, or unsure          | `make test-e2e`                                      |
 
 No reset is needed before the *first* run against a freshly started stack — starting the stack seeds it. `e2e-test-reset` is for the second run onward, and refuses with instructions if the stack is down.
 

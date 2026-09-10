@@ -54,6 +54,12 @@ export const BLANK_STORAGE_STATE = path.join(
  * first of them to arrive paid its compile, 3 s alone and up to 10 s under
  * parallel load, and a different spec failed each run depending on which one
  * got there first.
+ *
+ * Only the fast loop needs this. The gate (`make test-e2e`) serves a
+ * production build, where every route is compiled before the first request,
+ * so there the warm-up is a few harmless page loads; the fast loop
+ * (`make e2e-up`) serves `next dev`, which compiles on demand, and is why the
+ * list stays.
  */
 const SEEDED_ROUTES = [
   "/campaigns",

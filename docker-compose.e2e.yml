@@ -18,6 +18,31 @@
 # web/.env.local.example for what it must contain and where to get it.
 name: we-os-e2e
 
+# Shared by both web services below. Extension fields: Compose ignores keys
+# starting with `x-`, and the YAML anchors let each service merge them in.
+x-web-service: &web-service
+  depends_on:
+    engine:
+      condition: service_healthy
+  ports:
+    - "3100:3000"
+  healthcheck:
+    test:
+      [
+        "CMD-SHELL",
+        "node -e \"fetch('http://localhost:3000/sign-in').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+      ]
+    interval: 2s
+    timeout: 5s
+    retries: 45
+
+x-web-environment: &web-environment
+  ENGINE_BASE_URL: http://engine:8000
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:?set it in web/.env.local}
+  CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?set it in web/.env.local}
+  NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+  NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -103,12 +128,26 @@ services:
       timeout: 5s
       retries: 30
 
+  # The web app, served two ways from one Dockerfile and this one file, so the
+  # two cannot drift. Both bind 3100, so they are never started together: the
+  # Makefile names one or the other.
+  #
+  #   - `web` is the fast loop's (`make e2e-up`): `next dev` over a bind mount
+  #     of the working tree, so a frontend edit is tested with no rebuild.
+  #   - `web-built` is the gate's (`make test-e2e`): a production build, with
+  #     the source copied into the image. Every route is compiled before the
+  #     first request and there is no dev cache to write, so no spec pays a
+  #     compile inside an assertion — the two causes of rotating failures that
+  #     the warm list in web/tests/auth.setup.ts and DEV_FILESYSTEM_CACHE below
+  #     only work around for the dev server. A frontend edit reaches it only
+  #     through a rebuild, which `make test-e2e` always does.
+  #
+  # What the two share is written once, as extension fields, and merged in.
   web:
     build:
       context: ./web
-    depends_on:
-      engine:
-        condition: service_healthy
+      target: dependencies
+    <<: *web-service
     volumes:
       # The working tree, not the copy baked into the image — otherwise the
       # suite silently tests whatever the source looked like when the image was
@@ -119,23 +158,22 @@ services:
       - /app/node_modules
       - /app/.next
     environment:
-      ENGINE_BASE_URL: http://engine:8000
+      <<: *web-environment
       # No persistent Turbopack cache: this container is thrown away with the
       # stack, and writing the cache mid-suite stalls the dev server (see
       # web/next.config.ts).
       DEV_FILESYSTEM_CACHE: "0"
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:?set it in web/.env.local}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?set it in web/.env.local}
-      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
-      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
-    ports:
-      - "3100:3000"
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "node -e \"fetch('http://localhost:3000/sign-in').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
-        ]
-      interval: 2s
-      timeout: 5s
-      retries: 45
+
+  web-built:
+    build:
+      context: ./web
+      target: production
+      args:
+        # Inlined into the client bundle at build time, so they must be known
+        # here and not only at runtime. Same source as the runtime values.
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:?set it in web/.env.local}
+        NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+        NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+    <<: *web-service
+    environment:
+      <<: *web-environment

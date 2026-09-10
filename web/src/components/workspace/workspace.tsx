@@ -18,6 +18,7 @@ import {
 import type { Campaign, CampaignStage } from "@/lib/engine";
 import { statusLabel } from "@/lib/campaigns";
 import { statusDotClass } from "@/lib/status";
+import { useSessionReady } from "@/lib/use-session-ready";
 import {
   defaultStageKey,
   stageAwaitingApproval,
@@ -102,7 +103,11 @@ export function Workspace({
 
   const latestVersion = selected?.latest_version ?? null;
 
+  // A server action cannot renew a stale token, so the load waits for the
+  // session to be ready (see useSessionReady); a ready page waits for nothing.
+  const sessionReady = useSessionReady();
   useEffect(() => {
+    if (!sessionReady) return;
     let current = true;
     loadStage(campaign.id, selectedKey)
       .then((stageView) => {
@@ -120,7 +125,7 @@ export function Workspace({
     return () => {
       current = false;
     };
-  }, [campaign.id, selectedKey, latestVersion]);
+  }, [sessionReady, campaign.id, selectedKey, latestVersion]);
 
   useEffect(() => {
     if (finished) router.refresh();

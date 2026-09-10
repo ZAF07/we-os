@@ -121,6 +121,11 @@ test("a decision made in the Workspace is reflected on Home without a refresh", 
       .getByRole("navigation", { name: "Stages" })
       .getByRole("button", { name: /^Brand strategy/ }),
   ).toContainText("Approved", { timeout: 120_000 });
+  // "Approved" shows the moment the run resumes, while the next stage is still
+  // being produced; Home read at that instant would honestly say "in
+  // progress". The queue entry is only owed once the run has halted at the
+  // next gate, which is when the Workspace offers the decision again.
+  await expect(approve).toBeVisible({ timeout: 120_000 });
 
   await page.goto("/home");
   await expect(queue.locator(`a[href="/campaigns/${slug}"]`)).toBeVisible();

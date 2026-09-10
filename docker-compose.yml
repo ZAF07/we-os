@@ -118,6 +118,9 @@ services:
   web:
     build:
       context: ./web
+      # The dev server over the working tree; the Dockerfile's later stage is
+      # a production build, which is the e2e gate's and not this stack's.
+      target: dependencies
     depends_on:
       engine:
         condition: service_healthy
