@@ -43,7 +43,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from functools import lru_cache
 from typing import TYPE_CHECKING, Annotated
 
@@ -79,7 +79,6 @@ from marketing_os.campaign import (
 )
 from marketing_os.campaign.progress import (
     StageProgress,
-    campaign_progress,
     produced_deliverables,
     progress_from_latest,
     stale_keys,
@@ -953,26 +952,12 @@ def _archived_slugs_in(paths: list[str]) -> set[str]:
     }
 
 
-def _read_goal(tenant: str, slug: str, store: DocumentStore) -> CampaignGoal:
-    """Read a campaign's goal, falling back to its slug for an unnamed one.
-
-    A goal authored by hand may carry no title, so the campaign still needs a
-    name to show in a list. The slug is the honest fallback: it is what the
-    business will see in the URL.
-
-    Args:
-        tenant: The tenant that owns the campaign.
-        slug: The campaign slug.
-        store: The tenant-scoped document store.
-
-    Returns:
-        The structured goal, named after the slug when the document is untitled.
-    """
-    return _named_goal(store.read(tenant, f"campaigns/{slug}/{_GOAL_DOCUMENT}"), slug)
-
-
 def _named_goal(document: str, slug: str) -> CampaignGoal:
     """Parse a goal document, falling back to the slug for an unnamed campaign.
+
+    A goal authored by hand may carry no title, so the campaign still needs a
+    name to show. The slug is the honest fallback: it is what the business will
+    see in the URL.
 
     Args:
         document: The goal document's markdown.
@@ -987,89 +972,131 @@ def _named_goal(document: str, slug: str) -> CampaignGoal:
     return goal
 
 
-def _require_campaign(tenant: str, slug: str, store: DocumentStore) -> CampaignGoal:
-    """Read a campaign the caller's tenant owns, or 404.
+@dataclass(frozen=True)
+class _CampaignRecord:
+    """One campaign as the stores hold it, before anything is derived from it.
 
-    A slug owned by another tenant is simply absent from this tenant's store, so
-    it is indistinguishable from one that was never created (ADR-0013).
+    Attributes:
+        goal: The campaign's goal, always carrying a name.
+        latest: The newest version of each stage that has produced one, keyed
+            by stage key; stages that produced nothing are absent.
+        archived: Whether the archive marker has been written beside the goal.
+        halted: The live run holding at an Approval Gate, if one is. Which
+            stage it is holding at is a checkpoint read, not a store read, so
+            it is resolved by the caller.
+    """
+
+    goal: CampaignGoal
+    latest: dict[str, DeliverableVersion]
+    archived: bool
+    halted: RunRecord | None
+
+
+def _read_campaign(
+    tenant: str,
+    slug: str,
+    store: DocumentStore,
+    deliverables: DeliverableStore,
+    registry: RunRegistry,
+) -> _CampaignRecord | None:
+    """Read everything describing one campaign needs, in three store reads.
+
+    One read of the goal and the archive marker together, one of the newest
+    version of every stage, and one of the campaign's live run — the same
+    three however many stages have produced work. Every one is a synchronous
+    store call, so they are gathered here for the caller to run off the event
+    loop together, as the list does with :func:`_read_portfolio`.
+
+    A slug owned by another tenant is simply absent from this tenant's store,
+    so it is indistinguishable from one that was never created (ADR-0013).
 
     Args:
         tenant: The tenant that owns the campaign.
         slug: The campaign slug.
         store: The tenant-scoped document store.
+        deliverables: The store holding each stage's version chain.
+        registry: The registry naming which campaigns have a live run.
 
     Returns:
-        The campaign's goal.
+        The campaign as stored, or ``None`` when the tenant has no such
+        campaign.
+    """
+    goal_document = f"campaigns/{slug}/{_GOAL_DOCUMENT}"
+    archive_marker = f"campaigns/{slug}/{_ARCHIVE_MARKER}"
+    documents = store.read_many(tenant, [goal_document, archive_marker])
+    if goal_document not in documents:
+        return None
+    live = registry.active_for_campaign(tenant, slug)
+    return _CampaignRecord(
+        goal=_named_goal(documents[goal_document], slug),
+        latest=deliverables.latest_by_campaign(tenant, [slug]).get(slug, {}),
+        archived=archive_marker in documents,
+        halted=live if live is not None and live.status == AWAITING_APPROVAL else None,
+    )
+
+
+async def _require_campaign(tenant: str, slug: str) -> _CampaignRecord:
+    """Read a campaign the caller's tenant owns, off the event loop, or 404.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+
+    Returns:
+        The campaign as stored.
 
     Raises:
         HTTPException: 404 if the caller's tenant has no such campaign.
     """
-    if not store.exists(tenant, f"campaigns/{slug}/{_GOAL_DOCUMENT}"):
+    record = await asyncio.to_thread(
+        _read_campaign, tenant, slug, get_document_store(), get_deliverable_store(), get_registry()
+    )
+    if record is None:
         raise _http_error(DocumentNotFoundError(f"No such campaign '{slug}'."))
-    return _read_goal(tenant, slug, store)
+    return record
 
 
-def _is_archived(tenant: str, slug: str, store: DocumentStore) -> bool:
-    """Return whether a campaign has been archived.
-
-    Archival is recorded as a marker document beside the goal rather than as a
-    column, so it rides the same tenant-scoped store — and the same isolation —
-    as everything else the campaign owns.
-
-    Args:
-        tenant: The tenant that owns the campaign.
-        slug: The campaign slug.
-        store: The tenant-scoped document store.
-
-    Returns:
-        ``True`` when the campaign is archived.
-    """
-    return store.exists(tenant, f"campaigns/{slug}/{_ARCHIVE_MARKER}")
-
-
-async def _campaign_payload(
-    tenant: str, slug: str, goal: CampaignGoal, store: DocumentStore
-) -> dict[str, object]:
+async def _describe_campaign(tenant: str, slug: str, record: _CampaignRecord) -> dict[str, object]:
     """Describe one campaign: its goal, its lifecycle status, and every stage.
 
     Args:
         tenant: The tenant that owns the campaign.
         slug: The campaign slug.
-        goal: The campaign's goal.
-        store: The tenant-scoped document store.
+        record: The campaign as read from the stores.
 
     Returns:
         The campaign as the interface reads it.
     """
-    reported, status = await _stage_report(tenant, slug)
+    stages, status = await _stage_report(tenant, record)
     return {
         "id": slug,
-        **goal.model_dump(),
-        "status": ARCHIVED if _is_archived(tenant, slug, store) else status,
-        "stages": reported,
+        **record.goal.model_dump(),
+        "status": ARCHIVED if record.archived else status,
+        "stages": stages,
     }
 
 
-async def _stage_report(tenant: str, slug: str) -> tuple[list[dict[str, object]], str]:
+async def _stage_report(
+    tenant: str, record: _CampaignRecord
+) -> tuple[list[dict[str, object]], str]:
     """Report a campaign's stages and lifecycle status as the interface reads them.
 
     Where the campaign has got to is derived in
-    :mod:`marketing_os.campaign.progress`; this only renders those values as the
-    contract's shapes.
+    :mod:`marketing_os.campaign.progress` from data already read; this only
+    renders those values as the contract's shapes.
 
     Args:
         tenant: The tenant that owns the campaign.
-        slug: The campaign slug.
+        record: The campaign as read from the stores.
 
     Returns:
         The stages in pipeline order, and the campaign's lifecycle status.
     """
-    progress = await campaign_progress(
-        get_deliverable_store(),
-        tenant,
-        slug,
+    waiting = await _waiting_stage(tenant, record.halted) if record.halted else None
+    progress = progress_from_latest(
+        record.latest,
         human_gate_stages=get_settings().human_gate_stages,
-        awaiting_stage=lambda: _stage_awaiting_approval(tenant, slug),
+        waiting=waiting,
     )
     return [_render_stage(stage) for stage in progress.stages], progress.status
 
@@ -1093,7 +1120,6 @@ async def create_campaign(body: CreateCampaign, identity: Identity) -> dict[str,
         HTTPException: 422 if a Required field is missing or the segment is not
             one the tenant's Brand DNA names.
     """
-    store = get_document_store()
     tenant = identity.tenant_id
     goal = CampaignGoal(**body.model_dump())
 
@@ -1102,11 +1128,36 @@ async def create_campaign(body: CreateCampaign, identity: Identity) -> dict[str,
         raise _http_error(
             ValidationError("The campaign goal is incomplete. Missing: " + ", ".join(missing) + ".")
         )
-    _require_known_segment(tenant, goal.audience_segment, store)
 
+    slug = await asyncio.to_thread(_write_new_campaign, tenant, goal, get_document_store())
+    created = _CampaignRecord(goal=goal, latest={}, archived=False, halted=None)
+    return await _describe_campaign(tenant, slug, created)
+
+
+def _write_new_campaign(tenant: str, goal: CampaignGoal, store: DocumentStore) -> str:
+    """Allocate a slug for a goal and write it as the campaign's goal document.
+
+    The segment check, the slug listing and the write are all synchronous store
+    calls, gathered here so the caller runs them off the event loop together.
+    The campaign this creates has produced nothing, is not archived and has no
+    run, so nothing is read back to describe it.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        goal: The complete campaign goal.
+        store: The tenant-scoped document store.
+
+    Returns:
+        The slug the campaign was given.
+
+    Raises:
+        HTTPException: 422 if the segment is not one the tenant's Brand DNA
+            names.
+    """
+    _require_known_segment(tenant, goal.audience_segment, store)
     slug = allocate_slug(goal.name, taken=_campaign_slugs(tenant, store))
     store.write(tenant, f"campaigns/{slug}/{_GOAL_DOCUMENT}", render_campaign_goal(goal))
-    return await _campaign_payload(tenant, slug, goal, store)
+    return slug
 
 
 def _require_known_segment(tenant: str, segment: str, store: DocumentStore) -> None:
@@ -1266,12 +1317,29 @@ async def _stages_awaiting_approval(tenant: str, halted: list[RunRecord]) -> dic
     """
     waiting: dict[str, str] = {}
     for record in halted:
-        stage = await awaiting_approval_stage(
-            tenant, record.slug, stage=record.stage, checkpointer=get_checkpointer()
-        )
+        stage = await _waiting_stage(tenant, record)
         if stage is not None:
             waiting[record.slug] = stage
     return waiting
+
+
+async def _waiting_stage(tenant: str, halted: RunRecord) -> str | None:
+    """Return the stage a halted run is holding at.
+
+    Read from the checkpoint, the same durable source the approve and revise
+    endpoints consult, so the stepper cannot disagree with what those endpoints
+    will accept — and so the answer holds when run tracing is switched off.
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        halted: The live run that is holding at an Approval Gate.
+
+    Returns:
+        The waiting stage key, or ``None`` when the checkpoint shows no gate.
+    """
+    return await awaiting_approval_stage(
+        tenant, halted.slug, stage=halted.stage, checkpointer=get_checkpointer()
+    )
 
 
 def _stage_progress(stages: list[dict[str, object]]) -> dict[str, object]:
@@ -1327,10 +1395,9 @@ async def get_campaign(slug: str, identity: Identity) -> dict[str, object]:
     Raises:
         HTTPException: 404 if the caller's tenant has no such campaign.
     """
-    store = get_document_store()
     tenant = identity.tenant_id
-    goal = _require_campaign(tenant, slug, store)
-    return await _campaign_payload(tenant, slug, goal, store)
+    record = await _require_campaign(tenant, slug)
+    return await _describe_campaign(tenant, slug, record)
 
 
 @app.post("/campaigns/{slug}/archive")
@@ -1351,15 +1418,15 @@ async def archive_campaign(slug: str, identity: Identity) -> dict[str, object]:
     Raises:
         HTTPException: 404 if the caller's tenant has no such campaign.
     """
-    store = get_document_store()
     tenant = identity.tenant_id
-    goal = _require_campaign(tenant, slug, store)
-    store.write(
+    record = await _require_campaign(tenant, slug)
+    await asyncio.to_thread(
+        get_document_store().write,
         tenant,
         f"campaigns/{slug}/{_ARCHIVE_MARKER}",
         "Archived. The campaign and its deliverables stay readable.\n",
     )
-    return await _campaign_payload(tenant, slug, goal, store)
+    return await _describe_campaign(tenant, slug, replace(record, archived=True))
 
 
 @app.get("/brand-dna/segments")
@@ -1514,31 +1581,14 @@ async def stages(slug: str, identity: Identity) -> dict[str, object]:
         The campaign slug, its lifecycle status, and its stages in mandatory
         pipeline order, each with its key, operator Phase, state, approval
         policy, and latest deliverable version if it has one.
+
+    Raises:
+        HTTPException: 404 if the caller's tenant has no such campaign.
     """
-    reported, status = await _stage_report(identity.tenant_id, slug)
+    tenant = identity.tenant_id
+    record = await _require_campaign(tenant, slug)
+    reported, status = await _stage_report(tenant, record)
     return {"slug": slug, "status": status, "stages": reported}
-
-
-async def _stage_awaiting_approval(tenant: str, slug: str) -> str | None:
-    """Return the stage a campaign's live run is halted at, if one is.
-
-    Read from the checkpoint, the same durable source the approve and revise
-    endpoints consult, so the stepper cannot disagree with what those endpoints
-    will accept — and so the answer holds when run tracing is switched off.
-
-    Args:
-        tenant: The tenant that owns the campaign.
-        slug: The campaign slug.
-
-    Returns:
-        The waiting stage key, or ``None`` when no run is holding at a gate.
-    """
-    record = get_registry().active_for_campaign(tenant, slug)
-    if record is None or record.status != AWAITING_APPROVAL:
-        return None
-    return await awaiting_approval_stage(
-        tenant, slug, stage=record.stage, checkpointer=get_checkpointer()
-    )
 
 
 def _render_stage(progress: StageProgress) -> dict[str, object]:
