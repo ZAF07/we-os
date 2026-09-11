@@ -624,6 +624,31 @@ class AnswerStore(Protocol):
         """
         ...
 
+    def update_clarification(
+        self, tenant: str, *, clarification_id: str, answer: str
+    ) -> BrandDnaRecord:
+        """Replace the business's answer to one Clarification.
+
+        A retrospective correction: the fact changes for every later campaign,
+        and nothing already produced is touched — staleness belongs to
+        deliverable versions, and this writes none (ADR-0028). The question,
+        the reason and where it was asked stay as they were; only the answer
+        and when it was given change.
+
+        Args:
+            tenant: The tenant whose answer changes.
+            clarification_id: The Clarification to re-answer.
+            answer: The new answer, in the business's own words.
+
+        Returns:
+            The business's full record after the edit.
+
+        Raises:
+            DocumentNotFoundError: If the tenant has no Clarification with that
+                id — another business's reads as missing, as its documents do.
+        """
+        ...
+
 
 @runtime_checkable
 class UsageLedger(Protocol):

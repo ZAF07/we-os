@@ -20,6 +20,16 @@ import { createCampaign, uniqueName } from "./fixtures";
 test("a specialist's question halts the run, reaches Home, and answering resumes it", async ({
   page,
 }) => {
+  // Before any specialist has asked, the Brand page's Clarifications tab says
+  // so, and says where its entries will come from.
+  await page.goto("/brand");
+  const index = page.getByRole("navigation", { name: "Brand sections" });
+  await index.getByRole("button", { name: /Clarifications/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Clarifications" }),
+  ).toBeVisible();
+  await expect(page.getByText(/No Clarifications yet/)).toBeVisible();
+
   const slug = await createCampaign(page, uniqueName("Clarify"));
 
   // Two approvals take the run to the performance plan, whose specialist asks.
@@ -95,4 +105,40 @@ test("a specialist's question halts the run, reaches Home, and answering resumes
   await page.goto("/home");
   await expect(queue.locator(`a[href="${href}"]`)).toHaveCount(0);
   await expect(queue.locator(`a[href="/campaigns/${slug}"]`)).toBeVisible();
+
+  // The answer is Brand DNA now: the Brand page lists it under Clarifications
+  // with the question, the reason, and which stage of which campaign asked —
+  // and it can be corrected there. The correction re-runs nothing: the
+  // campaign is still at the gate it reached.
+  await page.goto("/brand");
+  await index.getByRole("button", { name: /Clarifications/ }).click();
+  const list = page.getByRole("list", { name: "Clarifications" });
+  await expect(list).toContainText("email list");
+  await expect(list).toContainText("Why it was asked:");
+  await expect(list).toContainText(
+    `Asked by Performance plan for campaign ${slug}`,
+  );
+  await expect(list).toContainText(
+    "Yes, about 1,200 subscribers who opted in at the front desk.",
+  );
+
+  await page
+    .getByRole("button", { name: /^Edit answer: .*email list/ })
+    .click();
+  const corrected = uniqueName("About 1,300 now");
+  await page.getByLabel(/email list/).fill(corrected);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(list).toContainText(corrected, { timeout: 30_000 });
+  await expect(
+    page.getByRole("button", { name: "Save", exact: true }),
+  ).toHaveCount(0);
+
+  await page.reload();
+  await index.getByRole("button", { name: /Clarifications/ }).click();
+  await expect(list).toContainText(corrected);
+
+  await page.goto(`/campaigns/${slug}`);
+  await expect(page.getByText("Approving starts Creative brief.")).toBeVisible({
+    timeout: 30_000,
+  });
 });

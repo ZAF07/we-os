@@ -15,7 +15,7 @@ from marketing_os.adapters.questionnaire import (
     InMemoryAnswerStore,
     InMemoryQuestionnaireStore,
 )
-from marketing_os.errors import ValidationError
+from marketing_os.errors import DocumentNotFoundError, ValidationError
 from marketing_os.questionnaire import (
     CLARIFICATIONS_HEADING,
     SEED_QUESTIONNAIRE,
@@ -412,3 +412,39 @@ def test_saving_a_questionnaire_answer_leaves_the_clarifications_alone():
     store.remove(TENANT, question_id="q_price_point")
 
     assert store.read(TENANT).clarifications == [EMAIL_LIST]
+
+
+def test_answer_store_edits_one_clarification_answer_and_leaves_the_rest():
+    """A retrospective correction changes the answer, the time it was given, and nothing else."""
+    store = InMemoryAnswerStore()
+    second = EMAIL_LIST.model_copy(update={"id": "clr_2", "question": "How big is it?"})
+    store.upsert(TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$50")])
+    store.add_clarifications(TENANT, clarifications=[EMAIL_LIST, second])
+
+    record = store.update_clarification(
+        TENANT, clarification_id=EMAIL_LIST.id, answer="No list yet; we collect emails at the desk."
+    )
+
+    edited, kept = record.clarifications
+    assert edited.answer == "No list yet; we collect emails at the desk."
+    assert edited.answered_at != EMAIL_LIST.answered_at
+    assert edited.model_dump(exclude={"answer", "answered_at"}) == EMAIL_LIST.model_dump(
+        exclude={"answer", "answered_at"}
+    )
+    assert kept == second
+    assert record.answer_for("q_price_point") == "$50"
+    assert store.read(TENANT).clarifications == [edited, kept]
+
+
+def test_answer_store_refuses_to_edit_a_clarification_the_business_does_not_have():
+    """Another business's Clarification reads as missing, and nothing of theirs changes."""
+    store = InMemoryAnswerStore()
+    store.add_clarifications(TENANT, clarifications=[EMAIL_LIST])
+
+    with pytest.raises(DocumentNotFoundError):
+        store.update_clarification(TENANT, clarification_id="clr_missing", answer="x")
+    with pytest.raises(DocumentNotFoundError):
+        store.update_clarification(OTHER_TENANT, clarification_id=EMAIL_LIST.id, answer="x")
+
+    assert store.read(TENANT).clarifications == [EMAIL_LIST]
+    assert store.read(OTHER_TENANT).clarifications == []

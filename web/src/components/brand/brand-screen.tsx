@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { ClarificationsTab } from "@/components/brand/clarifications-tab";
 import { EntryListInput } from "@/components/questionnaire/entry-list-input";
 import { StatusPill } from "@/components/ui/status-pill";
 import type {
@@ -15,7 +16,18 @@ import { ENTRY_LIST_TYPE, parseEntries } from "@/lib/entry-list";
 import { questionSteps } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
+import { saveClarificationAnswer } from "@/app/(app)/brand/actions";
 import { deleteAnswer, saveAnswers } from "@/app/(app)/onboarding/actions";
+
+/**
+ * The tab after the questionnaire's sections: the facts specialists asked for.
+ * A Clarification is Brand DNA too (ADR-0028), so it is edited on the same
+ * screen — but it has no place in the published question set, so it is its
+ * own tab rather than a section.
+ */
+const CLARIFICATIONS_TAB = "clarifications";
+
+type Tab = number | typeof CLARIFICATIONS_TAB;
 
 /**
  * Renders the Brand screen: the business's own Brand DNA, editable answer by
@@ -27,9 +39,13 @@ import { deleteAnswer, saveAnswers } from "@/app/(app)/onboarding/actions";
  * questions, not a rendering of prose: what is shown is what was answered, and
  * changing it is changing the answer.
  *
+ * The Clarifications a specialist asked for are Brand DNA as well, and get the
+ * last tab: the same editor, over questions a model wrote for this one
+ * business rather than the curated set.
+ *
  * Args:
  *   questionnaire: The published question set, which defines the sections.
- *   dna: The business's saved answers.
+ *   dna: The business's saved answers and Clarifications.
  *   completeness: Which Required answers are still owed.
  */
 export function BrandScreen({
@@ -43,7 +59,7 @@ export function BrandScreen({
 }) {
   const router = useRouter();
   const sections = questionSteps(questionnaire);
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState<Tab>(0);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +75,8 @@ export function BrandScreen({
     dna.answers.map((answer) => [answer.question_id, answer.answer]),
   );
   const missing = new Set(shown.missing.map((field) => field.question_id));
-  const section = sections[selected] ?? sections[0];
+  const section =
+    selected === CLARIFICATIONS_TAB ? undefined : sections[selected];
 
   const save = (questionId: string) => {
     const answer = draft.trim();
@@ -94,7 +111,7 @@ export function BrandScreen({
     });
   };
 
-  if (section === undefined) {
+  if (sections.length === 0) {
     return (
       <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
         <h1 className="text-xl font-bold tracking-tight">Brand</h1>
@@ -139,52 +156,92 @@ export function BrandScreen({
               </button>
             );
           })}
+          <button
+            onClick={() => setSelected(CLARIFICATIONS_TAB)}
+            className={cn(
+              "flex w-auto cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-[7px] text-left text-[13px] whitespace-nowrap lg:mt-2 lg:w-full lg:border-t lg:pt-3 lg:whitespace-normal",
+              selected === CLARIFICATIONS_TAB
+                ? "bg-indigo-50 font-semibold text-primary"
+                : "font-medium text-slate-700 hover:bg-slate-100",
+            )}
+          >
+            <span className="flex-1">Clarifications</span>
+            {dna.clarifications.length > 0 && (
+              <span className="rounded-full bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">
+                {dna.clarifications.length}
+              </span>
+            )}
+          </button>
         </nav>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
         <div className="max-w-[680px]">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="text-xl font-bold tracking-tight">{section.name}</h1>
-            <StatusPill status={shown.complete ? "Approved" : "Needs input"} />
-          </div>
-          <p className="mt-1.5 mb-[18px] text-[13px] text-muted-foreground">
-            {shown.complete
-              ? `Every Required answer is in — ${shown.required_answered} of ${shown.required_total}. Campaigns can run.`
-              : `${shown.required_answered} of ${shown.required_total} Required answers are in. Campaigns cannot run until the rest are.`}
-          </p>
-
-          {error && (
-            <p
-              role="alert"
-              className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-800"
-            >
-              {error}
-            </p>
-          )}
-
-          <div className="flex flex-col gap-3">
-            {section.questions.map((question) => (
-              <AnswerCard
-                key={question.id}
-                question={question}
-                answer={answers.get(question.id) ?? ""}
-                owed={missing.has(question.id)}
-                editing={editing === question.id}
-                draft={draft}
-                pending={pending}
-                onEdit={() => {
-                  setEditing(question.id);
-                  setDraft(answers.get(question.id) ?? "");
-                  setError(null);
-                }}
-                onDraft={setDraft}
-                onCancel={() => setEditing(null)}
-                onSave={() => save(question.id)}
-                onDelete={() => remove(question.id)}
+          {section === undefined ? (
+            <>
+              <h1 className="text-xl font-bold tracking-tight">
+                Clarifications
+              </h1>
+              <p className="mt-1.5 mb-[18px] text-[13px] text-muted-foreground">
+                Facts a specialist asked you for while working a campaign, in
+                your own words. They are part of your Brand DNA, so every later
+                campaign reads them. Correcting one changes what future
+                campaigns are grounded in; nothing already produced is re-run.
+              </p>
+              <ClarificationsTab
+                clarifications={dna.clarifications}
+                save={saveClarificationAnswer}
               />
-            ))}
-          </div>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h1 className="text-xl font-bold tracking-tight">
+                  {section.name}
+                </h1>
+                <StatusPill
+                  status={shown.complete ? "Approved" : "Needs input"}
+                />
+              </div>
+              <p className="mt-1.5 mb-[18px] text-[13px] text-muted-foreground">
+                {shown.complete
+                  ? `Every Required answer is in — ${shown.required_answered} of ${shown.required_total}. Campaigns can run.`
+                  : `${shown.required_answered} of ${shown.required_total} Required answers are in. Campaigns cannot run until the rest are.`}
+              </p>
+
+              {error && (
+                <p
+                  role="alert"
+                  className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-800"
+                >
+                  {error}
+                </p>
+              )}
+
+              <div className="flex flex-col gap-3">
+                {section.questions.map((question) => (
+                  <AnswerCard
+                    key={question.id}
+                    question={question}
+                    answer={answers.get(question.id) ?? ""}
+                    owed={missing.has(question.id)}
+                    editing={editing === question.id}
+                    draft={draft}
+                    pending={pending}
+                    onEdit={() => {
+                      setEditing(question.id);
+                      setDraft(answers.get(question.id) ?? "");
+                      setError(null);
+                    }}
+                    onDraft={setDraft}
+                    onCancel={() => setEditing(null)}
+                    onSave={() => save(question.id)}
+                    onDelete={() => remove(question.id)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </main>
