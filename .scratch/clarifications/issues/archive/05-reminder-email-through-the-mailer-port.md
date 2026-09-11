@@ -53,7 +53,7 @@ The recipient is the tenant's signed-in email from the identity provider. The em
 ## Completion
 
 - Completed: 2026-09-11
-- Commits: `084b1fc` Email the business when its Brand DNA review is due; `6acc6fc` Tighten the reminder email after review; `125fedb` Name the Review Reminder, Contact Email and Mailer in the glossary; on branch `feat/clarifications-05-reminder-email`; status commit and merge recorded below once made.
+- Commits: `084b1fc` Email the business when its Brand DNA review is due; `6acc6fc` Tighten the reminder email after review; `125fedb` Name the Review Reminder, Contact Email and Mailer in the glossary; on branch `feat/clarifications-05-reminder-email`; status commit `1b8f83f` updated tasks status; merged into `main` as `3869f2d`.
 - Evidence per criterion:
   - One tick sends exactly one email per due tenant and none to tenants not due, fake clock and fake mailer — `tests/test_reminders.py::test_one_tick_reminds_each_due_business_once_and_no_one_else` (one due, one reviewed half a week ago, one with an incomplete DNA), `::test_a_business_becoming_due_later_is_reminded_then`, `::test_the_reminder_names_the_business_and_links_to_the_brand_page`, `::test_a_reminder_is_recorded_on_the_business`; the pure rule in `::test_a_due_review_never_reminded_about_is_due_a_reminder`, `::test_a_review_that_is_not_due_gets_no_reminder_however_long_ago_the_last_was`.
   - A second tick within the period sends nothing; a tick after the period sends again — `::test_a_second_tick_within_the_period_sends_nothing`, `::test_a_tick_after_the_period_reminds_again`, `::test_a_reminder_within_the_period_is_not_sent_again` (boundary: exactly the interval is not again).
