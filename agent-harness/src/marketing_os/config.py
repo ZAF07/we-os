@@ -38,6 +38,7 @@ class WebBackend(StrEnum):
 
 _DEFAULT_WEB_BACKENDS = (WebBackend.TAVILY, WebBackend.GOOGLE, WebBackend.DUCKDUCKGO)
 
+
 _VALID_SEARCH_DEPTHS = ("basic", "advanced")
 _DEFAULT_SEARCH_DEPTH = "basic"
 
@@ -93,6 +94,46 @@ def _parse_web_backends(raw: str) -> list[WebBackend]:
                 f"Unknown web backend '{token}' in MARKETING_OS_WEB_BACKENDS. Known: {known}."
             ) from exc
     return backends
+
+
+class MailerName(StrEnum):
+    """A selectable mailer for the reminder email (ADR-0028).
+
+    Attributes:
+        RESEND: The Resend HTTP API, sending real email.
+        NOOP: The no-op mailer, which logs what it would have sent. The default,
+            so no test or local run can email a real address by accident.
+    """
+
+    RESEND = "resend"
+    NOOP = "noop"
+
+
+_DEFAULT_APP_URL = "http://localhost:3000"
+
+
+def _parse_mailer(raw: str) -> MailerName:
+    """Parse the mailer selector.
+
+    Args:
+        raw: The ``MARKETING_OS_MAILER`` value.
+
+    Returns:
+        The selected mailer; the no-op one when the value is empty.
+
+    Raises:
+        ConfigError: If the value names a mailer that does not exist.
+    """
+    token = raw.strip().lower()
+    if not token:
+        return MailerName.NOOP
+    try:
+        return MailerName(token)
+    except ValueError as exc:
+        known = ", ".join(member.value for member in MailerName)
+        raise ConfigError(
+            f"Unknown mailer '{token}' in MARKETING_OS_MAILER. Known: {known}."
+        ) from exc
 
 
 def _parse_human_gate_stages(raw: str | None) -> list[str] | None:
@@ -301,6 +342,19 @@ class Settings:
             Brand DNA the platform asks it to look again, from
             ``MARKETING_OS_DNA_REVIEW_INTERVAL`` as a duration such as ``7d``
             or ``1m``. A week by default; a minute in development (ADR-0028).
+        mailer: Which mailer sends the Brand DNA review reminder, from
+            ``MARKETING_OS_MAILER`` (``noop`` | ``resend``). The no-op mailer by
+            default, which logs and sends nothing; the real one is built only
+            when it is selected, so no test or local run can email a real
+            address (ADR-0028).
+        resend_api_key: The Resend API key, or ``None`` when unset. Required
+            when the Resend mailer is selected, refused at startup otherwise.
+        mail_from: The sender the reminder goes out as, in the form Resend
+            accepts (``Name <address>``), or ``None`` when unset. Required with
+            the Resend mailer: Resend only sends from a verified domain.
+        app_url: Where the web app is reached, without a trailing slash, so
+            the reminder can link to the Brand page. The local dev server by
+            default.
         usage_credits: What a tenant may spend before billable work is
             refused, in credits. The platform-wide default; a tenant may carry
             its own override, so raising one business's cap is a row rather than
@@ -372,6 +426,20 @@ class Settings:
     dna_review_interval: timedelta = field(
         default_factory=lambda: parse_duration(
             os.environ.get("MARKETING_OS_DNA_REVIEW_INTERVAL", _DEFAULT_DNA_REVIEW_INTERVAL)
+        )
+    )
+    mailer: MailerName = field(
+        default_factory=lambda: _parse_mailer(os.environ.get("MARKETING_OS_MAILER", ""))
+    )
+    resend_api_key: str | None = field(
+        default_factory=lambda: os.environ.get("MARKETING_OS_RESEND_API_KEY") or None
+    )
+    mail_from: str | None = field(
+        default_factory=lambda: os.environ.get("MARKETING_OS_MAIL_FROM") or None
+    )
+    app_url: str = field(
+        default_factory=lambda: (os.environ.get("MARKETING_OS_APP_URL") or _DEFAULT_APP_URL).rstrip(
+            "/"
         )
     )
     usage_credits: float = field(

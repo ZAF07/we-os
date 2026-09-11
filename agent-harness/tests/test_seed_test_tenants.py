@@ -29,6 +29,7 @@ pytestmark = pytest.mark.slow
 
 ORG_ID = "org_e2e_seeded"
 BLANK_ORG_ID = "org_e2e_blank"
+USER_EMAIL = "e2e+clerk_test@example.com"
 
 
 @pytest.fixture
@@ -81,7 +82,7 @@ def _fetch(dsn: str, sql: str, parameters: tuple[Any, ...]) -> list[tuple[Any, .
 
 
 def test_seeding_writes_both_tenants(empty_database: str) -> None:
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     rows = _fetch(
         empty_database,
@@ -98,7 +99,7 @@ def test_both_tenants_carry_the_recommended_tier(empty_database: str) -> None:
     """The suite's businesses predate tiers, and Home sends a tierless one to choose."""
     from marketing_os.schemas import RECOMMENDED_TIER
 
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     rows = _fetch(empty_database, "SELECT tenant_id, tier FROM tenants ORDER BY tenant_id", ())
     assert dict(rows) == {
@@ -108,7 +109,7 @@ def test_both_tenants_carry_the_recommended_tier(empty_database: str) -> None:
 
 
 def test_the_seeded_tenant_gets_a_complete_dna(empty_database: str) -> None:
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     answers = _fetch(
         empty_database,
@@ -125,7 +126,7 @@ def test_the_seeded_tenant_gets_a_complete_dna(empty_database: str) -> None:
 
 
 def test_the_blank_tenant_starts_with_no_dna(empty_database: str) -> None:
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     answers = _fetch(
         empty_database,
@@ -149,7 +150,7 @@ def test_reseeding_blanks_a_tenant_the_wizard_filled_in(empty_database: str) -> 
     """
     import psycopg
 
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
     with psycopg.connect(empty_database, autocommit=True) as connection:
         connection.execute(
             "INSERT INTO dna_answers (tenant_id, question_id, answer, questionnaire_version) "
@@ -161,7 +162,7 @@ def test_reseeding_blanks_a_tenant_the_wizard_filled_in(empty_database: str) -> 
             (seed_test_tenants.BLANK_TENANT_ID,),
         )
 
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     answers = _fetch(
         empty_database,
@@ -178,8 +179,8 @@ def test_reseeding_blanks_a_tenant_the_wizard_filled_in(empty_database: str) -> 
 
 
 def test_reseeding_keeps_the_seeded_tenants_dna(empty_database: str) -> None:
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     answers = _fetch(
         empty_database,
@@ -191,12 +192,12 @@ def test_reseeding_keeps_the_seeded_tenants_dna(empty_database: str) -> None:
 
 def test_a_missing_organization_id_is_refused(empty_database: str) -> None:
     with pytest.raises(SystemExit):
-        seed_test_tenants.seed_all(empty_database, "  ", BLANK_ORG_ID)
+        seed_test_tenants.seed_all(empty_database, "  ", BLANK_ORG_ID, USER_EMAIL)
 
 
 def test_a_missing_blank_organization_id_is_refused(empty_database: str) -> None:
     with pytest.raises(SystemExit):
-        seed_test_tenants.seed_all(empty_database, ORG_ID, "")
+        seed_test_tenants.seed_all(empty_database, ORG_ID, "", USER_EMAIL)
 
 
 def test_the_two_tenants_are_distinct() -> None:
@@ -302,11 +303,11 @@ def test_reseeding_purges_the_campaigns_a_run_left_behind(empty_database: str) -
     ``make test-e2e``, and a spec asserting on a campaign *name* rather than a
     slug becomes a strict-mode violation on the second run.
     """
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
     _make_campaign(empty_database, seed_test_tenants.TEST_TENANT_ID, "spring-refill")
     _make_campaign(empty_database, seed_test_tenants.BLANK_TENANT_ID, "acme-launch")
 
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     assert _campaign_row_counts(empty_database, seed_test_tenants.TEST_TENANT_ID) == NOTHING_LEFT
     assert _campaign_row_counts(empty_database, seed_test_tenants.BLANK_TENANT_ID) == NOTHING_LEFT
@@ -319,10 +320,10 @@ def test_purging_campaigns_leaves_the_seeded_dna_alone(empty_database: str) -> N
     by tenant rather than by path would take the Brand DNA with it and every
     campaign spec would halt at the Stage 0 gate.
     """
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
     _make_campaign(empty_database, seed_test_tenants.TEST_TENANT_ID, "spring-refill")
 
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     documents = _fetch(
         empty_database,
@@ -347,7 +348,7 @@ def test_purging_leaves_another_tenants_campaigns_alone(empty_database: str) -> 
     import psycopg
 
     other = "ten_someone_else"
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
     with psycopg.connect(empty_database, autocommit=True) as connection:
         connection.execute(
             "INSERT INTO tenants (tenant_id, name, external_auth_id) VALUES (%s, %s, %s)",
@@ -355,7 +356,7 @@ def test_purging_leaves_another_tenants_campaigns_alone(empty_database: str) -> 
         )
     _make_campaign(empty_database, other, "their-campaign")
 
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     assert _campaign_row_counts(empty_database, other) == {
         "documents": 1,
@@ -368,7 +369,7 @@ def test_purging_leaves_another_tenants_campaigns_alone(empty_database: str) -> 
 
 def test_the_seeded_tenant_is_due_a_review_and_the_blank_one_is_not(empty_database: str) -> None:
     """The review spec needs a review due; the blank tenant has no DNA to review (ADR-0028)."""
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     reviewed = dict(_fetch(empty_database, "SELECT tenant_id, dna_reviewed_at FROM tenants", ()))
 
@@ -380,14 +381,46 @@ def test_reseeding_puts_the_review_back_in_the_past(empty_database: str) -> None
     """A spec marks it reviewed; the reset must make it due again, as it purges campaigns."""
     import psycopg
 
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
     with psycopg.connect(empty_database, autocommit=True) as connection:
         connection.execute(
             "UPDATE tenants SET dna_reviewed_at = now() WHERE tenant_id = %s",
             (seed_test_tenants.TEST_TENANT_ID,),
         )
 
-    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
 
     reviewed = dict(_fetch(empty_database, "SELECT tenant_id, dna_reviewed_at FROM tenants", ()))
     assert reviewed[seed_test_tenants.TEST_TENANT_ID] < datetime.now(UTC) - timedelta(days=29)
+
+
+def test_the_seeded_tenant_can_be_emailed_and_the_blank_one_cannot(empty_database: str) -> None:
+    """The reminder is addressed to the seeded user; nobody has signed in to the blank tenant."""
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
+
+    emails = dict(_fetch(empty_database, "SELECT tenant_id, contact_email FROM tenants", ()))
+
+    assert emails[seed_test_tenants.TEST_TENANT_ID] == USER_EMAIL
+    assert emails[seed_test_tenants.BLANK_TENANT_ID] is None
+
+
+def test_a_missing_user_email_is_refused(empty_database: str) -> None:
+    with pytest.raises(SystemExit, match="E2E_CLERK_USER_EMAIL"):
+        seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, " ")
+
+
+def test_reseeding_forgets_the_last_reminder(empty_database: str) -> None:
+    """The engine reminded the seeded tenant last run; the reset must let it remind again."""
+    import psycopg
+
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
+    with psycopg.connect(empty_database, autocommit=True) as connection:
+        connection.execute(
+            "UPDATE tenants SET dna_reminded_at = now() WHERE tenant_id = %s",
+            (seed_test_tenants.TEST_TENANT_ID,),
+        )
+
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID, USER_EMAIL)
+
+    reminded = dict(_fetch(empty_database, "SELECT tenant_id, dna_reminded_at FROM tenants", ()))
+    assert reminded[seed_test_tenants.TEST_TENANT_ID] is None

@@ -14,11 +14,12 @@ filesystem layer, where a tenant *is* a directory name and there is no table to
 mint an id in: it reports the external id as the tenant id, which is exactly the
 pre-Postgres behaviour it preserves.
 
-The directory also records a business's **tier**, once (ADR-0027), and when
-it last **reviewed its Brand DNA** (ADR-0028). Both are the platform's own
-record rather than the identity provider's, so they live on the tenant row
+The directory also records a business's **tier**, once (ADR-0027), when it
+last **reviewed its Brand DNA**, the **address** it is reached at, and when it
+was last **reminded** that a review is due (ADR-0028). All are the platform's
+own record rather than the identity provider's, so they live on the tenant row
 beside the pairing — which is why the passthrough adapter, having no row, holds
-neither.
+none of them.
 """
 
 from __future__ import annotations
@@ -108,12 +109,16 @@ class PassthroughTenantDirectory:
     Postgres deployment, where the external id gets its own column.
     """
 
-    def resolve(self, *, external_auth_id: str, name: str | None = None) -> Tenant:
+    def resolve(
+        self, *, external_auth_id: str, name: str | None = None, email: str | None = None
+    ) -> Tenant:
         """Return the tenant for an IdP organization, named after itself.
 
         Args:
             external_auth_id: The IdP's identifier for the business.
             name: The business's display name from the verified claim.
+            email: The signed-in email from the verified claim, which is not
+                retained: there is no row to keep it on.
 
         Returns:
             A tenant whose ``tenant_id`` and ``external_auth_id`` are the same value.
@@ -141,6 +146,18 @@ class PassthroughTenantDirectory:
         if not cleaned:
             return None
         return _tenant_named_after_itself(cleaned)
+
+    def all(self) -> list[Tenant]:
+        """List no tenants, since there is no table to list them from.
+
+        A tenant on this layer is a directory name, and a directory is not a
+        business anyone can be reminded about, so the reminder task finds no
+        one here rather than emailing a folder.
+
+        Returns:
+            An empty list.
+        """
+        return []
 
     def set_tier(self, tenant_id: str, tier: TierName) -> Tenant:
         """Accept a tier for a tenant, and keep none of it.
@@ -188,6 +205,22 @@ class PassthroughTenantDirectory:
         cleaned = validate_external_auth_id(tenant_id)
         return _tenant_named_after_itself(cleaned)
 
+    def mark_dna_reminded(self, tenant_id: str, *, at: datetime) -> Tenant:
+        """Accept a reminder for a tenant, and keep none of it.
+
+        Args:
+            tenant_id: The platform tenant id, which here is the external id.
+            at: When the reminder was sent, which is not retained.
+
+        Returns:
+            The tenant, still carrying no reminder.
+
+        Raises:
+            ToolError: If the tenant id is empty.
+        """
+        cleaned = validate_external_auth_id(tenant_id)
+        return _tenant_named_after_itself(cleaned)
+
 
 def _tenant_named_after_itself(tenant_id: str) -> Tenant:
     """Build the tenant the passthrough directory reports for an id.
@@ -197,7 +230,8 @@ def _tenant_named_after_itself(tenant_id: str) -> Tenant:
             external id on this layer.
 
     Returns:
-        A tenant with no tier and no review, since there is no row to keep them.
+        A tenant with no tier, review, address or reminder, since there is no
+        row to keep them.
     """
     return Tenant(tenant_id=tenant_id, name=tenant_id, external_auth_id=tenant_id)
 
@@ -216,12 +250,16 @@ class InMemoryTenantDirectory:
         self._by_external: dict[str, Tenant] = {}
         self._by_tenant: dict[str, Tenant] = {}
 
-    def resolve(self, *, external_auth_id: str, name: str | None = None) -> Tenant:
+    def resolve(
+        self, *, external_auth_id: str, name: str | None = None, email: str | None = None
+    ) -> Tenant:
         """Return the tenant for an IdP organization, registering it on first sight.
 
         Args:
             external_auth_id: The IdP's identifier for the business.
             name: The business's display name from the verified claim.
+            email: The signed-in email from the verified claim, recorded when
+                present and otherwise left as it was.
 
         Returns:
             The tenant that owns the business's data.
@@ -231,12 +269,15 @@ class InMemoryTenantDirectory:
         """
         cleaned = validate_external_auth_id(external_auth_id)
         existing = self._by_external.get(cleaned)
+        kept_email = existing.contact_email if existing else None
         tenant = Tenant(
             tenant_id=existing.tenant_id if existing else new_tenant_id(),
             name=display_name_for(cleaned, name),
             external_auth_id=cleaned,
             tier=existing.tier if existing else None,
             dna_reviewed_at=existing.dna_reviewed_at if existing else None,
+            contact_email=email or kept_email,
+            dna_reminded_at=existing.dna_reminded_at if existing else None,
         )
         self._remember(tenant)
         return tenant
@@ -251,6 +292,14 @@ class InMemoryTenantDirectory:
             The tenant, or ``None`` when no tenant has that id.
         """
         return self._by_tenant.get(tenant_id)
+
+    def all(self) -> list[Tenant]:
+        """Return every registered tenant.
+
+        Returns:
+            The tenants, one per registered organization.
+        """
+        return list(self._by_tenant.values())
 
     def set_tier(self, tenant_id: str, tier: TierName) -> Tenant:
         """Record a tenant's tier, once.
@@ -288,10 +337,40 @@ class InMemoryTenantDirectory:
         Raises:
             ToolError: If no tenant has that id.
         """
+        return self._update(tenant_id, dna_reviewed_at=at)
+
+    def mark_dna_reminded(self, tenant_id: str, *, at: datetime) -> Tenant:
+        """Record when a tenant was emailed that a review is due.
+
+        Args:
+            tenant_id: The platform tenant id.
+            at: When the reminder was sent.
+
+        Returns:
+            The tenant, carrying the reminder it now has recorded.
+
+        Raises:
+            ToolError: If no tenant has that id.
+        """
+        return self._update(tenant_id, dna_reminded_at=at)
+
+    def _update(self, tenant_id: str, **fields: datetime) -> Tenant:
+        """Change a registered tenant's fields and keep the result.
+
+        Args:
+            tenant_id: The platform tenant id.
+            **fields: The fields to change.
+
+        Returns:
+            The tenant as now held.
+
+        Raises:
+            ToolError: If no tenant has that id.
+        """
         existing = self._by_tenant.get(tenant_id)
         if existing is None:
             raise ToolError(f"No tenant '{tenant_id}' is registered.")
-        tenant = existing.model_copy(update={"dna_reviewed_at": at})
+        tenant = existing.model_copy(update=fields)
         self._remember(tenant)
         return tenant
 

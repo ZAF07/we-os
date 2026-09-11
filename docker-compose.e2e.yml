@@ -73,6 +73,9 @@ services:
       ADMIN_DSN: postgresql://marketing_os:marketing_os@postgres:5432/marketing_os
       E2E_CLERK_ORG_ID: ${E2E_CLERK_ORG_ID:?set E2E_CLERK_ORG_ID in web/.env.local}
       E2E_CLERK_BLANK_ORG_ID: ${E2E_CLERK_BLANK_ORG_ID:?set E2E_CLERK_BLANK_ORG_ID in web/.env.local}
+      # Recorded on the seeded tenant as the address it is reached at, so the
+      # engine's first reminder tick has somewhere to send (ADR-0028).
+      E2E_CLERK_USER_EMAIL: ${E2E_CLERK_USER_EMAIL:?set E2E_CLERK_USER_EMAIL in web/.env.local}
       MARKETING_OS_ROOT: /repo
     volumes:
       # `init-db` runs through the CLI, which resolves the repo root before it
@@ -83,7 +86,7 @@ services:
       - -c
       - |
         marketing-os init-db --dsn "$$ADMIN_DSN" --app-role marketing_os_app &&
-        python scripts/seed_test_tenants.py --dsn "$$ADMIN_DSN" --organization-id "$$E2E_CLERK_ORG_ID" --blank-organization-id "$$E2E_CLERK_BLANK_ORG_ID"
+        python scripts/seed_test_tenants.py --dsn "$$ADMIN_DSN" --organization-id "$$E2E_CLERK_ORG_ID" --blank-organization-id "$$E2E_CLERK_BLANK_ORG_ID" --user-email "$$E2E_CLERK_USER_EMAIL"
 
   engine:
     build:
@@ -113,6 +116,12 @@ services:
       # and long enough that marking it reviewed holds while the spec walks
       # back to Home to see the item gone (ADR-0028).
       MARKETING_OS_DNA_REVIEW_INTERVAL: 20s
+      # The reminder email goes through the no-op mailer, which logs and sends
+      # nothing: this stack must never reach a real inbox. It is the engine's
+      # default, named here so nobody has to check. The URL is where the
+      # reminder's Brand page link points, which is this stack's web app.
+      MARKETING_OS_MAILER: noop
+      MARKETING_OS_APP_URL: http://localhost:3100
       MARKETING_OS_WEB: "0"
       MARKETING_OS_LOG_LEVEL: INFO
     volumes:

@@ -15,6 +15,7 @@ tenant id.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -187,6 +188,72 @@ def test_the_passthrough_directory_holds_no_tier() -> None:
     assert directory.resolve(external_auth_id=CLERK_ORG, name="Coast Coffee").tier is None
 
 
+def test_the_signed_in_email_is_recorded_and_kept_when_a_later_request_has_none() -> None:
+    """The reminder has no request to read an address from, so the directory keeps the last one."""
+    directory = InMemoryTenantDirectory()
+
+    first = directory.resolve(external_auth_id=CLERK_ORG, name="Coast Coffee")
+    assert first.contact_email is None
+    signed_in = directory.resolve(
+        external_auth_id=CLERK_ORG, name="Coast Coffee", email="sam@coastcoffee.example"
+    )
+    assert signed_in.contact_email == "sam@coastcoffee.example"
+    later = directory.resolve(external_auth_id=CLERK_ORG, name="Coast Coffee")
+
+    assert later.contact_email == "sam@coastcoffee.example"
+    found = directory.get(first.tenant_id)
+    assert found is not None and found.contact_email == "sam@coastcoffee.example"
+
+
+def test_a_colleague_signing_in_becomes_the_address_the_business_is_reached_at() -> None:
+    directory = InMemoryTenantDirectory()
+    directory.resolve(external_auth_id=CLERK_ORG, email="sam@coastcoffee.example")
+
+    assert (
+        directory.resolve(external_auth_id=CLERK_ORG, email="ana@coastcoffee.example").contact_email
+        == "ana@coastcoffee.example"
+    )
+
+
+def test_every_registered_business_is_listed_once() -> None:
+    directory = InMemoryTenantDirectory()
+    mine = directory.resolve(external_auth_id=CLERK_ORG, name="Coast Coffee")
+    theirs = directory.resolve(external_auth_id="org_someone_else", name="Someone Else")
+    directory.resolve(external_auth_id=CLERK_ORG, name="Coast Coffee Roasters")
+
+    listed = directory.all()
+
+    assert {tenant.tenant_id for tenant in listed} == {mine.tenant_id, theirs.tenant_id}
+    assert len(listed) == 2
+
+
+def test_a_reminder_is_recorded_and_read_back() -> None:
+    directory = InMemoryTenantDirectory()
+    tenant = directory.resolve(external_auth_id=CLERK_ORG, name="Coast Coffee")
+    at = datetime(2026, 9, 11, 9, 0, tzinfo=UTC)
+
+    reminded = directory.mark_dna_reminded(tenant.tenant_id, at=at)
+
+    assert reminded.dna_reminded_at == at
+    found = directory.get(tenant.tenant_id)
+    assert found is not None and found.dna_reminded_at == at
+    with pytest.raises(ToolError):
+        directory.mark_dna_reminded("ten_never_registered", at=at)
+
+
+def test_the_passthrough_directory_lists_no_one_and_keeps_no_address_or_reminder() -> None:
+    """The filesystem layer has no table, so there is no one to remind and nowhere to record it."""
+    directory = PassthroughTenantDirectory()
+    tenant = directory.resolve(
+        external_auth_id=CLERK_ORG, name="Coast Coffee", email="sam@coastcoffee.example"
+    )
+
+    assert tenant.contact_email is None
+    assert directory.all() == []
+    accepted = directory.mark_dna_reminded(tenant.tenant_id, at=datetime(2026, 9, 11, tzinfo=UTC))
+    assert accepted.dna_reminded_at is None
+
+
 def test_the_recommended_tier_is_one_of_the_three() -> None:
     assert RECOMMENDED_TIER in TIER_NAMES
 
@@ -301,18 +368,21 @@ class _RememberingDirectory(InMemoryTenantDirectory):
         super().__init__()
         self.resolved: list[str] = []
 
-    def resolve(self, *, external_auth_id: str, name: str | None = None) -> Tenant:
+    def resolve(
+        self, *, external_auth_id: str, name: str | None = None, email: str | None = None
+    ) -> Tenant:
         """Resolve as the in-memory directory does, remembering the organization.
 
         Args:
             external_auth_id: The IdP's identifier for the business.
             name: The business's display name from the verified claim.
+            email: The signed-in email from the verified claim.
 
         Returns:
             The tenant that owns the business's data.
         """
         self.resolved.append(external_auth_id)
-        return super().resolve(external_auth_id=external_auth_id, name=name)
+        return super().resolve(external_auth_id=external_auth_id, name=name, email=email)
 
 
 @pytest.fixture

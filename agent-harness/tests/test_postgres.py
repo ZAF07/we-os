@@ -229,6 +229,58 @@ def test_a_review_cannot_be_recorded_for_a_tenant_that_does_not_exist(
         )
 
 
+def test_the_signed_in_email_is_recorded_and_kept_when_a_later_request_has_none(
+    postgres_pool: Any,
+) -> None:
+    """The reminder has no request to read an address from, so the row keeps the last one."""
+    directory = PostgresTenantDirectory(postgres_pool)
+
+    first = directory.resolve(external_auth_id="org_mailed", name="Coast Coffee")
+    assert first.contact_email is None
+    signed_in = directory.resolve(
+        external_auth_id="org_mailed", name="Coast Coffee", email="sam@coastcoffee.example"
+    )
+    assert signed_in.contact_email == "sam@coastcoffee.example"
+    later = directory.resolve(external_auth_id="org_mailed", name="Coast Coffee")
+    assert later.contact_email == "sam@coastcoffee.example"
+    colleague = directory.resolve(
+        external_auth_id="org_mailed", name="Coast Coffee", email="ana@coastcoffee.example"
+    )
+    assert colleague.contact_email == "ana@coastcoffee.example"
+    found = directory.get(first.tenant_id)
+    assert found is not None and found.contact_email == "ana@coastcoffee.example"
+
+
+def test_every_registered_tenant_is_listed_once(postgres_pool: Any) -> None:
+    directory = PostgresTenantDirectory(postgres_pool)
+    mine = directory.resolve(external_auth_id="org_listed_a", name="A")
+    theirs = directory.resolve(external_auth_id="org_listed_b", name="B")
+    directory.resolve(external_auth_id="org_listed_a", name="A renamed")
+
+    listed = {tenant.tenant_id: tenant for tenant in directory.all()}
+
+    assert {mine.tenant_id, theirs.tenant_id} <= set(listed)
+    assert listed[mine.tenant_id].name == "A renamed"
+    assert len(listed) == len(directory.all())
+
+
+def test_a_reminder_is_recorded_and_read_back_by_every_path(postgres_pool: Any) -> None:
+    directory = PostgresTenantDirectory(postgres_pool)
+    tenant = directory.resolve(external_auth_id="org_reminded", name="Coast Coffee")
+    at = datetime(2026, 9, 11, 9, 0, tzinfo=UTC)
+
+    reminded = directory.mark_dna_reminded(tenant.tenant_id, at=at)
+
+    assert reminded.dna_reminded_at == at
+    found = directory.get(tenant.tenant_id)
+    assert found is not None and found.dna_reminded_at == at
+    assert directory.resolve(external_auth_id="org_reminded").dna_reminded_at == at
+    listed = [t for t in directory.all() if t.tenant_id == tenant.tenant_id]
+    assert listed[0].dna_reminded_at == at
+    with pytest.raises(ToolError):
+        directory.mark_dna_reminded("ten_missing", at=at)
+
+
 # --- The shared run claim -------------------------------------------------------
 
 

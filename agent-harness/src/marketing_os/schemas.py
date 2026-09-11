@@ -92,6 +92,14 @@ class Tenant(BaseModel):
             marking it reviewed or by editing it — or ``None`` when it never
             has. Whether a review is *due* is derived from this on every read,
             never stored (ADR-0028).
+        contact_email: The address the platform reaches the business at: the
+            signed-in email of the person who last made a request, from the
+            identity provider's verified claim. ``None`` until a request has
+            carried one. The reminder has no request to read an address from,
+            which is why it is kept here (ADR-0028).
+        dna_reminded_at: When the business was last emailed that a review is
+            due, or ``None`` if never. One reminder per review interval is
+            derived from this, the way due-ness is from ``dna_reviewed_at``.
     """
 
     tenant_id: str
@@ -99,6 +107,8 @@ class Tenant(BaseModel):
     external_auth_id: str
     tier: TierName | None = None
     dna_reviewed_at: datetime | None = None
+    contact_email: str | None = None
+    dna_reminded_at: datetime | None = None
 
 
 class VerifiedIdentity(BaseModel):
@@ -126,6 +136,24 @@ class VerifiedIdentity(BaseModel):
     email: str | None = None
     business_name: str | None = None
     tier: TierName | None = None
+
+
+class EmailMessage(BaseModel):
+    """One email the platform sends a business, as handed to the Mailer port.
+
+    Plain text only. The one email the platform sends today is the Brand DNA
+    review reminder (ADR-0028), and a reminder has nothing to show that words
+    cannot say.
+
+    Attributes:
+        to: The recipient's address.
+        subject: The subject line.
+        text: The plain-text body.
+    """
+
+    to: str
+    subject: str
+    text: str
 
 
 class Discrepancy(BaseModel):

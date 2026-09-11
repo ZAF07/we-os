@@ -9,7 +9,8 @@ The same row records the business's tier, once (ADR-0027): a fact the product
 will bill on belongs in the platform's own table, not only in a vendor's
 organization metadata. It also records when the business last reviewed its
 Brand DNA (ADR-0028), the one timestamp both the Review item and the reminder
-email are derived from.
+email are derived from — and, for that email, the address the business is
+reached at and when it was last reminded.
 """
 
 from __future__ import annotations
@@ -26,7 +27,9 @@ from marketing_os.adapters.tenants import (
 from marketing_os.errors import ToolError
 from marketing_os.schemas import Tenant, TierName
 
-TENANT_COLUMNS = "tenant_id, name, external_auth_id, tier, dna_reviewed_at"
+TENANT_COLUMNS = (
+    "tenant_id, name, external_auth_id, tier, dna_reviewed_at, contact_email, dna_reminded_at"
+)
 
 
 def _tenant_from_row(row: Any) -> Tenant:
@@ -44,6 +47,8 @@ def _tenant_from_row(row: Any) -> Tenant:
         external_auth_id=row[2],
         tier=row[3],
         dna_reviewed_at=row[4],
+        contact_email=row[5],
+        dna_reminded_at=row[6],
     )
 
 
@@ -58,22 +63,27 @@ class PostgresTenantDirectory:
         """
         self._pool = pool
 
-    def resolve(self, *, external_auth_id: str, name: str | None = None) -> Tenant:
+    def resolve(
+        self, *, external_auth_id: str, name: str | None = None, email: str | None = None
+    ) -> Tenant:
         """Return the tenant for an IdP organization, registering it on first sight.
 
         A business's first authenticated request provisions its tenant; later
         requests find the same row, so renaming the organization in the IdP
         keeps the platform's copy current without disturbing ``tenant_id`` or
-        the tier recorded on it.
+        the tier recorded on it. The signed-in email is recorded the same way:
+        a request carrying one makes it the address the business is reached at,
+        and a request carrying none leaves the recorded address alone.
 
         This runs on **every authenticated request**, so the common case — a
-        known business whose name has not changed — is a read. Writing
-        unconditionally would leave a dead row per request for the vacuum to
-        clean up.
+        known business whose name and address have not changed — is a read.
+        Writing unconditionally would leave a dead row per request for the
+        vacuum to clean up.
 
         Args:
             external_auth_id: The IdP's identifier for the business.
             name: The business's display name from the verified claim.
+            email: The signed-in email from the verified claim, if it carried one.
 
         Returns:
             The tenant that owns the business's data.
@@ -88,13 +98,15 @@ class PostgresTenantDirectory:
                 f"SELECT {TENANT_COLUMNS} FROM tenants WHERE external_auth_id = %s",
                 (cleaned,),
             ).fetchone()
-            if row is not None and row[1] == display_name:
+            if row is not None and row[1] == display_name and (email is None or row[5] == email):
                 return _tenant_from_row(row)
             row = connection.execute(
-                "INSERT INTO tenants (tenant_id, name, external_auth_id) VALUES (%s, %s, %s) "
-                "ON CONFLICT (external_auth_id) DO UPDATE SET name = EXCLUDED.name "
+                "INSERT INTO tenants (tenant_id, name, external_auth_id, contact_email) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (external_auth_id) DO UPDATE SET name = EXCLUDED.name, "
+                "contact_email = COALESCE(EXCLUDED.contact_email, tenants.contact_email) "
                 f"RETURNING {TENANT_COLUMNS}",
-                (new_tenant_id(), display_name, cleaned),
+                (new_tenant_id(), display_name, cleaned, email),
             ).fetchone()
         return _tenant_from_row(row)
 
@@ -115,6 +127,18 @@ class PostgresTenantDirectory:
         if row is None:
             return None
         return _tenant_from_row(row)
+
+    def all(self) -> list[Tenant]:
+        """Return every registered tenant.
+
+        Returns:
+            The tenants, oldest registration first.
+        """
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                f"SELECT {TENANT_COLUMNS} FROM tenants ORDER BY created_at, tenant_id"
+            ).fetchall()
+        return [_tenant_from_row(row) for row in rows]
 
     def set_tier(self, tenant_id: str, tier: TierName) -> Tenant:
         """Record a tenant's tier, once.
@@ -163,10 +187,41 @@ class PostgresTenantDirectory:
         Raises:
             ToolError: If no tenant has that id.
         """
+        return self._record_instant("dna_reviewed_at", tenant_id, at)
+
+    def mark_dna_reminded(self, tenant_id: str, *, at: datetime) -> Tenant:
+        """Record when a tenant was emailed that a review is due.
+
+        Args:
+            tenant_id: The platform tenant id.
+            at: When the reminder was sent.
+
+        Returns:
+            The tenant, carrying the reminder it now has recorded.
+
+        Raises:
+            ToolError: If no tenant has that id.
+        """
+        return self._record_instant("dna_reminded_at", tenant_id, at)
+
+    def _record_instant(self, column: str, tenant_id: str, at: datetime) -> Tenant:
+        """Write one of the tenant's timestamp columns and return the row.
+
+        Args:
+            column: The column to write — one of the two review timestamps,
+                named by the caller rather than by any input.
+            tenant_id: The platform tenant id.
+            at: The instant to record.
+
+        Returns:
+            The tenant as now recorded.
+
+        Raises:
+            ToolError: If no tenant has that id.
+        """
         with self._pool.connection() as connection:
             row = connection.execute(
-                "UPDATE tenants SET dna_reviewed_at = %s WHERE tenant_id = %s "
-                f"RETURNING {TENANT_COLUMNS}",
+                f"UPDATE tenants SET {column} = %s WHERE tenant_id = %s RETURNING {TENANT_COLUMNS}",
                 (at, tenant_id),
             ).fetchone()
         if row is None:

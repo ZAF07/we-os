@@ -72,6 +72,14 @@ _Avoid_: follow-up question, agent question, inferred detail, assumption.
 The platform's periodic ask that the business look at its Brand DNA and Clarifications again, because facts drift. A review is **due** when more than the review interval (`MARKETING_OS_DNA_REVIEW_INTERVAL`: a week by default, a minute in development) has passed since the DNA was last reviewed — by the **Reviewed** action on the Brand page, or by saving or editing any answer, so the business is never asked to review what it just changed. A business that has never marked one counts from when its answers were last saved; an incomplete DNA is owed answers, not a review. Due-ness is derived from that one `dna_reviewed_at` timestamp on every read and never stored, so the **Review** item on Home and the reminder email cannot disagree (see [ADR-0028](docs/adr/0028-clarifications-are-brand-dna-the-specialist-asks-for.md)).
 _Avoid_: audit, refresh, expiry, stale DNA (Stale is a property of deliverable versions, never of the DNA).
 
+**Review Reminder**:
+The one email the platform sends a business: that its Brand DNA Review is due, with a link to the Brand page. Sent to the business's Contact Email once per review interval while the review stays due, and never for a review that is not due, so an untouched review is mentioned once a period and a business that reviews hears nothing. Whether one is owed is derived from the review and from when the business was last reminded (`dna_reminded_at`), recorded only once a message was actually sent; a business with no address is skipped and tried again next tick. Sent by one loop inside the engine process — there is no job framework and no worker (see [ADR-0028](docs/adr/0028-clarifications-are-brand-dna-the-specialist-asks-for.md), [ADR-0025](docs/adr/0025-one-campaign-one-person-and-a-single-worker.md)).
+_Avoid_: notification, nudge, digest, alert, marketing email (the platform sends no marketing).
+
+**Contact Email**:
+The address the platform reaches a business at: the signed-in email of the person who last made a request for that business, taken from the identity provider's verified claim and recorded on the tenant. It belongs to the business, not to a person — a colleague signing in becomes the address — and a business no one has signed in to since the address was first recorded has none.
+_Avoid_: owner email, user email, account email, the tenant's email (a tenant is a business; the address is where it is reached).
+
 **Campaign Goal**:
 The per-campaign business objective and success metrics (`campaigns/<slug>/goal.md`). The DNA is shared across campaigns; the goal is specific to one. It never names the business — a tenant is one business, so which business the campaign belongs to is already known.
 _Avoid_: objective doc, spec.
@@ -194,6 +202,10 @@ _Avoid_: search tool, web tool, scraper.
 An ordered composition of web backends that is itself a `WebSearchTool`, so the graph wiring is unchanged. `search` tries each backend in priority order and falls through to the next on a recoverable `ToolError` or an empty result set; the final backend's outcome (result or raised error) surfaces unchanged, so a single configured backend behaves exactly as one backend alone. The order is set by `MARKETING_OS_WEB_BACKENDS` — a comma-separated, priority-ordered list of `tavily` / `google` / `duckduckgo` / `noop` (default `tavily,google,duckduckgo`, i.e. Tavily's JSON API first, with the Google → DuckDuckGo scrapers as fallback; see [ADR-0011](docs/adr/0011-tavily-primary-web-backend.md)). When `tavily` is in the list but `MARKETING_OS_TAVILY_API_KEY` is unset it is **skipped with a warning** (omitted from the chain) and the run proceeds on the scrapers. Recoverable failures — Tavily quota/5xx/network/timeout, or Google's anti-automation responses (consent interstitial, `/sorry/` CAPTCHA, zero-parse markup) — are raised as recoverable `ToolError`s so the chain moves on rather than crashing the run; a rejected Tavily key instead raises a terminal `ConfigError` that stops the run. (See [ADR-0008](docs/adr/0008-google-scraping-web-search-with-fallback-chain.md) for why the fallback engines are scraped rather than called via an official API.)
 _Avoid_: retry chain, backend pool, load balancer.
 
+**Mailer**:
+The port through which the platform sends email to a business (`Mailer`). Two adapters, chosen by `MARKETING_OS_MAILER`: **Resend**, built only when selected and refused at startup without its key and a verified sender; and the **no-op** mailer, the default, which logs what it would have sent and sends nothing, so no test or local run can reach a real inbox. The Review Reminder is its only sender.
+_Avoid_: email service, notifier, SMTP client, transport.
+
 **KPI tiers**:
 The three levels every campaign must define, which ladder up to each other — **Business KPI** (revenue, leads, bookings, retention), **Marketing KPI** (CTR, CPC, CPM, conversion rate), **Creative KPI** (hook rate, watch time, engagement rate).
 _Avoid_: metrics, goals (unqualified).
@@ -250,7 +262,7 @@ Tenant-Owned Documents resolve through a `DocumentStore` port. Three adapters sh
 
 Setting `MARKETING_OS_POSTGRES_DSN` moves four things at once, because they are one durability decision (see [ADR-0014](docs/adr/0014-postgres-system-of-record-and-split-governance.md), [ADR-0024](docs/adr/0024-platform-owned-tenant-ids-and-explicit-run-abandonment.md)):
 
-- `tenants(tenant_id, name, external_auth_id)` — the Tenant Directory.
+- `tenants(tenant_id, name, external_auth_id, tier, dna_reviewed_at, contact_email, dna_reminded_at)` — the Tenant Directory, and the platform's own facts about a business: its Tier, its Brand DNA Review, its Contact Email and its last Review Reminder.
 - `documents(tenant_id, path, content)` — Tenant-Owned Documents, with **row-level security** scoping every query to the tenant set on its transaction, so a forgotten filter returns nothing rather than everything.
 - `runs(run_id, tenant_id, user_id, slug, status)` — the Run Store, whose partial unique index on `(tenant_id, slug) WHERE status = 'running'` is what makes the one-campaign-one-person guard a constraint rather than a check.
 - `questionnaires(version, published_at, questions)` — the published versions of the Questionnaire. Not tenant-partitioned: every business answers the same curated questions, and publishing a version is what changes the wizard and the DNA Gate together, with no deploy.

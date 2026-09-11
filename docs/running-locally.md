@@ -51,6 +51,21 @@ model, so a missing key surfaces when you press run, not at boot.
 `MARKETING_OS_TAVILY_API_KEY` makes it use Tavily rather than falling back to
 scraping ([ADR-0011](adr/0011-tavily-primary-web-backend.md)). Off by default.
 
+### Reminder email — optional
+
+When a business's Brand DNA review is due, the owner is emailed once per review
+interval ([ADR-0028](adr/0028-clarifications-are-brand-dna-the-specialist-asks-for.md)).
+`MARKETING_OS_MAILER` picks the mailer: `noop`, the default, logs what it would
+have sent and sends nothing, so with the dev stack's one-minute interval you
+can watch the reminder go out in `make dev-logs` without an inbox anywhere.
+`resend` sends real mail and needs `MARKETING_OS_RESEND_API_KEY` and
+`MARKETING_OS_MAIL_FROM` (a sender on a domain verified with Resend); the
+engine refuses to start with `resend` and either missing. `MARKETING_OS_APP_URL`
+is where the email's Brand page link points.
+
+The address is the signed-in email from your Clerk session token, so the token
+has to carry one — see step 3 of the checklist in `.env.example`.
+
 ## First run
 
 1. `make dev`, then open http://localhost:3000
