@@ -159,3 +159,42 @@ def test_check_gate_requires_a_question_set(settings):
     # against, so no entrypoint can enforce a weaker rule than another.
     with pytest.raises(TypeError):
         check_gate(settings, TENANT, SLUG, store=_store(settings))
+
+
+def test_gate_is_unchanged_by_any_number_of_clarifications(settings):
+    """A question a specialist asked can never lock the business out of running (ADR-0028)."""
+    from marketing_os.questionnaire import render_brand_dna
+    from marketing_os.schemas import BrandDnaRecord, Clarification, DnaAnswer
+
+    asked = [
+        Clarification(
+            id=f"clr_{index}",
+            question=f"Question {index}?",
+            reason="Because.",
+            answer="An answer.",
+            stage="research",
+            slug=SLUG,
+            answered_at="2026-09-11T09:00:00Z",
+        )
+        for index in range(3)
+    ]
+    complete = BrandDnaRecord(
+        questionnaire_version=SEED_QUESTIONNAIRE.version,
+        answers=[
+            DnaAnswer(question_id=question.id, answer="filled")
+            for question in SEED_QUESTIONNAIRE.required_questions
+        ],
+        clarifications=asked,
+    )
+    incomplete = complete.model_copy(update={"answers": complete.answers[1:]})
+    store = _store(settings)
+
+    store.write(TENANT, "dna.md", render_brand_dna(SEED_QUESTIONNAIRE, complete, business_name="A"))
+    assert check_gate(settings, TENANT, SLUG, store=store, questionnaire=SEED_QUESTIONNAIRE).ok
+
+    store.write(
+        TENANT, "dna.md", render_brand_dna(SEED_QUESTIONNAIRE, incomplete, business_name="A")
+    )
+    report = check_gate(settings, TENANT, SLUG, store=store, questionnaire=SEED_QUESTIONNAIRE)
+    assert not report.ok
+    assert len(report.dna_issues) == 1

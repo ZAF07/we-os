@@ -1,13 +1,22 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import {
+  answerClarifications,
   getCampaign,
   getRunClarifications,
   listActiveRuns,
   EngineError,
   type Campaign,
+  type ClarificationAnswer,
   type RunClarifications,
 } from "@/lib/engine";
+import { refusalMessage } from "@/lib/refusal";
+
+export interface ActionResult {
+  error: string | null;
+}
 
 export interface ClarificationsView {
   campaign: Campaign;
@@ -49,5 +58,38 @@ export async function loadClarifications(
       return { campaign, pending: null };
     }
     throw error;
+  }
+}
+
+/**
+ * Sends the owner's answers; they join the Brand DNA and the run continues.
+ *
+ * Every screen that shows the campaign or the Brand DNA is refreshed, since
+ * the run's status, the queue on Home, and the DNA all change at once.
+ *
+ * Args:
+ *   slug: The campaign the run belongs to, for revalidation.
+ *   runId: The run holding for the answers.
+ *   answers: One answer per pending question.
+ *
+ * Returns:
+ *   Nothing on success, or the engine's reason for refusing — a run no longer
+ *   asking, a question left blank, spent credits.
+ */
+export async function answerClarificationsAction(
+  slug: string,
+  runId: string,
+  answers: ClarificationAnswer[],
+): Promise<ActionResult> {
+  try {
+    await answerClarifications(runId, answers);
+    revalidatePath(`/campaigns/${slug}`);
+    revalidatePath(`/campaigns/${slug}/clarifications`);
+    revalidatePath("/campaigns");
+    revalidatePath("/brand");
+    revalidatePath("/");
+    return { error: null };
+  } catch (error) {
+    return { error: refusalMessage(error) };
   }
 }

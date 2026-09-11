@@ -564,6 +564,34 @@ class DnaAnswer(BaseModel):
     answer: str
 
 
+class Clarification(BaseModel):
+    """One fact a specialist asked the business for, with the business's answer.
+
+    Part of the Brand DNA, stored beside the questionnaire answers and rendered
+    under its own Clarifications section — never Required, so the DNA Gate and
+    the completeness report ignore it (ADR-0028). The question is the
+    specialist's, written for this one business; the answer is the business's
+    own, never a model's.
+
+    Attributes:
+        id: The stable id the Clarification is addressed by when edited later.
+        question: What the specialist asked, exactly as it was put to the owner.
+        reason: Why the stage needed it, as the specialist gave it.
+        answer: The owner's answer, exactly as they wrote it.
+        stage: The pipeline stage that asked.
+        slug: The campaign the stage was working on when it asked.
+        answered_at: When the answer was saved, as an ISO-8601 timestamp.
+    """
+
+    id: str
+    question: str
+    reason: str
+    answer: str
+    stage: str
+    slug: str
+    answered_at: str
+
+
 class BrandDnaRecord(BaseModel):
     """A tenant's structured Brand DNA answers and the version they were given against.
 
@@ -577,11 +605,14 @@ class BrandDnaRecord(BaseModel):
         updated_at: When an answer was last saved, as an ISO-8601 timestamp, or
             ``None`` when the business has answered nothing yet.
         answers: The answers, one per answered question.
+        clarifications: Every fact a specialist asked for and the business
+            answered, in the order they were answered (ADR-0028).
     """
 
     questionnaire_version: int
     updated_at: str | None = None
     answers: list[DnaAnswer] = Field(default_factory=list)
+    clarifications: list[Clarification] = Field(default_factory=list)
 
     def answer_for(self, question_id: str) -> str | None:
         """Return the answer text for a question.

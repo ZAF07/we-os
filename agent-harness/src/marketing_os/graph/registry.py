@@ -44,6 +44,7 @@ from marketing_os.adapters.runs import (
     CANCELLED,
     COMPLETED,
     FAILED,
+    HELD_STATUSES,
     INTERRUPTED,
     LIVE_STATUSES,
     RUNNING,
@@ -236,26 +237,29 @@ class RunRegistry:
         _LOGGER.info("run.registered run_id=%s slug=%s stage=%s", run_id, slug, stage)
         return record
 
-    def mark_awaiting_approval(self, run_id: str, tenant: str) -> RunRecord | None:
-        """Re-record a run as halted at an Approval Gate.
+    def mark_held(self, run_id: str, tenant: str, status: str) -> RunRecord | None:
+        """Re-record a run as halted on a person, at a gate or for an answer.
 
-        Reconciliation only, for the case where the checkpoint holds a live gate
-        but the store says otherwise — a startup sweep that raced a halt. The
-        checkpoint is the authority on whether a person is being waited on, so
-        the store is brought back into line rather than the owner being refused.
+        Reconciliation only, for the case where the checkpoint holds a live
+        hold but the store says otherwise — a startup sweep that raced a halt.
+        The checkpoint is the authority on whether a person is being waited on,
+        so the store is brought back into line rather than the owner being
+        refused.
 
         Args:
             run_id: The run whose status to correct.
             tenant: The tenant the caller acts for.
+            status: ``awaiting_approval`` or ``awaiting_clarification``, as the
+                checkpoint's hold says.
 
         Returns:
             The corrected record, or ``None`` when the run is terminal and so
             can no longer be resumed.
         """
         record = self._store.get(run_id, tenant)
-        if record is None or record.status not in (RUNNING, AWAITING_APPROVAL):
+        if record is None or record.status not in LIVE_STATUSES:
             return None
-        return self._store.set_live_status(run_id, AWAITING_APPROVAL)
+        return self._store.set_live_status(run_id, status)
 
     def resume(
         self,
@@ -265,12 +269,13 @@ class RunRegistry:
         user_id: str,
         launch: Callable[[], Coroutine[Any, Any, CampaignResult]],
     ) -> RunRecord | None:
-        """Restart a run halted at an Approval Gate, carrying the person's decision.
+        """Restart a run halted on a person, carrying what they decided or answered.
 
         The same run continues rather than a new one starting: the ``run_id``,
         the campaign claim and the checkpoint thread are all unchanged, so
-        approving is one action from the owner's point of view and one run from
-        the system's (ADR-0015).
+        approving, or answering a specialist's question, is one action from the
+        owner's point of view and one run from the system's (ADR-0015,
+        ADR-0028).
 
         Only the person who started the run may resume it, for the same reason
         only they may cancel it: a campaign is driven by one person at a time. A
@@ -287,7 +292,7 @@ class RunRegistry:
             with that id.
         """
         record = self._store.get(run_id, tenant)
-        if record is None or record.status != AWAITING_APPROVAL:
+        if record is None or record.status not in HELD_STATUSES:
             return None
         if record.user_id and record.user_id != user_id:
             return None

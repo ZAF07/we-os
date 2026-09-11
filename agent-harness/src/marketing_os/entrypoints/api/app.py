@@ -28,6 +28,7 @@ Endpoints:
   POST /runs/{run_id}/approve           -> approve the stage at the gate; the run resumes
   POST /runs/{run_id}/revise            -> send the stage back with feedback (new version)
   GET  /runs/{run_id}/clarifications    -> the questions a halted run is asking the business
+  POST /runs/{run_id}/clarifications    -> answer them; they join the Brand DNA and the run resumes
   GET  /runs/{run_id}/stream            -> attach to a run and tail its trace as SSE
 
 Every route except ``/health`` requires a verified bearer token, and the tenant
@@ -42,11 +43,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, replace
 from functools import lru_cache
 from typing import TYPE_CHECKING, Annotated
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -65,6 +67,7 @@ from marketing_os.adapters.observability import (
     read_events,
     tail_trace,
 )
+from marketing_os.adapters.questionnaire import now_iso
 from marketing_os.adapters.runs import (
     AWAITING_APPROVAL,
     AWAITING_CLARIFICATION,
@@ -131,6 +134,7 @@ from marketing_os.schemas import (
     ApprovalDecision,
     BrandDnaRecord,
     CampaignResult,
+    Clarification,
     Consumption,
     DeliverableVersion,
     DnaAnswer,
@@ -795,7 +799,9 @@ def brand_dna(identity: Identity) -> dict[str, object]:
 
     Returns:
         The question-set version answered, when it was last saved, the canonical
-        markdown projection, and the structured answers behind it.
+        markdown projection, the structured answers behind it, and every
+        Clarification a specialist asked for and the business answered — its
+        own section, never Required (ADR-0028).
     """
     published, record = read_brand_dna(identity.tenant_id)
     return {
@@ -807,6 +813,7 @@ def brand_dna(identity: Identity) -> dict[str, object]:
             business_name=identity.business_name or identity.tenant_id,
         ),
         "answers": [answer.model_dump() for answer in record.answers],
+        "clarifications": [item.model_dump() for item in record.clarifications],
     }
 
 
@@ -2044,31 +2051,88 @@ async def _resume_run(
         HTTPException: 404 if the caller has no run with that id; 409 if the
             named stage is not the one holding the run.
     """
-    settings = get_settings()
-    registry = get_registry()
-    record = registry.get(run_id, identity.tenant_id)
+    record = get_registry().get(run_id, identity.tenant_id)
     if record is None:
         raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
-    tenant = record.tenant_id
-    slug = record.slug
     waiting = await awaiting_approval_stage(
-        tenant, slug, stage=record.stage, checkpointer=get_checkpointer()
+        record.tenant_id, record.slug, stage=record.stage, checkpointer=get_checkpointer()
     )
     if waiting != decision.stage_key:
         raise _http_error(StageNotAwaitingApprovalError(decision.stage_key))
-    if record.status != AWAITING_APPROVAL:
+    await _relaunch(
+        record,
+        identity,
+        held_as=AWAITING_APPROVAL,
+        resume=decision.model_dump(),
+        refusal=StageNotAwaitingApprovalError(decision.stage_key),
+    )
+    return {"run_id": run_id, "slug": record.slug, "stage": decision.stage_key, "status": RUNNING}
+
+
+async def _relaunch(
+    record: RunRecord,
+    identity: VerifiedIdentity,
+    *,
+    held_as: str,
+    resume: dict[str, object],
+    refusal: MarketingOSError,
+    save: Callable[[], None] | None = None,
+) -> None:
+    """Continue a halted run on its own checkpoint thread with what a person supplied.
+
+    Shared by approving, revising and answering: each has already confirmed,
+    from the checkpoint, that the run is holding for exactly that (ADR-0015,
+    ADR-0028). What is left is the same for all three — bring the run store
+    back into line if it disagrees with the checkpoint, and resume the run.
+
+    The run store is read again here, after the checkpoint read the caller
+    awaited, and everything from that read to the resume is synchronous. The
+    service is one event loop, so nothing else can resume the same run inside
+    that window — which is what lets ``save`` write the answers with no risk
+    of a second submission, or a colleague's, writing them too: anything that
+    does not pass is refused before the save runs.
+
+    Args:
+        record: The run's record, as the caller read it before its checkpoint read.
+        identity: The verified identity resuming the run.
+        held_as: The status the record should be holding at, given what the
+            checkpoint says: ``awaiting_approval`` or ``awaiting_clarification``.
+        resume: The payload the pending ``interrupt()`` returns with.
+        refusal: The error to answer with when the run turns out not to be
+            resumable after all — it finished, or another request resumed it.
+        save: What to record before the run continues, if anything; the
+            answers to a clarification, which the resumed stage reads.
+
+    Raises:
+        HTTPException: ``refusal`` when the run cannot be resumed; 404 when the
+            caller does not hold it — a colleague's run reads as absent, exactly
+            as cancelling does.
+    """
+    settings = get_settings()
+    registry = get_registry()
+    run_id = record.run_id
+    tenant = record.tenant_id
+    slug = record.slug
+    current = registry.get(run_id, tenant)
+    if current is None or (current.user_id and current.user_id != identity.user_id):
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
+    if current.status != held_as:
+        if current.status != record.status:
+            raise _http_error(refusal)
         _LOGGER.warning(
-            "run.gate_out_of_sync run_id=%s slug=%s recorded=%s checkpoint_stage=%s",
+            "run.hold_out_of_sync run_id=%s slug=%s recorded=%s checkpoint=%s",
             run_id,
             slug,
-            record.status,
-            waiting,
+            current.status,
+            held_as,
         )
-        if registry.mark_awaiting_approval(run_id, tenant) is None:
-            raise _http_error(StageNotAwaitingApprovalError(decision.stage_key))
+        if registry.mark_held(run_id, tenant, held_as) is None:
+            raise _http_error(refusal)
+    if save is not None:
+        save()
 
     async def relaunch() -> CampaignResult:
-        """Continue the halted run from its Approval Gate.
+        """Continue the halted run from where it is holding.
 
         Returns:
             The structured campaign result.
@@ -2084,7 +2148,7 @@ async def _resume_run(
             deliverable_store=get_deliverable_store(),
             usage_ledger=get_usage_ledger(),
             questionnaire=get_questionnaire_store().published(),
-            resume=Command(resume=decision.model_dump()),
+            resume=Command(resume=resume),
         )
 
     resumed = registry.resume(
@@ -2092,7 +2156,6 @@ async def _resume_run(
     )
     if resumed is None:
         raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
-    return {"run_id": run_id, "slug": slug, "stage": decision.stage_key, "status": RUNNING}
 
 
 @app.post("/runs/{run_id}/approve")
@@ -2184,6 +2247,137 @@ async def run_clarifications(run_id: str, identity: Identity) -> dict[str, objec
         "stage": hold.stage,
         "questions": [question.model_dump() for question in hold.questions],
     }
+
+
+class ClarificationAnswer(BaseModel):
+    """One answer to one question a halted run is asking.
+
+    Attributes:
+        question: The question, exactly as the run asked it. A specialist's
+            question has no id, so its text is what pairs the answer to it.
+        answer: The owner's answer, in their own words.
+    """
+
+    question: str
+    answer: str
+
+
+class AnswerClarifications(BaseModel):
+    """Request body for answering every question a halted run is asking.
+
+    All of a stage's questions are answered together, because the stage re-runs
+    once from a Brand DNA that carries every answer (ADR-0028); answering one
+    and leaving another would re-run it on a guess.
+
+    Attributes:
+        answers: One answer per pending question. A blank answer counts as no
+            answer, so the one rule — every question needs one — is checked in
+            one place, where the answers meet the questions.
+    """
+
+    answers: list[ClarificationAnswer]
+
+
+def _clarifications_from(
+    hold: RunHold, answers: list[ClarificationAnswer], slug: str
+) -> list[Clarification]:
+    """Pair the owner's answers with the questions the run is holding for.
+
+    Args:
+        hold: What the run is asking, read from its checkpoint.
+        answers: The owner's answers, one per question.
+        slug: The campaign the stage was working on when it asked.
+
+    Returns:
+        The Clarifications to record, in the order the questions were asked.
+
+    Raises:
+        ValidationError: If an answer names a question the run did not ask, or
+            a question the run asked was left unanswered or answered blank.
+    """
+    asked = {question.question.strip(): question for question in hold.questions}
+    given = {item.question.strip(): item.answer.strip() for item in answers if item.answer.strip()}
+    unknown = sorted(set(given) - set(asked))
+    if unknown:
+        raise ValidationError(f"The run did not ask: {'; '.join(unknown)}")
+    unanswered = [text for text in asked if text not in given]
+    if unanswered:
+        raise ValidationError(
+            f"Every question needs an answer. Unanswered: {'; '.join(unanswered)}"
+        )
+    answered_at = now_iso()
+    return [
+        Clarification(
+            id=f"clr_{uuid4().hex}",
+            question=question.question,
+            reason=question.reason,
+            answer=given[text],
+            stage=hold.stage,
+            slug=slug,
+            answered_at=answered_at,
+        )
+        for text, question in asked.items()
+    ]
+
+
+@app.post("/runs/{run_id}/clarifications", status_code=202)
+async def answer_clarifications(
+    run_id: str, body: AnswerClarifications, identity: Identity
+) -> dict[str, object]:
+    """Answer a halted run's questions; the answers join the Brand DNA and the run continues.
+
+    Each answer is saved as a Clarification — part of the business's Brand DNA,
+    under its own section, never Required — and the DNA markdown is re-rendered
+    before the run resumes, so the stage re-enters seeded with the facts it
+    asked for. Every later campaign reads the same DNA, so the same fact is
+    asked for once (ADR-0028). The run continues through the same mechanism an
+    approval uses: the same run id, claim and checkpoint thread.
+
+    Args:
+        run_id: The halted run.
+        body: One answer per pending question.
+        identity: The verified identity that must own the run.
+
+    Returns:
+        The resumed run's id, slug, the stage re-running, and ``running`` status.
+
+    Raises:
+        HTTPException: 404 if the caller has no such run; 409 if the run is not
+            holding for a clarification; 402 if the tenant's credits are spent,
+            since the stage re-runs and that bills; 422 if a question is left
+            unanswered, an answer is blank, or an answer names a question the
+            run did not ask.
+    """
+    record = get_registry().get(run_id, identity.tenant_id)
+    if record is None:
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
+    hold = await pending_hold(
+        record.tenant_id, record.slug, stage=record.stage, checkpointer=get_checkpointer()
+    )
+    if hold is None or hold.kind != CLARIFICATION_HOLD:
+        raise _http_error(RunNotAwaitingClarificationError(run_id))
+    _refuse_when_quota_spent(identity.tenant_id)
+    try:
+        clarifications = _clarifications_from(hold, body.answers, record.slug)
+    except ValidationError as exc:
+        raise _http_error(exc) from exc
+
+    def save_answers() -> None:
+        """Record the answers on the Brand DNA and re-render the markdown the re-run reads."""
+        updated = get_answer_store().add_clarifications(
+            identity.tenant_id, clarifications=clarifications
+        )
+        project_brand_dna(identity, get_questionnaire_store().published(), updated)
+
+    await _relaunch(
+        record,
+        identity,
+        held_as=AWAITING_CLARIFICATION,
+        resume={"answered": True},
+        refusal=RunNotAwaitingClarificationError(run_id),
+        save=save_answers,
+    )
+    return {"run_id": run_id, "slug": record.slug, "stage": hold.stage, "status": RUNNING}
 
 
 def _refuse_when_quota_spent(tenant: str) -> None:

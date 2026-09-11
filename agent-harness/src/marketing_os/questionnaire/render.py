@@ -16,11 +16,20 @@ agree because they are the same module.
 from __future__ import annotations
 
 from marketing_os.markdown import render_field
-from marketing_os.schemas import BrandDnaRecord, Questionnaire
+from marketing_os.schemas import BrandDnaRecord, Clarification, Questionnaire
 
 REQUIRED_HEADING = "## Required (the agent will not start without these)"
 RECOMMENDED_HEADING = "## Recommended (sharper inputs = sharper output)"
 RECOMMENDED_SECTION = "Recommended"
+CLARIFICATIONS_HEADING = "## Clarifications"
+"""The heading every answered Clarification is rendered under, after the
+questionnaire sections (ADR-0028). Spelled once so the render and anything that
+looks for the section in a rendered DNA agree."""
+
+_CLARIFICATIONS_NOTE = (
+    "Facts a specialist asked the business for mid-campaign, answered by the business "
+    "(ADR-0028). Never Required. Read them as you read the sections above."
+)
 
 BUSINESS_NAME_QUESTION = "q_business_name"
 
@@ -92,4 +101,49 @@ def render_brand_dna(
     body.extend(required_lines)
     if recommended_lines:
         body.extend(["", RECOMMENDED_HEADING, "", *recommended_lines])
+    if record.clarifications:
+        body.extend(["", CLARIFICATIONS_HEADING, "", _CLARIFICATIONS_NOTE])
+        for clarification in record.clarifications:
+            body.extend(_render_clarification(clarification))
     return "\n".join(body).strip() + "\n"
+
+
+def _render_clarification(clarification: Clarification) -> list[str]:
+    """Render one answered Clarification as its own titled block.
+
+    Nothing in the block can read as a ``- **label:** value`` field line, so the
+    walker the gate parses with can never take a Clarification for a Required
+    field: the question is a heading on one line, the answer is quoted line by
+    line, and the reason follows prose on one line. An owner who happens to
+    answer in the field format changes nothing about their gate.
+
+    Args:
+        clarification: The question, the answer, and where it was asked.
+
+    Returns:
+        The markdown lines for the block.
+    """
+    answer_lines = [
+        line.strip() for line in clarification.answer.strip().splitlines() if line.strip()
+    ]
+    return [
+        "",
+        f"### {_one_line(clarification.question)}",
+        "",
+        *[f"> {line}" for line in answer_lines],
+        "",
+        f"Asked by the {clarification.stage} stage of campaign `{clarification.slug}`: "
+        f"{_one_line(clarification.reason)}",
+    ]
+
+
+def _one_line(text: str) -> str:
+    """Collapse text onto one line.
+
+    Args:
+        text: The text, possibly spanning lines.
+
+    Returns:
+        The text with every run of whitespace folded to one space.
+    """
+    return " ".join(text.split())

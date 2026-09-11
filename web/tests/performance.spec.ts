@@ -12,8 +12,10 @@ test("performance says plainly that these are plans, not measurements", async ({
 }) => {
   await page.goto("/performance");
 
+  // Exact, because a campaign that has reached its plan puts a "Performance
+  // Plan" section heading on the same screen.
   await expect(
-    page.getByRole("heading", { name: "Performance" }),
+    page.getByRole("heading", { name: "Performance", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText(/These are decisions, not\s+measurements/),

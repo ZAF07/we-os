@@ -13,8 +13,9 @@ Each stage contributes four nodes wired by :mod:`marketing_os.graph.graph`:
   ``interrupt()`` until a person approves it or sends it back with feedback.
 * ``<stage>__clarify`` halts a stage whose specialist asked the business for a
   fact the Brand DNA lacks, on the same ``interrupt()``, until the business
-  answers — or halts the run with an error once the stage has asked as many
-  times as it is allowed (ADR-0028).
+  answers — then re-reads the Brand DNA the answers were saved into, so the
+  stage re-enters seeded with them — or halts the run with an error once the
+  stage has asked as many times as it is allowed (ADR-0028).
 
 The credits are checked in these nodes rather than only at the HTTP edge,
 because they are where the billable call actually happens: an endpoint is not
@@ -766,7 +767,7 @@ def make_approval_node(
     return approval_node
 
 
-def make_clarify_node(settings: Settings, stage: Stage) -> CampaignNode:
+def make_clarify_node(settings: Settings, stage: Stage, store: DocumentStore) -> CampaignNode:
     """Build a stage's clarification node.
 
     Reached only when the stage's specialist asked the business a question. The
@@ -776,6 +777,13 @@ def make_clarify_node(settings: Settings, stage: Stage) -> CampaignNode:
     the stage's **entry** node: the stage re-runs from a fresh conversation
     rather than continuing the one that asked.
 
+    The answers reach the stage through the Brand DNA, not through the resume
+    payload: the endpoint that resumes the run has already saved them as
+    Clarifications and re-rendered ``dna.md``, so the node re-reads the DNA
+    once it wakes and the entry node seeds the re-run from it — the same
+    seeding path a revision and a re-opening use. The DNA loaded at the gate is
+    stale by then, which is the whole reason for the re-read.
+
     The cap is enforced here, in the graph, so every driver of the pipeline is
     bound by it. A stage that has already halted to ask as many times as
     ``settings.max_clarifications`` allows halts the run with an error naming
@@ -784,6 +792,7 @@ def make_clarify_node(settings: Settings, stage: Stage) -> CampaignNode:
     Args:
         settings: The harness settings (for the per-stage clarification cap).
         stage: The pipeline stage this node holds.
+        store: The document store the updated Brand DNA is re-read through.
 
     Returns:
         A node that waits for the business's answer, or fails the run past the cap.
@@ -797,8 +806,9 @@ def make_clarify_node(settings: Settings, stage: Stage) -> CampaignNode:
             state: The campaign state carrying the questions the specialist asked.
 
         Returns:
-            A state update routing back into the stage once answered, or halting
-            the run when the stage has asked too many times.
+            A state update carrying the re-read Brand DNA and routing back into
+            the stage once answered, or halting the run when the stage has
+            asked too many times.
         """
         slug = state["slug"]
         questions = list(state.get("clarifications") or [])
@@ -833,7 +843,13 @@ def make_clarify_node(settings: Settings, stage: Stage) -> CampaignNode:
         )
         interrupt({"kind": CLARIFICATION_HOLD, "stage": stage.key, "questions": questions})
         rounds[stage.key] = used + 1
-        return {"clarifications": None, "clarification_rounds": rounds, "route": "revise"}
+        _emit("stage.clarified", slug=slug, stage=stage.key, questions=questions)
+        return {
+            "dna_text": store.read(state["tenant"], "dna.md"),
+            "clarifications": None,
+            "clarification_rounds": rounds,
+            "route": "revise",
+        }
 
     return clarify_node
 

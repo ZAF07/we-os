@@ -604,6 +604,33 @@ export function getRunClarifications(
   );
 }
 
+export interface ClarificationAnswer {
+  question: string;
+  answer: string;
+}
+
+/**
+ * Answers the questions a halted run is asking; they join the Brand DNA and
+ * the run continues from the stage that asked (ADR-0028).
+ *
+ * Args:
+ *   runId: The run holding for an answer.
+ *   answers: One answer per pending question, paired by the question's text.
+ *
+ * Throws:
+ *   EngineError: 409 when the run is not holding for a clarification; 422 when
+ *     a question is left unanswered or blank; 402 when credits are spent.
+ */
+export function answerClarifications(
+  runId: string,
+  answers: ClarificationAnswer[],
+): Promise<RunHandle> {
+  return engineFetch<RunHandle>(
+    `/runs/${encodeURIComponent(runId)}/clarifications`,
+    { method: "POST", body: JSON.stringify({ answers }) },
+  );
+}
+
 /**
  * Approves the stage a run is halted at; the run resumes into the next stage.
  *

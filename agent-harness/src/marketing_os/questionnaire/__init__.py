@@ -11,7 +11,7 @@ and a tenant's answers are *stored* is the adapters' business.
 from __future__ import annotations
 
 from marketing_os.questionnaire.completeness import completeness, required_dna_fields
-from marketing_os.questionnaire.render import render_brand_dna
+from marketing_os.questionnaire.render import CLARIFICATIONS_HEADING, render_brand_dna
 from marketing_os.questionnaire.seed import (
     SECTION_ORDER,
     SEED_PUBLISHED_AT,
@@ -20,6 +20,7 @@ from marketing_os.questionnaire.seed import (
 )
 
 __all__ = [
+    "CLARIFICATIONS_HEADING",
     "SECTION_ORDER",
     "SEED_PUBLISHED_AT",
     "SEED_QUESTIONNAIRE",

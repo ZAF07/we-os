@@ -25,6 +25,7 @@ from conftest import (
     prototype_adapters,
 )
 from marketing_os.adapters.observability import new_run_id
+from marketing_os.adapters.runs import AWAITING_CLARIFICATION, RUNNING
 from marketing_os.config import Settings
 from marketing_os.errors import RunConflictError
 from marketing_os.graph.registry import RunRegistry, read_run_status
@@ -333,3 +334,35 @@ def test_status_is_interrupted_when_trace_has_no_summary(settings: Settings) -> 
 
 def test_status_is_none_for_unknown_run(settings: Settings) -> None:
     assert read_run_status(settings, RunRegistry(), "no-such-run", TENANT) is None
+
+
+async def test_mark_held_brings_a_live_record_into_line_with_its_checkpoint() -> None:
+    """A run whose checkpoint holds a question is re-marked so the answer can resume it."""
+    gate = asyncio.Event()
+    registry = RunRegistry()
+    run_id = new_run_id()
+    registry.start(
+        run_id=run_id, slug="acme", stage=None, tenant=TENANT, launch=_blocking_launch(gate, "acme")
+    )
+    assert registry.get(run_id, TENANT) is not None
+    assert registry.get(run_id, TENANT).status == RUNNING
+
+    corrected = registry.mark_held(run_id, TENANT, AWAITING_CLARIFICATION)
+
+    assert corrected is not None
+    assert corrected.status == AWAITING_CLARIFICATION
+    assert registry.get(run_id, TENANT).status == AWAITING_CLARIFICATION
+    registry.mark_held(run_id, TENANT, RUNNING)
+    await _drain(gate, registry)
+
+
+async def test_mark_held_leaves_a_finished_run_alone() -> None:
+    gate = asyncio.Event()
+    registry = RunRegistry()
+    run_id = new_run_id()
+    registry.start(
+        run_id=run_id, slug="acme", stage=None, tenant=TENANT, launch=_blocking_launch(gate, "acme")
+    )
+    await _drain(gate, registry)
+
+    assert registry.mark_held(run_id, TENANT, AWAITING_CLARIFICATION) is None

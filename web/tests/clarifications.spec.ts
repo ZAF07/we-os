@@ -10,11 +10,14 @@ import { createCampaign, uniqueName } from "./fixtures";
  * identically every time, with no model called.
  *
  * What is under test is what the owner sees: the Workspace says the stage has
- * a question, Home lists the campaign as a red Decision, and following it
- * shows the question and the reason the specialist gave.
+ * a question, Home lists the campaign as a red Decision, following it shows
+ * the question and the reason the specialist gave, and answering it sends the
+ * run on to its next gate on its own. One test rather than two, because the
+ * answer joins the tenant's Brand DNA and the scripted specialist then asks
+ * nothing — so only the first walk on a fresh stack ever sees the question.
  */
 
-test("a specialist's question halts the run and reaches Home as a Decision", async ({
+test("a specialist's question halts the run, reaches Home, and answering resumes it", async ({
   page,
 }) => {
   const slug = await createCampaign(page, uniqueName("Clarify"));
@@ -70,4 +73,26 @@ test("a specialist's question halts the run and reaches Home as a Decision", asy
   await expect(questions).toContainText("email list");
   await expect(questions).toContainText("Why we ask:");
   await expect(questions).toContainText("build one");
+
+  // Answering resumes the run: the plan re-runs from a Brand DNA that now
+  // carries the answer, and the Workspace follows it to its own gate.
+  const send = page.getByRole("button", { name: "Send answers" });
+  await expect(send).toBeDisabled();
+  await page
+    .getByLabel(/email list/)
+    .fill("Yes, about 1,200 subscribers who opted in at the front desk.");
+  await send.click();
+  await expect(page).toHaveURL(new RegExp(`/campaigns/${slug}$`));
+  await expect(page.getByText("Approving starts Creative brief.")).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(page.getByRole("log", { name: "Run progress" })).toContainText(
+    "You answered.",
+  );
+
+  // Home no longer leads to the questions: the campaign is waiting for an
+  // approval now, which is a different Decision.
+  await page.goto("/home");
+  await expect(queue.locator(`a[href="${href}"]`)).toHaveCount(0);
+  await expect(queue.locator(`a[href="/campaigns/${slug}"]`)).toBeVisible();
 });

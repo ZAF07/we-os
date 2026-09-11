@@ -61,6 +61,18 @@ Seven tables (ADR-0014, ADR-0015, ADR-0018, ADR-0020):
     given against, which is what makes "your DNA predates a newer question"
     answerable as a prompt rather than a silent gate failure.
 
+``dna_clarifications``
+    The facts a specialist asked each business for mid-campaign and the
+    business answered (ADR-0028). Part of the Brand DNA beside ``dna_answers``,
+    rendered into the same markdown projection, but their own table because a
+    Clarification has no question id in the published set: the question text,
+    the reason, and the stage and campaign that asked are what identify it.
+    One row per answer, keyed by the id the answer endpoint minted. ``ordinal``
+    is the order the answers were saved in, which is the order the DNA renders
+    them: a stage's questions are answered together and stamped with one
+    ``answered_at``, so the timestamp alone cannot keep them in the order they
+    were asked.
+
 ``usage_ledger``
     Every billable call, with the model, the units, and what it cost, charged to
     its tenant (ADR-0020). Append-only, like ``deliverable_versions`` and for a
@@ -91,8 +103,8 @@ provisions with an administrative DSN; the service only checks the tables are
 there and says what to run if they are not.
 
 **Row-level security backstops the tenant-partitioned tables.** Every read and
-write of ``documents``, ``dna_answers``, ``deliverable_versions`` and
-``usage_ledger`` runs inside a transaction that has set
+write of ``documents``, ``dna_answers``, ``dna_clarifications``,
+``deliverable_versions`` and ``usage_ledger`` runs inside a transaction that has set
 ``marketing_os.tenant_id``, and the policy admits only rows matching it — so even
 a query that forgot its ``WHERE tenant_id`` clause returns nothing across
 tenants. ``FORCE ROW LEVEL SECURITY`` extends the policy to the table's owner. It
@@ -100,7 +112,7 @@ does **not** extend to superusers or roles with ``BYPASSRLS``: the application
 must connect as an ordinary role, which is what
 :func:`grant_application_role_sql` provisions.
 
-RLS is applied to the four tenant-partitioned tables and not to ``runs``, because
+RLS is applied to the five tenant-partitioned tables and not to ``runs``, because
 resolving runs left over from a crash is a cross-tenant maintenance sweep with no
 tenant in scope; the runs queries carry an explicit ``tenant_id`` predicate on
 every tenant-facing path instead. ``questionnaires`` is not partitioned at all —
@@ -231,6 +243,26 @@ CREATE POLICY dna_answers_tenant_isolation ON dna_answers
     USING (tenant_id = current_setting('{TENANT_SETTING}', true))
     WITH CHECK (tenant_id = current_setting('{TENANT_SETTING}', true));
 
+CREATE TABLE IF NOT EXISTS dna_clarifications (
+    tenant_id        text NOT NULL,
+    clarification_id text NOT NULL,
+    ordinal          bigserial NOT NULL,
+    question         text NOT NULL,
+    reason           text NOT NULL,
+    answer           text NOT NULL,
+    stage            text NOT NULL,
+    slug             text NOT NULL,
+    answered_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, clarification_id)
+);
+
+ALTER TABLE dna_clarifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dna_clarifications FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS dna_clarifications_tenant_isolation ON dna_clarifications;
+CREATE POLICY dna_clarifications_tenant_isolation ON dna_clarifications
+    USING (tenant_id = current_setting('{TENANT_SETTING}', true))
+    WITH CHECK (tenant_id = current_setting('{TENANT_SETTING}', true));
+
 CREATE TABLE IF NOT EXISTS usage_ledger (
     tenant_id   text NOT NULL,
     slug        text,
@@ -261,6 +293,7 @@ TABLES = (
     "runs",
     "questionnaires",
     "dna_answers",
+    "dna_clarifications",
     "deliverable_versions",
     "usage_ledger",
 )

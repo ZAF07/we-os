@@ -25,6 +25,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from marketing_os.schemas import (
     BrandDnaRecord,
+    Clarification,
     Consumption,
     DeliverableVersion,
     DnaAnswer,
@@ -601,6 +602,25 @@ class AnswerStore(Protocol):
             business never gave is not an error: the outcome asked for already
             holds. ``updated_at`` reports when a surviving answer was last saved,
             so a removal does not advance it — nothing was written.
+        """
+        ...
+
+    def add_clarifications(
+        self, tenant: str, *, clarifications: list[Clarification]
+    ) -> BrandDnaRecord:
+        """Record facts a specialist asked for and the business has now answered.
+
+        Appended beside the questionnaire answers rather than into them: a
+        Clarification is asked by a model for one business, so it has no
+        question id in the published set and is never Required (ADR-0028). It
+        is part of the same record so one read renders the whole Brand DNA.
+
+        Args:
+            tenant: The tenant the answers belong to.
+            clarifications: The answered questions to add, ids already minted.
+
+        Returns:
+            The business's full record after the save.
         """
         ...
 
