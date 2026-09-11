@@ -49,7 +49,7 @@ None - can start immediately.
 ## Completion
 
 - Completed: 2026-09-11
-- Commits: `b908f63` Tell the business when its Brand DNA is due a review; `f722148` Tighten the Brand DNA review after review; on branch `feat/clarifications-04-review-due`; status commit and merge recorded below once made.
+- Commits: `b908f63` Tell the business when its Brand DNA is due a review; `f722148` Tighten the Brand DNA review after review; on branch `feat/clarifications-04-review-due`; status commit `e6d5e90` updated tasks status; merged into `main` as `390c6d9`.
 - Evidence per criterion:
   - Home payload carries a Review item exactly when now minus reviewed-at exceeds the interval, fake clock — the engine's `GET /brand-dna/review` reports `due` from `questionnaire/review.py::dna_review`, derived on every read; `tests/test_dna_review.py::test_a_review_is_due_once_more_than_the_interval_has_passed`, `::test_a_review_is_not_due_at_exactly_the_interval` (pure), `::test_a_dna_just_completed_is_not_due_until_the_interval_has_passed` and `::test_marking_reviewed_clears_it_for_another_interval` (API, `FakeClock`); `web/src/lib/home.test.ts` "adds an amber Review item leading to the Brand page when a review is due", "adds nothing when no review is due, or the review could not be read", "puts the review after decisions and before stale work".
   - Mark-reviewed, saving a questionnaire answer, and saving a Clarification answer each clear the item — `::test_marking_reviewed_clears_it_for_another_interval`, `::test_saving_a_questionnaire_answer_counts_as_a_review`, `::test_deleting_an_answer_counts_as_a_review_too`, `::test_editing_a_clarification_counts_as_a_review`, `::test_answering_a_runs_questions_counts_as_a_review`.
