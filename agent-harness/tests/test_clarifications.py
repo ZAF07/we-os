@@ -646,20 +646,30 @@ def _everything_but_the_dna(client: TestClient, run_id: str) -> dict[str, Any]:
         run_id: The campaign's run.
 
     Returns:
-        The campaign, its stages, its deliverables and each one's version
-        history, the run, the in-flight run list, and the completeness report —
-        as the API reports them, so a before/after comparison is byte-for-byte.
+        The campaign, its stages, its deliverables with their current content
+        and every version's content, the run, the in-flight run list, and the
+        completeness report — as the API reports them, so a before/after
+        comparison is byte-for-byte.
     """
     listing = client.get(f"/campaigns/{SLUG}/deliverables").json()
-    versions = {}
+    documents = {}
     for document in listing["files"]:
-        response = client.get(f"/campaigns/{SLUG}/deliverables/{document['name']}/versions")
-        versions[document["name"]] = (response.status_code, response.json())
+        name = document["name"]
+        base = f"/campaigns/{SLUG}/deliverables/{name}"
+        history = client.get(f"{base}/versions")
+        documents[name] = {
+            "current": client.get(base).json(),
+            "history": (history.status_code, history.json()),
+            "versions": [
+                client.get(f"{base}/versions/{version['version']}").json()
+                for version in history.json().get("versions", [])
+            ],
+        }
     return {
         "campaign": client.get(f"/campaigns/{SLUG}").json(),
         "stages": client.get(f"/campaigns/{SLUG}/stages").json(),
         "deliverables": listing,
-        "versions": versions,
+        "documents": documents,
         "run": client.get(f"/runs/{run_id}").json(),
         "runs": client.get("/runs").json(),
         "completeness": client.get("/brand-dna/completeness").json(),

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { EditActions } from "@/components/brand/edit-actions";
 import type { Clarification } from "@/lib/engine";
 import { stageTitle } from "@/lib/workspace";
 
@@ -17,6 +18,10 @@ import { stageTitle } from "@/lib/workspace";
  * owner can tell what the system knows about them beyond the questionnaire.
  * An edit re-runs nothing.
  *
+ * The list is rendered from the props, with each answer saved here laid over
+ * them: the saved text shows the moment the save lands, and the refresh that
+ * follows can still bring in a Clarification answered elsewhere.
+ *
  * Args:
  *   clarifications: The tenant's Clarifications, in the order they were answered.
  *   save: Saves one corrected answer; resolves with the Clarification as saved.
@@ -29,7 +34,7 @@ export function ClarificationsTab({
   save: (clarificationId: string, answer: string) => Promise<Clarification>;
 }) {
   const router = useRouter();
-  const [items, setItems] = useState(clarifications);
+  const [saved, setSaved] = useState<Map<string, Clarification>>(new Map());
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +51,8 @@ export function ClarificationsTab({
     setError(null);
     startSaving(async () => {
       try {
-        const saved = await save(clarificationId, answer);
-        setItems((previous) =>
-          previous.map((item) => (item.id === saved.id ? saved : item)),
-        );
+        const edited = await save(clarificationId, answer);
+        setSaved((previous) => new Map(previous).set(edited.id, edited));
         setEditing(null);
         router.refresh();
       } catch {
@@ -58,6 +61,7 @@ export function ClarificationsTab({
     });
   };
 
+  const items = clarifications.map((item) => saved.get(item.id) ?? item);
   if (items.length === 0) {
     return (
       <p className="rounded-xl border bg-card px-[18px] py-[15px] text-[13.5px] text-slate-700">
@@ -164,22 +168,7 @@ function ClarificationCard({
             rows={3}
             className="w-full rounded-lg border bg-card px-2.5 py-2 text-[13px]"
           />
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={onSave}
-              disabled={pending}
-              className="cursor-pointer rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-semibold text-primary-foreground hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {pending ? "Saving…" : "Save"}
-            </button>
-            <button
-              onClick={onCancel}
-              disabled={pending}
-              className="cursor-pointer rounded-lg border bg-card px-3 py-1.5 text-[12.5px] font-semibold hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-          </div>
+          <EditActions pending={pending} onSave={onSave} onCancel={onCancel} />
         </div>
       ) : (
         <div className="mt-1.5 flex items-start gap-2">

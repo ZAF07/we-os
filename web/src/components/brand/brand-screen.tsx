@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { ClarificationsTab } from "@/components/brand/clarifications-tab";
+import { EditActions } from "@/components/brand/edit-actions";
 import { EntryListInput } from "@/components/questionnaire/entry-list-input";
 import { StatusPill } from "@/components/ui/status-pill";
 import type {
@@ -13,7 +14,7 @@ import type {
   Questionnaire,
 } from "@/lib/engine";
 import { ENTRY_LIST_TYPE, parseEntries } from "@/lib/entry-list";
-import { questionSteps } from "@/lib/onboarding";
+import { questionSteps, type QuestionStep } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
 import { saveClarificationAnswer } from "@/app/(app)/brand/actions";
@@ -75,8 +76,6 @@ export function BrandScreen({
     dna.answers.map((answer) => [answer.question_id, answer.answer]),
   );
   const missing = new Set(shown.missing.map((field) => field.question_id));
-  const section =
-    selected === CLARIFICATIONS_TAB ? undefined : sections[selected];
 
   const save = (questionId: string) => {
     const answer = draft.trim();
@@ -122,129 +121,173 @@ export function BrandScreen({
     );
   }
 
+  const nav = (
+    <SectionNav
+      sections={sections}
+      missing={missing}
+      clarificationCount={dna.clarifications.length}
+      selected={selected}
+      onSelect={setSelected}
+    />
+  );
+
+  if (selected === CLARIFICATIONS_TAB) {
+    return (
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden lg:flex-row">
+        {nav}
+        <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
+          <div className="max-w-[680px]">
+            <h1 className="text-xl font-bold tracking-tight">Clarifications</h1>
+            <p className="mt-1.5 mb-[18px] text-[13px] text-muted-foreground">
+              Facts a specialist asked you for while working a campaign, in your
+              own words. They are part of your Brand DNA, so every later
+              campaign reads them. Correcting one changes what future campaigns
+              are grounded in; nothing already produced is re-run.
+            </p>
+            <ClarificationsTab
+              clarifications={dna.clarifications}
+              save={saveClarificationAnswer}
+            />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const section = sections[selected] ?? sections[0];
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden lg:flex-row">
-      <div className="shrink-0 border-b bg-card lg:w-[224px] lg:overflow-y-auto lg:border-r lg:border-b-0">
-        <div className="px-4 pt-4 pb-1 text-[11px] font-bold tracking-wider text-slate-400 uppercase lg:px-5 lg:pt-5 lg:pb-2.5">
-          Brand source of truth
-        </div>
-        <nav
-          aria-label="Brand sections"
-          className="scrollbar-none flex gap-1 overflow-x-auto px-2.5 pb-3 lg:flex-col lg:gap-0 lg:pb-5"
-        >
-          {sections.map((item, index) => {
-            const owed = item.questions.filter((question) =>
-              missing.has(question.id),
-            ).length;
-            return (
-              <button
-                key={item.name}
-                onClick={() => setSelected(index)}
-                className={cn(
-                  "flex w-auto cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-[7px] text-left text-[13px] whitespace-nowrap lg:w-full lg:whitespace-normal",
-                  selected === index
-                    ? "bg-indigo-50 font-semibold text-primary"
-                    : "font-medium text-slate-700 hover:bg-slate-100",
-                )}
-              >
-                <span className="flex-1">{item.name}</span>
-                {owed > 0 && (
-                  <span className="rounded-full bg-amber-100 px-1.5 text-[10.5px] font-bold text-amber-800">
-                    {owed}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          <button
-            onClick={() => setSelected(CLARIFICATIONS_TAB)}
-            className={cn(
-              "flex w-auto cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-[7px] text-left text-[13px] whitespace-nowrap lg:mt-2 lg:w-full lg:border-t lg:pt-3 lg:whitespace-normal",
-              selected === CLARIFICATIONS_TAB
-                ? "bg-indigo-50 font-semibold text-primary"
-                : "font-medium text-slate-700 hover:bg-slate-100",
-            )}
-          >
-            <span className="flex-1">Clarifications</span>
-            {dna.clarifications.length > 0 && (
-              <span className="rounded-full bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">
-                {dna.clarifications.length}
-              </span>
-            )}
-          </button>
-        </nav>
-      </div>
+      {nav}
 
       <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
         <div className="max-w-[680px]">
-          {section === undefined ? (
-            <>
-              <h1 className="text-xl font-bold tracking-tight">
-                Clarifications
-              </h1>
-              <p className="mt-1.5 mb-[18px] text-[13px] text-muted-foreground">
-                Facts a specialist asked you for while working a campaign, in
-                your own words. They are part of your Brand DNA, so every later
-                campaign reads them. Correcting one changes what future
-                campaigns are grounded in; nothing already produced is re-run.
-              </p>
-              <ClarificationsTab
-                clarifications={dna.clarifications}
-                save={saveClarificationAnswer}
-              />
-            </>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h1 className="text-xl font-bold tracking-tight">
-                  {section.name}
-                </h1>
-                <StatusPill
-                  status={shown.complete ? "Approved" : "Needs input"}
-                />
-              </div>
-              <p className="mt-1.5 mb-[18px] text-[13px] text-muted-foreground">
-                {shown.complete
-                  ? `Every Required answer is in — ${shown.required_answered} of ${shown.required_total}. Campaigns can run.`
-                  : `${shown.required_answered} of ${shown.required_total} Required answers are in. Campaigns cannot run until the rest are.`}
-              </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h1 className="text-xl font-bold tracking-tight">{section.name}</h1>
+            <StatusPill status={shown.complete ? "Approved" : "Needs input"} />
+          </div>
+          <p className="mt-1.5 mb-[18px] text-[13px] text-muted-foreground">
+            {shown.complete
+              ? `Every Required answer is in — ${shown.required_answered} of ${shown.required_total}. Campaigns can run.`
+              : `${shown.required_answered} of ${shown.required_total} Required answers are in. Campaigns cannot run until the rest are.`}
+          </p>
 
-              {error && (
-                <p
-                  role="alert"
-                  className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-800"
-                >
-                  {error}
-                </p>
-              )}
-
-              <div className="flex flex-col gap-3">
-                {section.questions.map((question) => (
-                  <AnswerCard
-                    key={question.id}
-                    question={question}
-                    answer={answers.get(question.id) ?? ""}
-                    owed={missing.has(question.id)}
-                    editing={editing === question.id}
-                    draft={draft}
-                    pending={pending}
-                    onEdit={() => {
-                      setEditing(question.id);
-                      setDraft(answers.get(question.id) ?? "");
-                      setError(null);
-                    }}
-                    onDraft={setDraft}
-                    onCancel={() => setEditing(null)}
-                    onSave={() => save(question.id)}
-                    onDelete={() => remove(question.id)}
-                  />
-                ))}
-              </div>
-            </>
+          {error && (
+            <p
+              role="alert"
+              className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-800"
+            >
+              {error}
+            </p>
           )}
+
+          <div className="flex flex-col gap-3">
+            {section.questions.map((question) => (
+              <AnswerCard
+                key={question.id}
+                question={question}
+                answer={answers.get(question.id) ?? ""}
+                owed={missing.has(question.id)}
+                editing={editing === question.id}
+                draft={draft}
+                pending={pending}
+                onEdit={() => {
+                  setEditing(question.id);
+                  setDraft(answers.get(question.id) ?? "");
+                  setError(null);
+                }}
+                onDraft={setDraft}
+                onCancel={() => setEditing(null)}
+                onSave={() => save(question.id)}
+                onDelete={() => remove(question.id)}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </main>
+  );
+}
+
+const NAV_BUTTON =
+  "flex w-auto cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-[7px] text-left text-[13px] whitespace-nowrap lg:w-full lg:whitespace-normal";
+const NAV_BUTTON_SELECTED = "bg-indigo-50 font-semibold text-primary";
+const NAV_BUTTON_IDLE = "font-medium text-slate-700 hover:bg-slate-100";
+
+/**
+ * Renders the Brand page's index: one entry per questionnaire section, then
+ * the Clarifications tab.
+ *
+ * Args:
+ *   sections: The questionnaire's sections, in first-asked order.
+ *   missing: The ids of the Required questions still unanswered, so a section
+ *     can show how many it owes.
+ *   clarificationCount: How many Clarifications the business has answered.
+ *   selected: The tab currently shown.
+ *   onSelect: Shows a tab.
+ */
+function SectionNav({
+  sections,
+  missing,
+  clarificationCount,
+  selected,
+  onSelect,
+}: {
+  sections: QuestionStep[];
+  missing: Set<string>;
+  clarificationCount: number;
+  selected: Tab;
+  onSelect: (tab: Tab) => void;
+}) {
+  return (
+    <div className="shrink-0 border-b bg-card lg:w-[224px] lg:overflow-y-auto lg:border-r lg:border-b-0">
+      <div className="px-4 pt-4 pb-1 text-[11px] font-bold tracking-wider text-slate-400 uppercase lg:px-5 lg:pt-5 lg:pb-2.5">
+        Brand source of truth
+      </div>
+      <nav
+        aria-label="Brand sections"
+        className="scrollbar-none flex gap-1 overflow-x-auto px-2.5 pb-3 lg:flex-col lg:gap-0 lg:pb-5"
+      >
+        {sections.map((item, index) => {
+          const owed = item.questions.filter((question) =>
+            missing.has(question.id),
+          ).length;
+          return (
+            <button
+              key={item.name}
+              onClick={() => onSelect(index)}
+              className={cn(
+                NAV_BUTTON,
+                selected === index ? NAV_BUTTON_SELECTED : NAV_BUTTON_IDLE,
+              )}
+            >
+              <span className="flex-1">{item.name}</span>
+              {owed > 0 && (
+                <span className="rounded-full bg-amber-100 px-1.5 text-[10.5px] font-bold text-amber-800">
+                  {owed}
+                </span>
+              )}
+            </button>
+          );
+        })}
+        <button
+          onClick={() => onSelect(CLARIFICATIONS_TAB)}
+          className={cn(
+            NAV_BUTTON,
+            "lg:mt-2 lg:border-t lg:pt-3",
+            selected === CLARIFICATIONS_TAB
+              ? NAV_BUTTON_SELECTED
+              : NAV_BUTTON_IDLE,
+          )}
+        >
+          <span className="flex-1">Clarifications</span>
+          {clarificationCount > 0 && (
+            <span className="rounded-full bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">
+              {clarificationCount}
+            </span>
+          )}
+        </button>
+      </nav>
+    </div>
   );
 }
 
@@ -326,22 +369,7 @@ function AnswerCard({
               />
             </>
           )}
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={onSave}
-              disabled={pending}
-              className="cursor-pointer rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-semibold text-primary-foreground hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {pending ? "Saving…" : "Save"}
-            </button>
-            <button
-              onClick={onCancel}
-              disabled={pending}
-              className="cursor-pointer rounded-lg border bg-card px-3 py-1.5 text-[12.5px] font-semibold hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-          </div>
+          <EditActions pending={pending} onSave={onSave} onCancel={onCancel} />
         </div>
       ) : (
         <div className="mt-1.5 flex items-start gap-2">
