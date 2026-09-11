@@ -71,7 +71,7 @@ from marketing_os.adapters.observability import (
     read_events,
     tail_trace,
 )
-from marketing_os.adapters.questionnaire import now_iso
+from marketing_os.adapters.questionnaire import iso_z, now_iso
 from marketing_os.adapters.runs import (
     AWAITING_APPROVAL,
     AWAITING_CLARIFICATION,
@@ -260,6 +260,15 @@ def _utc_now() -> datetime:
         The current instant.
     """
     return datetime.now(UTC)
+
+
+def _now() -> datetime:
+    """Return the current instant as the configured clock reports it.
+
+    Returns:
+        The current instant.
+    """
+    return get_clock()()
 
 
 def get_clock() -> Callable[[], datetime]:
@@ -1008,7 +1017,7 @@ def _record_dna_review(tenant: str) -> None:
     Args:
         tenant: The tenant whose review to record.
     """
-    get_tenant_directory().mark_dna_reviewed(tenant, at=get_clock()())
+    get_tenant_directory().mark_dna_reviewed(tenant, at=_now())
 
 
 def _dna_review(tenant: str) -> DnaReview:
@@ -1031,7 +1040,7 @@ def _dna_review(tenant: str) -> DnaReview:
         reviewed_at=registered.dna_reviewed_at if registered else None,
         dna_updated_at=(datetime.fromisoformat(record.updated_at) if record.updated_at else None),
         complete=report.complete,
-        now=get_clock()(),
+        now=_now(),
         interval=get_settings().dna_review_interval,
     )
 
@@ -1046,14 +1055,9 @@ def _review_payload(review: DnaReview) -> dict[str, object]:
         Whether it is due, and when the DNA was last reviewed as an ISO-8601
         timestamp in the form every other timestamp the API reports takes.
     """
-    reviewed_at = review.reviewed_at
     return {
         "due": review.due,
-        "reviewed_at": (
-            reviewed_at.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-            if reviewed_at
-            else None
-        ),
+        "reviewed_at": iso_z(review.reviewed_at) if review.reviewed_at else None,
     }
 
 

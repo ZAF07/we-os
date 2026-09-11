@@ -102,6 +102,25 @@ export async function engineStream(
 export { EngineError };
 
 /**
+ * Turns an engine refusal into a missing value, for a read a screen can do
+ * without: the tile or item it feeds is left out rather than the screen.
+ *
+ * Args:
+ *   error: What the read threw.
+ *
+ * Returns:
+ *   Null for an engine error.
+ *
+ * Throws:
+ *   Anything that is not an engine error, since an unreachable engine is not
+ *   an optional condition.
+ */
+export function nullOnEngineError(error: unknown): null {
+  if (error instanceof EngineError) return null;
+  throw error;
+}
+
+/**
  * Turns a failed engine call into the sentence a screen shows.
  *
  * The engine explains its own refusals in the operator's terms, so its message

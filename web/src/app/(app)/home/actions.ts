@@ -6,7 +6,7 @@ import {
   getMe,
   getUsage,
   listCampaigns,
-  EngineError,
+  nullOnEngineError,
   type CampaignSummary,
   type DnaCompleteness,
   type DnaReview,
@@ -65,23 +65,4 @@ export async function loadHome(): Promise<HomeData> {
     getMe(),
   ]);
   return { campaigns, usage, completeness, review, tier: me.tier };
-}
-
-/**
- * Turns an engine refusal into a missing value, so an optional read costs its
- * own tile or item rather than the screen.
- *
- * Args:
- *   error: What the read threw.
- *
- * Returns:
- *   Null for an engine error.
- *
- * Throws:
- *   Anything that is not an engine error, since an unreachable engine is not
- *   an optional condition.
- */
-function nullOnEngineError(error: unknown): null {
-  if (error instanceof EngineError) return null;
-  throw error;
 }

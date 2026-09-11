@@ -140,7 +140,7 @@ class PassthroughTenantDirectory:
         cleaned = tenant_id.strip()
         if not cleaned:
             return None
-        return Tenant(tenant_id=cleaned, name=cleaned, external_auth_id=cleaned)
+        return _tenant_named_after_itself(cleaned)
 
     def set_tier(self, tenant_id: str, tier: TierName) -> Tenant:
         """Accept a tier for a tenant, and keep none of it.
@@ -161,7 +161,7 @@ class PassthroughTenantDirectory:
             ToolError: If the tenant id is empty.
         """
         cleaned = validate_external_auth_id(tenant_id)
-        return Tenant(tenant_id=cleaned, name=cleaned, external_auth_id=cleaned)
+        return _tenant_named_after_itself(cleaned)
 
     def mark_dna_reviewed(self, tenant_id: str, *, at: datetime) -> Tenant:
         """Accept a review for a tenant, and keep none of it.
@@ -169,7 +169,11 @@ class PassthroughTenantDirectory:
         As with the tier: the filesystem layer has no row to hold a timestamp
         in, so nothing is recorded and the tenant keeps reporting no review.
         Accepted rather than refused so the DNA writes that count as a review
-        do not fail on the one layer that cannot keep one.
+        do not fail on the one layer that cannot keep one. The consequence is
+        stated plainly: on this layer a due review counts from when the
+        answers were last saved and the Reviewed action cannot clear it. No
+        deployment serves this layer — the API refuses to start without
+        Postgres — so only the CLI and the test suite ever see it.
 
         Args:
             tenant_id: The platform tenant id, which here is the external id.
@@ -182,7 +186,20 @@ class PassthroughTenantDirectory:
             ToolError: If the tenant id is empty.
         """
         cleaned = validate_external_auth_id(tenant_id)
-        return Tenant(tenant_id=cleaned, name=cleaned, external_auth_id=cleaned)
+        return _tenant_named_after_itself(cleaned)
+
+
+def _tenant_named_after_itself(tenant_id: str) -> Tenant:
+    """Build the tenant the passthrough directory reports for an id.
+
+    Args:
+        tenant_id: The id, already validated, which is also the name and the
+            external id on this layer.
+
+    Returns:
+        A tenant with no tier and no review, since there is no row to keep them.
+    """
+    return Tenant(tenant_id=tenant_id, name=tenant_id, external_auth_id=tenant_id)
 
 
 class InMemoryTenantDirectory:

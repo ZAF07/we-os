@@ -1,8 +1,8 @@
 import { BrandScreen } from "@/components/brand/brand-screen";
 import {
-  EngineError,
   engineErrorMessage,
   getDnaReview,
+  nullOnEngineError,
   type DnaReview,
 } from "@/lib/engine";
 
@@ -24,10 +24,7 @@ export default async function BrandPage() {
   try {
     [state, review] = await Promise.all([
       loadOnboarding(),
-      getDnaReview().catch((error: unknown) => {
-        if (error instanceof EngineError) return null;
-        throw error;
-      }),
+      getDnaReview().catch(nullOnEngineError),
     ]);
   } catch (error) {
     return (

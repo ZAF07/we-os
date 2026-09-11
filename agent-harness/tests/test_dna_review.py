@@ -10,6 +10,7 @@ test, not a wait.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -203,8 +204,8 @@ def test_the_passthrough_directory_holds_no_review() -> None:
     accepted = directory.mark_dna_reviewed(tenant.tenant_id, at=T0)
 
     assert accepted.dna_reviewed_at is None
-    assert directory.get(tenant.tenant_id) is not None
-    assert directory.get(tenant.tenant_id).dna_reviewed_at is None  # type: ignore[union-attr]
+    found = directory.get(tenant.tenant_id)
+    assert found is not None and found.dna_reviewed_at is None
 
 
 # --- Through the API ------------------------------------------------------------
@@ -461,9 +462,10 @@ def _wait_for_status(client: TestClient, run_id: str, target: str) -> None:
         client: The entered test client.
         run_id: The run id to poll.
         target: The status to wait for.
-    """
-    import time
 
+    Raises:
+        AssertionError: If the run never reaches ``target``.
+    """
     for _ in range(300):
         response = client.get(f"/runs/{run_id}")
         if response.status_code == 200 and response.json()["status"] == target:

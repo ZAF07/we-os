@@ -21,13 +21,25 @@ from marketing_os.schemas import BrandDnaRecord, Clarification, DnaAnswer, Quest
 UNANSWERED_VERSION = 0
 
 
+def iso_z(timestamp: datetime) -> str:
+    """Render a timezone-aware instant as the ISO-8601 text every timestamp takes.
+
+    Args:
+        timestamp: The instant, timezone-aware.
+
+    Returns:
+        The timestamp in UTC, second-resolution, with a trailing ``Z``.
+    """
+    return timestamp.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def now_iso() -> str:
     """Return the current UTC time as an ISO-8601 timestamp.
 
     Returns:
         The timestamp, second-resolution, with a trailing ``Z``.
     """
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return iso_z(datetime.now(UTC))
 
 
 def validate_publication(questionnaire: Questionnaire, current_version: int) -> Questionnaire:

@@ -76,7 +76,7 @@ const MISSING_FIELDS_SHOWN = 3;
 export function toQueue(
   campaigns: CampaignSummary[],
   completeness: DnaCompleteness | null,
-  review: DnaReview | null = null,
+  review: DnaReview | null,
 ): QueueItem[] {
   const waiting: QueueItem[] = [];
   const stale: QueueItem[] = [];
@@ -106,11 +106,11 @@ export function toQueue(
   }
 
   const setup = toSetupItem(completeness);
-  const due = toReviewItem(review);
+  const reviewItem = toReviewItem(review);
   return [
     ...waiting,
     ...(setup === null ? [] : [setup]),
-    ...(due === null ? [] : [due]),
+    ...(reviewItem === null ? [] : [reviewItem]),
     ...stale,
   ];
 }
