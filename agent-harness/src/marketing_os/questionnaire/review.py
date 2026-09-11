@@ -11,6 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from marketing_os.ports import AnswerStore, QuestionnaireStore
+from marketing_os.questionnaire.completeness import completeness
+from marketing_os.schemas import EmailMessage
+
+REVIEW_REMINDER_SUBJECT = "Your Brand DNA is due a review"
+
 
 @dataclass(frozen=True)
 class DnaReview:
@@ -57,3 +63,94 @@ def dna_review(
     last_reviewed = reviewed_at or dna_updated_at
     due = complete and last_reviewed is not None and now - last_reviewed > interval
     return DnaReview(reviewed_at=last_reviewed, due=due)
+
+
+def review_from_stores(
+    tenant_id: str,
+    *,
+    reviewed_at: datetime | None,
+    answers: AnswerStore,
+    questionnaires: QuestionnaireStore,
+    now: datetime,
+    interval: timedelta,
+) -> DnaReview:
+    """Decide whether a business's Brand DNA is due a review, from what is stored.
+
+    The one place the stored facts are gathered into the judgement, so the API
+    that shows the Review item and the task that sends the reminder read the
+    same answer.
+
+    Args:
+        tenant_id: The tenant whose DNA to judge.
+        reviewed_at: The review the tenant record holds, if any.
+        answers: The store holding the business's answers.
+        questionnaires: The store holding the published question set.
+        now: The current time.
+        interval: How long a review holds for.
+
+    Returns:
+        The review.
+    """
+    published = questionnaires.published()
+    record = answers.read(tenant_id)
+    answered_against = questionnaires.version(record.questionnaire_version)
+    report = completeness(published, record, answered_against=answered_against)
+    return dna_review(
+        reviewed_at=reviewed_at,
+        dna_updated_at=(datetime.fromisoformat(record.updated_at) if record.updated_at else None),
+        complete=report.complete,
+        now=now,
+        interval=interval,
+    )
+
+
+def reminder_due(
+    review: DnaReview, *, reminded_at: datetime | None, now: datetime, interval: timedelta
+) -> bool:
+    """Decide whether a business should be emailed that its review is due.
+
+    Once per review interval: a business hears about a due review when it has
+    never been reminded, or when the last reminder is older than the interval.
+    A review that is not due is never reminded about, however long ago the
+    last reminder went out.
+
+    Args:
+        review: Whether the review is due.
+        reminded_at: When the business was last reminded, if ever.
+        now: The current time.
+        interval: How long a reminder holds for — the review interval.
+
+    Returns:
+        ``True`` when a reminder should be sent now.
+    """
+    if not review.due:
+        return False
+    return reminded_at is None or now - reminded_at > interval
+
+
+def review_reminder(*, business_name: str, to: str, brand_page_url: str) -> EmailMessage:
+    """Write the email telling a business its Brand DNA is due a review.
+
+    It says what is true and asks for one thing: that the owner look, and mark
+    the review done. It promises nothing the product does not do.
+
+    Args:
+        business_name: The business, as it named itself.
+        to: The address to send it to.
+        brand_page_url: Where the Brand page is, so the owner can go straight there.
+
+    Returns:
+        The message.
+    """
+    text = (
+        f"Hi,\n\n"
+        f"It has been a while since {business_name} looked at its Brand DNA. "
+        f"Businesses change, and every campaign We-OS plans rests on what your Brand DNA "
+        f"says — so it is worth a few minutes to check it still holds.\n\n"
+        f"Have a look at your Brand page and mark it reviewed when you are done:\n"
+        f"{brand_page_url}\n\n"
+        f"If anything has changed, edit the answer there and We-OS will use the new one "
+        f"from your next campaign onward.\n\n"
+        f"We-OS"
+    )
+    return EmailMessage(to=to, subject=REVIEW_REMINDER_SUBJECT, text=text)

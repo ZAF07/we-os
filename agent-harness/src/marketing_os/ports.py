@@ -14,9 +14,10 @@ spans workers, and the :class:`TokenVerifier`, which establishes who a caller is
 hold the admin-curated question set and each business's answers to it
 (ADR-0018), and the :class:`UsageLedger`, which records what every billable call
 cost its tenant and refuses the next one when their credits are spent
-(ADR-0020), and the :class:`StorageBackend`, which owns the whole set as one
-lifetime because storage is one durability decision (ADR-0014). Tests substitute
-all of them with hermetic fakes.
+(ADR-0020), the :class:`Mailer`, which sends the one email the platform sends
+a business (ADR-0028), and the :class:`StorageBackend`, which owns the whole set
+as one lifetime because storage is one durability decision (ADR-0014). Tests
+substitute all of them with hermetic fakes.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from marketing_os.schemas import (
     Consumption,
     DeliverableVersion,
     DnaAnswer,
+    EmailMessage,
     LedgerEntry,
     Questionnaire,
     ReviewVerdict,
@@ -317,13 +319,18 @@ class TenantDirectory(Protocol):
     platform-owned (ADR-0014).
     """
 
-    def resolve(self, *, external_auth_id: str, name: str | None = None) -> Tenant:
+    def resolve(
+        self, *, external_auth_id: str, name: str | None = None, email: str | None = None
+    ) -> Tenant:
         """Return the tenant for an IdP organization, registering it on first sight.
 
         Args:
             external_auth_id: The IdP's identifier for the business.
             name: The business's display name from the verified claim, used when
                 the tenant is registered and to keep the recorded name current.
+            email: The signed-in person's email from the verified claim, recorded
+                as the address the business is reached at when present; a
+                request carrying none leaves the recorded address as it was.
 
         Returns:
             The tenant that owns the business's data.
@@ -338,6 +345,18 @@ class TenantDirectory(Protocol):
 
         Returns:
             The tenant, or ``None`` when no tenant has that id.
+        """
+        ...
+
+    def all(self) -> list[Tenant]:
+        """Return every registered tenant.
+
+        The one cross-tenant read, for the reminder task: it has no request and
+        so no tenant in scope, and must ask every business whether a review is
+        due (ADR-0028). Nothing tenant-facing calls it.
+
+        Returns:
+            Every tenant, in no particular order.
         """
         ...
 
@@ -375,6 +394,24 @@ class TenantDirectory(Protocol):
 
         Returns:
             The tenant, carrying the review it now has recorded.
+
+        Raises:
+            ToolError: If no tenant has that id.
+        """
+        ...
+
+    def mark_dna_reminded(self, tenant_id: str, *, at: datetime) -> Tenant:
+        """Record that the business was emailed about a due review (ADR-0028).
+
+        Recorded only once a message was actually sent, so a business whose
+        address is unknown or whose send failed is tried again next tick.
+
+        Args:
+            tenant_id: The platform tenant id.
+            at: When the reminder was sent.
+
+        Returns:
+            The tenant, carrying the reminder it now has recorded.
 
         Raises:
             ToolError: If no tenant has that id.
@@ -750,6 +787,33 @@ class UsageLedger(Protocol):
 
         Returns:
             The entries, newest first, empty when nothing has been charged.
+        """
+        ...
+
+
+@runtime_checkable
+class Mailer(Protocol):
+    """Sends email to a business on the platform's behalf.
+
+    One method, because the platform sends one kind of thing: a plain-text
+    message to one address. The reminder that a Brand DNA review is due is the
+    only sender today (ADR-0028). Which mailer is wired is a setting, and the
+    real one is built only when it is selected, so nothing in a test or a local
+    run can reach a real inbox.
+    """
+
+    def send(self, message: EmailMessage) -> None:
+        """Send one message.
+
+        Args:
+            message: The message to send.
+
+        Raises:
+            ToolError: If the message could not be sent — the provider refused
+                it, or could not be reached. The caller decides whether to try
+                again later; nothing is retried here.
+            ConfigError: If the provider rejected the platform's credentials,
+                which no retry will fix.
         """
         ...
 

@@ -61,6 +61,8 @@ def test_every_table_declares_the_columns_it_is_checked_for() -> None:
     )
     assert "credits" in EXPECTED_COLUMNS["tenants"]
     assert "tier" in EXPECTED_COLUMNS["tenants"]
+    assert "contact_email" in EXPECTED_COLUMNS["tenants"]
+    assert "dna_reminded_at" in EXPECTED_COLUMNS["tenants"]
     assert "sequence" in EXPECTED_COLUMNS["deliverable_versions"]
     for table, columns in EXPECTED_COLUMNS.items():
         assert columns, f"{table} declares no expected columns"

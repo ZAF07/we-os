@@ -95,6 +95,14 @@ services:
       # A minute in development so the Brand DNA review can be seen without
       # waiting a week; production keeps the engine's weekly default (ADR-0028).
       MARKETING_OS_DNA_REVIEW_INTERVAL: ${MARKETING_OS_DNA_REVIEW_INTERVAL:-1m}
+      # The reminder email. Off by default — `noop` logs what it would have
+      # sent, which with the minute interval above is how you see it working.
+      # Set MARKETING_OS_MAILER=resend with a key and a verified sender in
+      # .env to send real mail (ADR-0028).
+      MARKETING_OS_MAILER: ${MARKETING_OS_MAILER:-noop}
+      MARKETING_OS_RESEND_API_KEY: ${MARKETING_OS_RESEND_API_KEY:-}
+      MARKETING_OS_MAIL_FROM: ${MARKETING_OS_MAIL_FROM:-}
+      MARKETING_OS_APP_URL: ${MARKETING_OS_APP_URL:-http://localhost:3000}
     volumes:
       # The engine reads code-shipped material — agent specs, guardrails,
       # templates — from the repo root at runtime (ADR-0003). Read-only, so a

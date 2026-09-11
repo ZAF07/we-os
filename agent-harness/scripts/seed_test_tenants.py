@@ -160,6 +160,27 @@ def _require_organization_id(organization_id: str, variable: str) -> str:
     return organization_id.strip()
 
 
+def _require_user_email(user_email: str) -> str:
+    """Return the seeded test user's email, refusing an empty one.
+
+    Args:
+        user_email: The value read from the environment.
+
+    Returns:
+        The email, stripped of surrounding whitespace.
+
+    Raises:
+        SystemExit: If it is missing, since the reminder the seeded tenant is
+            due would then have nowhere to go and the tick would skip it.
+    """
+    if not user_email.strip():
+        raise SystemExit(
+            "No user email. Set E2E_CLERK_USER_EMAIL to the seeded test user's "
+            "address — see web/.env.local.example."
+        )
+    return user_email.strip()
+
+
 def _purge_campaigns(connection: Any, tenant_id: str) -> None:
     """Delete every campaign a tenant owns, and everything a campaign owns.
 
@@ -224,6 +245,7 @@ def _upsert_tenant(
     name: str,
     organization_id: str,
     dna_reviewed_at: datetime | None,
+    contact_email: str | None,
 ) -> None:
     """Write the ``tenants`` row pairing a fixed tenant id to a Clerk organization.
 
@@ -236,7 +258,10 @@ def _upsert_tenant(
 
     The last Brand DNA review is written too, and re-established on every
     reset for the same reason the campaigns are purged: the review spec marks
-    it reviewed, and the next run needs it due again.
+    it reviewed, and the next run needs it due again. The address the business
+    is reached at is written with it, and the last reminder is cleared, so the
+    engine's first tick after a start or a reset logs a reminder for the
+    seeded tenant rather than waiting for someone to sign in (ADR-0028).
 
     Args:
         connection: An open psycopg connection with administrative rights.
@@ -245,20 +270,24 @@ def _upsert_tenant(
         organization_id: The Clerk organization id the test user belongs to.
         dna_reviewed_at: When the business last reviewed its Brand DNA, or
             ``None`` for a business that never has.
+        contact_email: The address the business is reached at, or ``None``
+            for a business no one has signed in to.
     """
     connection.execute(
         """
-        INSERT INTO tenants (tenant_id, name, external_auth_id, tier, dna_reviewed_at)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO tenants
+            (tenant_id, name, external_auth_id, tier, dna_reviewed_at, contact_email)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (external_auth_id)
         DO UPDATE SET tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name,
-                      tier = EXCLUDED.tier, dna_reviewed_at = EXCLUDED.dna_reviewed_at
+                      tier = EXCLUDED.tier, dna_reviewed_at = EXCLUDED.dna_reviewed_at,
+                      contact_email = EXCLUDED.contact_email, dna_reminded_at = NULL
         """,
-        (tenant_id, name, organization_id, RECOMMENDED_TIER, dna_reviewed_at),
+        (tenant_id, name, organization_id, RECOMMENDED_TIER, dna_reviewed_at, contact_email),
     )
 
 
-def seed_complete_tenant(dsn: str, organization_id: str) -> None:
+def seed_complete_tenant(dsn: str, organization_id: str, user_email: str) -> None:
     """Write the test tenant and its complete Brand DNA, and purge its campaigns.
 
     The purge is what keeps the tenant's campaign list the same length on every
@@ -270,6 +299,8 @@ def seed_complete_tenant(dsn: str, organization_id: str) -> None:
         dsn: An administrative Postgres connection string.
         organization_id: The Clerk organization id the test user belongs to,
             which is what pairs this tenant to the person signing in.
+        user_email: The test user's email, recorded as the address the
+            business is reached at so the reminder has somewhere to go.
     """
     import psycopg
 
@@ -281,6 +312,7 @@ def seed_complete_tenant(dsn: str, organization_id: str) -> None:
             TEST_BUSINESS_NAME,
             organization_id,
             dna_reviewed_at=datetime.now(UTC) - REVIEWED_LONG_AGO,
+            contact_email=user_email,
         )
         _purge_campaigns(connection, TEST_TENANT_ID)
         _purge_clarifications(connection, TEST_TENANT_ID)
@@ -339,7 +371,12 @@ def seed_blank_tenant(dsn: str, organization_id: str) -> None:
 
     with psycopg.connect(dsn, autocommit=True) as connection:
         _upsert_tenant(
-            connection, BLANK_TENANT_ID, BLANK_BUSINESS_NAME, organization_id, dna_reviewed_at=None
+            connection,
+            BLANK_TENANT_ID,
+            BLANK_BUSINESS_NAME,
+            organization_id,
+            dna_reviewed_at=None,
+            contact_email=None,
         )
         _purge_campaigns(connection, BLANK_TENANT_ID)
         _purge_clarifications(connection, BLANK_TENANT_ID)
@@ -355,7 +392,7 @@ def seed_blank_tenant(dsn: str, organization_id: str) -> None:
     )
 
 
-def seed_all(dsn: str, organization_id: str, blank_organization_id: str) -> None:
+def seed_all(dsn: str, organization_id: str, blank_organization_id: str, user_email: str) -> None:
     """Establish both tenants' fixture state in one pass.
 
     Args:
@@ -363,15 +400,19 @@ def seed_all(dsn: str, organization_id: str, blank_organization_id: str) -> None
         organization_id: The Clerk organization the seeded test user belongs to.
         blank_organization_id: The Clerk organization the blank test user
             belongs to.
+        user_email: The seeded test user's email, which the reminder is
+            addressed to.
 
     Raises:
-        SystemExit: If either organization id is missing, or if the two are the
-            same — ``external_auth_id`` is unique, so one id would make the
-            second tenant steal the first's pairing and the suite would run both
-            Playwright projects against one tenant.
+        SystemExit: If either organization id or the email is missing, or if
+            the two organization ids are the same — ``external_auth_id`` is
+            unique, so one id would make the second tenant steal the first's
+            pairing and the suite would run both Playwright projects against
+            one tenant.
     """
     seeded = _require_organization_id(organization_id, "E2E_CLERK_ORG_ID")
     blank = _require_organization_id(blank_organization_id, "E2E_CLERK_BLANK_ORG_ID")
+    email = _require_user_email(user_email)
     if seeded == blank:
         raise SystemExit(
             "E2E_CLERK_ORG_ID and E2E_CLERK_BLANK_ORG_ID name the same Clerk "
@@ -379,7 +420,7 @@ def seed_all(dsn: str, organization_id: str, blank_organization_id: str) -> None
             "takes over the seeded one's pairing and every spec sees one tenant."
         )
 
-    seed_complete_tenant(dsn, seeded)
+    seed_complete_tenant(dsn, seeded, email)
     seed_blank_tenant(dsn, blank)
 
 
@@ -397,8 +438,18 @@ def main() -> None:
         required=True,
         help="The Clerk organization id the blank test user belongs to.",
     )
+    parser.add_argument(
+        "--user-email",
+        required=True,
+        help="The seeded test user's email, recorded as the address the business is reached at.",
+    )
     arguments = parser.parse_args()
-    seed_all(arguments.dsn, arguments.organization_id, arguments.blank_organization_id)
+    seed_all(
+        arguments.dsn,
+        arguments.organization_id,
+        arguments.blank_organization_id,
+        arguments.user_email,
+    )
 
 
 if __name__ == "__main__":

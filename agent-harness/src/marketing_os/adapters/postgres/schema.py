@@ -98,7 +98,12 @@ Seven tables (ADR-0014, ADR-0015, ADR-0018, ADR-0020):
     When the business last **reviewed its Brand DNA** is the third fact about
     it kept here (ADR-0028): a nullable ``timestamptz``, ``NULL`` until it
     marks a review or edits its DNA. Whether a review is *due* is derived
-    from it on every read, so there is no column for that.
+    from it on every read, so there is no column for that. Beside it, for the
+    email that says so: ``contact_email``, the signed-in address of the person
+    who last made a request, and ``dna_reminded_at``, when the business was
+    last emailed. Both nullable; the reminder task skips a business with no
+    address and reminds one whose ``dna_reminded_at`` is older than the
+    interval.
 
 **Creating the schema is an operator step, not a boot step.** The service
 connects as an ordinary role that deliberately has no rights to create tables —
@@ -173,6 +178,8 @@ END
 $$;
 
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS dna_reviewed_at timestamptz;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_email text;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS dna_reminded_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS documents (
     tenant_id  text NOT NULL,

@@ -47,7 +47,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -62,6 +62,7 @@ from pydantic import BaseModel, field_validator
 from pydantic import Field as PydanticField
 
 from marketing_os.adapters.auth import JwksTokenVerifier, RefusalClass, log_refusal
+from marketing_os.adapters.mail import build_mailer
 from marketing_os.adapters.observability import (
     configure_logging,
     configure_tracing,
@@ -124,6 +125,7 @@ from marketing_os.ports import (
     AnswerStore,
     DeliverableStore,
     DocumentStore,
+    Mailer,
     QuestionnaireStore,
     RunStore,
     StorageBackend,
@@ -131,7 +133,8 @@ from marketing_os.ports import (
     TokenVerifier,
     UsageLedger,
 )
-from marketing_os.questionnaire import DnaReview, completeness, dna_review, render_brand_dna
+from marketing_os.questionnaire import DnaReview, completeness, render_brand_dna, review_from_stores
+from marketing_os.reminders import remind_on_interval, send_due_reminders
 from marketing_os.schemas import (
     CLARIFICATION_HOLD,
     TIER_NAMES,
@@ -161,12 +164,18 @@ load_env()
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Open the service's stores, resolve runs a crash left behind, then serve.
+    """Open the stores, resolve runs a crash left behind, start the reminders, then serve.
 
     Reclaiming on startup turns a crash or a deploy from "runs vanish and stay
     ``running`` forever" into "runs are resolved as ``interrupted`` and their
     campaigns start clean". It is an unconditional sweep, which is only correct
     because the service is a single process (ADR-0025).
+
+    The reminder task is the one periodic job the service runs, inside this
+    same process (ADR-0028): it ticks at once and then every review interval,
+    and is cancelled on shutdown. The mailer is built before anything is
+    opened, so a Resend selection missing its key stops the service here with
+    the setting named, not a week later at the first reminder.
 
     Args:
         _: The FastAPI application (unused).
@@ -177,6 +186,7 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings)
     configure_tracing(settings)
+    get_mailer()
 
     backend = get_backend()
     await backend.open()
@@ -186,9 +196,15 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     reclaimed = await registry.reclaim_abandoned()
     if reclaimed:
         _LOGGER.info("service.reclaimed runs=%d", len(reclaimed))
+    reminders = asyncio.create_task(
+        remind_on_interval(_send_due_reminders, settings.dna_review_interval)
+    )
     try:
         yield
     finally:
+        reminders.cancel()
+        with suppress(asyncio.CancelledError):
+            await reminders
         await backend.close()
         reset_providers()
 
@@ -432,6 +448,19 @@ def get_token_verifier() -> TokenVerifier:
     return JwksTokenVerifier(issuer=settings.auth_issuer, audience=settings.auth_audience)
 
 
+@lru_cache(maxsize=1)
+def get_mailer() -> Mailer:
+    """Return the mailer the reminder email goes out through.
+
+    Returns:
+        The mailer the settings select: the no-op one unless Resend is chosen.
+
+    Raises:
+        ConfigError: If Resend is selected without its key or sender.
+    """
+    return build_mailer(get_settings())
+
+
 def get_identity(request: Request) -> VerifiedIdentity:
     """Resolve the caller's verified identity from the ``Authorization`` header.
 
@@ -470,7 +499,9 @@ def get_identity(request: Request) -> VerifiedIdentity:
     try:
         claims = get_token_verifier().verify(token.strip(), request_path=request.url.path)
         tenant = get_tenant_directory().resolve(
-            external_auth_id=claims.organization_id, name=claims.business_name
+            external_auth_id=claims.organization_id,
+            name=claims.business_name,
+            email=claims.email,
         )
     except MarketingOSError as exc:
         raise _http_error(exc) from exc
@@ -512,6 +543,7 @@ _BACKED_PROVIDERS = (
     get_answer_store,
     get_usage_ledger,
     get_registry,
+    get_mailer,
 )
 
 
@@ -1032,16 +1064,32 @@ def _dna_review(tenant: str) -> DnaReview:
     Returns:
         The review.
     """
-    published, record = read_brand_dna(tenant)
-    answered_against = get_questionnaire_store().version(record.questionnaire_version)
-    report = completeness(published, record, answered_against=answered_against)
     registered = get_tenant_directory().get(tenant)
-    return dna_review(
+    return review_from_stores(
+        tenant,
         reviewed_at=registered.dna_reviewed_at if registered else None,
-        dna_updated_at=(datetime.fromisoformat(record.updated_at) if record.updated_at else None),
-        complete=report.complete,
+        answers=get_answer_store(),
+        questionnaires=get_questionnaire_store(),
         now=_now(),
         interval=get_settings().dna_review_interval,
+    )
+
+
+def _send_due_reminders() -> None:
+    """Run one tick of the reminder task over the service's stores.
+
+    The plain function behind the loop, bound to the providers here so the
+    tick itself stays free of them and tests can call it with fakes.
+    """
+    settings = get_settings()
+    send_due_reminders(
+        tenants=get_tenant_directory(),
+        answers=get_answer_store(),
+        questionnaires=get_questionnaire_store(),
+        mailer=get_mailer(),
+        now=_now(),
+        interval=settings.dna_review_interval,
+        app_url=settings.app_url,
     )
 
 
