@@ -66,11 +66,11 @@ The platform periodically asks the owner to review their Brand DNA and their Cla
 
 **Editing.** The Brand DNA read reports Clarifications as their own section; a new endpoint updates one Clarification's answer. An edit writes nothing to any campaign and marks nothing stale; staleness stays a property of deliverable versions only.
 
-**Review.** The tenant record gains `dna_reviewed_at` and `dna_review_reminded_at`. A review is due when now minus reviewed-at exceeds `MARKETING_OS_DNA_REVIEW_INTERVAL`. Saving any questionnaire or Clarification answer, and a new mark-reviewed endpoint, set reviewed-at. A tenant that has never reviewed counts from when its DNA was first completed.
+**Review.** The tenant record gains `dna_reviewed_at` and `dna_reminded_at`. A review is due when now minus reviewed-at exceeds `MARKETING_OS_DNA_REVIEW_INTERVAL`. Saving any questionnaire or Clarification answer, and a new mark-reviewed endpoint, set reviewed-at. A tenant that has never reviewed counts from when its DNA was first completed.
 
 **Reminder loop.** One periodic task started at API startup, ticking every interval. A tick selects tenants whose review is due and whose reminded-at is older than the interval, sends one email each through the `Mailer` port, and records reminded-at. It is one loop for one job; there is no job framework, and a dedicated worker is a later decision.
 
-**Mailer port.** A new port with two adapters: Resend, selected by `MARKETING_OS_MAILER=resend` with `RESEND_API_KEY` from the environment, and a no-op that logs, the default. The recipient is the tenant's signed-in email from the identity provider.
+**Mailer port.** A new port with two adapters: Resend, selected by `MARKETING_OS_MAILER=resend` with `MARKETING_OS_RESEND_API_KEY` (and the sender, `MARKETING_OS_MAIL_FROM`) from the environment, and a no-op that logs, the default. The recipient is the tenant's signed-in email from the identity provider.
 
 **Home.** The Home payload gains a Decision item per campaign awaiting clarification, linking to the answer screen, and a Review item when a review is due, linking to the Brand page. The Action Queue tag palette becomes: Decision red, Review amber, Setup amber, Stale unchanged. The empty-state copy names all three reasons an item can appear.
 

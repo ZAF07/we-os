@@ -14,8 +14,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -156,7 +157,7 @@ def test_the_no_op_mailer_sends_nothing_and_says_so(caplog: pytest.LogCaptureFix
     assert "Your Brand DNA is due a review" in caplog.text
 
 
-def _resend(handler: object) -> ResendMailer:
+def _resend(handler: Callable[[httpx.Request], httpx.Response]) -> ResendMailer:
     """Build a Resend mailer over a faked transport.
 
     Args:
@@ -168,7 +169,7 @@ def _resend(handler: object) -> ResendMailer:
     return ResendMailer(
         "re_123",
         sender="We-OS <hello@we-os.example>",
-        client=httpx.Client(transport=httpx.MockTransport(handler)),  # type: ignore[arg-type]
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
 
@@ -450,6 +451,26 @@ def test_one_failed_send_is_logged_and_the_rest_are_still_sent(
     assert world.tick() == ["a@a.example"]
 
 
+def test_one_business_whose_answers_cannot_be_read_does_not_cost_the_others_theirs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    world = Businesses()
+    broken = world.register("org_a", name="A", email="a@a.example", reviewed_at=T0 - 2 * WEEK)
+    world.register("org_b", name="B", email="b@b.example", reviewed_at=T0 - 2 * WEEK)
+    real_read = world.answers.read
+
+    def read(tenant: str) -> object:
+        if tenant == broken:
+            raise RuntimeError("row locked")
+        return real_read(tenant)
+
+    world.answers.read = read  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.WARNING, logger="marketing_os.reminders"):
+        assert world.tick() == ["b@b.example"]
+    assert "row locked" in caplog.text
+
+
 def test_a_reminder_is_recorded_on_the_business(businesses: Businesses) -> None:
     businesses.tick()
 
@@ -484,6 +505,27 @@ async def test_the_loop_ticks_at_once_then_keeps_going_past_a_failure(
     assert len(ticks) >= 3
     assert "the database blinked" in caplog.text
     assert task.cancelled()
+
+
+async def test_cancelling_the_loop_lets_the_tick_in_flight_finish_first() -> None:
+    """The stores close right after the loop stops, so a half-done tick must not outlive it."""
+    release = threading.Event()
+    finished: list[bool] = []
+
+    def tick() -> None:
+        release.wait(timeout=5)
+        finished.append(True)
+
+    task = asyncio.create_task(remind_on_interval(tick, timedelta(hours=1)))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    await asyncio.sleep(0.05)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert finished == [True]
 
 
 # --- With the API -----------------------------------------------------------------

@@ -13,9 +13,6 @@ from datetime import datetime, timedelta
 
 from marketing_os.ports import AnswerStore, QuestionnaireStore
 from marketing_os.questionnaire.completeness import completeness
-from marketing_os.schemas import EmailMessage
-
-REVIEW_REMINDER_SUBJECT = "Your Brand DNA is due a review"
 
 
 @dataclass(frozen=True)
@@ -126,31 +123,3 @@ def reminder_due(
     if not review.due:
         return False
     return reminded_at is None or now - reminded_at > interval
-
-
-def review_reminder(*, business_name: str, to: str, brand_page_url: str) -> EmailMessage:
-    """Write the email telling a business its Brand DNA is due a review.
-
-    It says what is true and asks for one thing: that the owner look, and mark
-    the review done. It promises nothing the product does not do.
-
-    Args:
-        business_name: The business, as it named itself.
-        to: The address to send it to.
-        brand_page_url: Where the Brand page is, so the owner can go straight there.
-
-    Returns:
-        The message.
-    """
-    text = (
-        f"Hi,\n\n"
-        f"It has been a while since {business_name} looked at its Brand DNA. "
-        f"Businesses change, and every campaign We-OS plans rests on what your Brand DNA "
-        f"says — so it is worth a few minutes to check it still holds.\n\n"
-        f"Have a look at your Brand page and mark it reviewed when you are done:\n"
-        f"{brand_page_url}\n\n"
-        f"If anything has changed, edit the answer there and We-OS will use the new one "
-        f"from your next campaign onward.\n\n"
-        f"We-OS"
-    )
-    return EmailMessage(to=to, subject=REVIEW_REMINDER_SUBJECT, text=text)

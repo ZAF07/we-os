@@ -187,15 +187,7 @@ class PostgresTenantDirectory:
         Raises:
             ToolError: If no tenant has that id.
         """
-        with self._pool.connection() as connection:
-            row = connection.execute(
-                "UPDATE tenants SET dna_reviewed_at = %s WHERE tenant_id = %s "
-                f"RETURNING {TENANT_COLUMNS}",
-                (at, tenant_id),
-            ).fetchone()
-        if row is None:
-            raise ToolError(f"No tenant '{tenant_id}' is registered.")
-        return _tenant_from_row(row)
+        return self._record_instant("dna_reviewed_at", tenant_id, at)
 
     def mark_dna_reminded(self, tenant_id: str, *, at: datetime) -> Tenant:
         """Record when a tenant was emailed that a review is due.
@@ -210,10 +202,26 @@ class PostgresTenantDirectory:
         Raises:
             ToolError: If no tenant has that id.
         """
+        return self._record_instant("dna_reminded_at", tenant_id, at)
+
+    def _record_instant(self, column: str, tenant_id: str, at: datetime) -> Tenant:
+        """Write one of the tenant's timestamp columns and return the row.
+
+        Args:
+            column: The column to write — one of the two review timestamps,
+                named by the caller rather than by any input.
+            tenant_id: The platform tenant id.
+            at: The instant to record.
+
+        Returns:
+            The tenant as now recorded.
+
+        Raises:
+            ToolError: If no tenant has that id.
+        """
         with self._pool.connection() as connection:
             row = connection.execute(
-                "UPDATE tenants SET dna_reminded_at = %s WHERE tenant_id = %s "
-                f"RETURNING {TENANT_COLUMNS}",
+                f"UPDATE tenants SET {column} = %s WHERE tenant_id = %s RETURNING {TENANT_COLUMNS}",
                 (at, tenant_id),
             ).fetchone()
         if row is None:

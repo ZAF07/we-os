@@ -71,13 +71,14 @@ class ResendMailer:
             sender: The address the mail goes out as, in the form Resend accepts
                 (``Name <address>``), on a domain verified with Resend.
             client: An injected :class:`httpx.Client`; when ``None`` a client
-                owned by this mailer is created.
+                owned by this mailer is created, and lives as long as the
+                mailer does — one per process, built at startup.
             base_url: The Resend API base URL.
             timeout: The per-request timeout in seconds for an owned client.
         """
         self._api_key = api_key
         self._sender = sender
-        self._client = client or httpx.Client(timeout=timeout)
+        self._client = client if client is not None else httpx.Client(timeout=timeout)
         self._base_url = base_url.rstrip("/")
 
     def send(self, message: EmailMessage) -> None:
@@ -108,11 +109,11 @@ class ResendMailer:
             raise ConfigError("Resend rejected the API key. Check MARKETING_OS_RESEND_API_KEY.")
         if response.is_error:
             raise ToolError(
-                f"Resend refused the message ({response.status_code}): {_reason(response)}"
+                f"Resend refused the message ({response.status_code}): {_refusal_reason(response)}"
             )
 
 
-def _reason(response: httpx.Response) -> str:
+def _refusal_reason(response: httpx.Response) -> str:
     """Return what Resend said about a refused message.
 
     Args:

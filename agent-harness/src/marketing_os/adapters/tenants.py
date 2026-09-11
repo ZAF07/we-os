@@ -337,12 +337,7 @@ class InMemoryTenantDirectory:
         Raises:
             ToolError: If no tenant has that id.
         """
-        existing = self._by_tenant.get(tenant_id)
-        if existing is None:
-            raise ToolError(f"No tenant '{tenant_id}' is registered.")
-        tenant = existing.model_copy(update={"dna_reviewed_at": at})
-        self._remember(tenant)
-        return tenant
+        return self._update(tenant_id, dna_reviewed_at=at)
 
     def mark_dna_reminded(self, tenant_id: str, *, at: datetime) -> Tenant:
         """Record when a tenant was emailed that a review is due.
@@ -357,10 +352,25 @@ class InMemoryTenantDirectory:
         Raises:
             ToolError: If no tenant has that id.
         """
+        return self._update(tenant_id, dna_reminded_at=at)
+
+    def _update(self, tenant_id: str, **fields: datetime) -> Tenant:
+        """Change a registered tenant's fields and keep the result.
+
+        Args:
+            tenant_id: The platform tenant id.
+            **fields: The fields to change.
+
+        Returns:
+            The tenant as now held.
+
+        Raises:
+            ToolError: If no tenant has that id.
+        """
         existing = self._by_tenant.get(tenant_id)
         if existing is None:
             raise ToolError(f"No tenant '{tenant_id}' is registered.")
-        tenant = existing.model_copy(update={"dna_reminded_at": at})
+        tenant = existing.model_copy(update=fields)
         self._remember(tenant)
         return tenant
 

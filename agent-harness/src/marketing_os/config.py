@@ -39,46 +39,6 @@ class WebBackend(StrEnum):
 _DEFAULT_WEB_BACKENDS = (WebBackend.TAVILY, WebBackend.GOOGLE, WebBackend.DUCKDUCKGO)
 
 
-class MailerName(StrEnum):
-    """A selectable mailer for the reminder email (ADR-0028).
-
-    Attributes:
-        RESEND: The Resend HTTP API, sending real email.
-        NOOP: The no-op mailer, which logs what it would have sent. The default,
-            so no test or local run can email a real address by accident.
-    """
-
-    RESEND = "resend"
-    NOOP = "noop"
-
-
-_DEFAULT_APP_URL = "http://localhost:3000"
-
-
-def _parse_mailer(raw: str) -> MailerName:
-    """Parse the mailer selector.
-
-    Args:
-        raw: The ``MARKETING_OS_MAILER`` value.
-
-    Returns:
-        The selected mailer; the no-op one when the value is empty.
-
-    Raises:
-        ConfigError: If the value names a mailer that does not exist.
-    """
-    token = raw.strip().lower()
-    if not token:
-        return MailerName.NOOP
-    try:
-        return MailerName(token)
-    except ValueError as exc:
-        known = ", ".join(member.value for member in MailerName)
-        raise ConfigError(
-            f"Unknown mailer '{token}' in MARKETING_OS_MAILER. Known: {known}."
-        ) from exc
-
-
 _VALID_SEARCH_DEPTHS = ("basic", "advanced")
 _DEFAULT_SEARCH_DEPTH = "basic"
 
@@ -134,6 +94,46 @@ def _parse_web_backends(raw: str) -> list[WebBackend]:
                 f"Unknown web backend '{token}' in MARKETING_OS_WEB_BACKENDS. Known: {known}."
             ) from exc
     return backends
+
+
+class MailerName(StrEnum):
+    """A selectable mailer for the reminder email (ADR-0028).
+
+    Attributes:
+        RESEND: The Resend HTTP API, sending real email.
+        NOOP: The no-op mailer, which logs what it would have sent. The default,
+            so no test or local run can email a real address by accident.
+    """
+
+    RESEND = "resend"
+    NOOP = "noop"
+
+
+_DEFAULT_APP_URL = "http://localhost:3000"
+
+
+def _parse_mailer(raw: str) -> MailerName:
+    """Parse the mailer selector.
+
+    Args:
+        raw: The ``MARKETING_OS_MAILER`` value.
+
+    Returns:
+        The selected mailer; the no-op one when the value is empty.
+
+    Raises:
+        ConfigError: If the value names a mailer that does not exist.
+    """
+    token = raw.strip().lower()
+    if not token:
+        return MailerName.NOOP
+    try:
+        return MailerName(token)
+    except ValueError as exc:
+        known = ", ".join(member.value for member in MailerName)
+        raise ConfigError(
+            f"Unknown mailer '{token}' in MARKETING_OS_MAILER. Known: {known}."
+        ) from exc
 
 
 def _parse_human_gate_stages(raw: str | None) -> list[str] | None:

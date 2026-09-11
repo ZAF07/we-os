@@ -15,6 +15,7 @@ tenant id.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -227,8 +228,6 @@ def test_every_registered_business_is_listed_once() -> None:
 
 
 def test_a_reminder_is_recorded_and_read_back() -> None:
-    from datetime import UTC, datetime
-
     directory = InMemoryTenantDirectory()
     tenant = directory.resolve(external_auth_id=CLERK_ORG, name="Coast Coffee")
     at = datetime(2026, 9, 11, 9, 0, tzinfo=UTC)
@@ -244,8 +243,6 @@ def test_a_reminder_is_recorded_and_read_back() -> None:
 
 def test_the_passthrough_directory_lists_no_one_and_keeps_no_address_or_reminder() -> None:
     """The filesystem layer has no table, so there is no one to remind and nowhere to record it."""
-    from datetime import UTC, datetime
-
     directory = PassthroughTenantDirectory()
     tenant = directory.resolve(
         external_auth_id=CLERK_ORG, name="Coast Coffee", email="sam@coastcoffee.example"
