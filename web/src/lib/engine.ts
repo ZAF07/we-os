@@ -450,7 +450,7 @@ export interface CampaignSummary {
   objective: string;
   status: string;
   stage_progress: StageProgress;
-  blocked_reason: string | null;
+  blocked_stage_key: string | null;
 }
 
 /**

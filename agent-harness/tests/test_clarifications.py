@@ -410,7 +410,7 @@ def test_the_campaign_and_its_stage_read_awaiting_clarification(client: TestClie
     listed = client.get("/campaigns").json()["campaigns"]
     summary = next(item for item in listed if item["id"] == SLUG)
     assert summary["status"] == "awaiting_clarification"
-    assert summary["blocked_reason"] == "Strategy has a question for you."
+    assert summary["blocked_stage_key"] == "brand-strategy"
 
 
 def test_the_questions_and_reasons_are_readable_from_the_run(client: TestClient) -> None:

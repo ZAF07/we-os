@@ -1,5 +1,6 @@
 import type { CampaignSummary } from "@/lib/engine";
 import type { Status } from "@/lib/status";
+import { stageTitle } from "@/lib/workspace";
 
 /**
  * The engine's lifecycle statuses in the operator's vocabulary.
@@ -68,6 +69,32 @@ export function phaseLabel(stageKey: string | null): string {
 }
 
 /**
+ * Says what is holding a campaign up, naming the stage that needs a person.
+ *
+ * The engine reports only which stage is holding and why the campaign is
+ * halted; the sentence is put together here so Home and the Campaigns table
+ * say the same thing (ADR-0017).
+ *
+ * Args:
+ *   campaign: The summary the engine reported.
+ *
+ * Returns:
+ *   The reason, or null when nothing is blocking the campaign.
+ */
+export function blockedReason(campaign: CampaignSummary): string | null {
+  const stageKey = campaign.blocked_stage_key;
+  const stage = stageKey === null ? "A stage" : stageTitle(stageKey);
+  if (campaign.status === "awaiting_approval") {
+    return `${stage} is waiting for your approval.`;
+  }
+  if (campaign.status === "awaiting_clarification") {
+    return `${stage} has a question for you.`;
+  }
+  if (stageKey === null) return null;
+  return `${stage} rests on a decision you have since re-opened.`;
+}
+
+/**
  * Projects a campaign summary onto a row of the portfolio table.
  *
  * Args:
@@ -85,6 +112,6 @@ export function toCampaignRow(campaign: CampaignSummary): CampaignRowView {
     stage: phaseLabel(current_stage_key),
     stageNum: `${completed}/${total}`,
     status: statusLabel(campaign.status),
-    next: campaign.blocked_reason ?? "—",
+    next: blockedReason(campaign) ?? "—",
   };
 }

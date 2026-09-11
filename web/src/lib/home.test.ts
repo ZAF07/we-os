@@ -28,7 +28,7 @@ function campaign(
     objective: "An objective",
     status: "draft",
     stage_progress: { completed: 0, total: 6, current_stage_key: "research" },
-    blocked_reason: null,
+    blocked_stage_key: null,
     ...overrides,
   };
 }
@@ -40,7 +40,7 @@ describe("toQueue", () => {
         campaign("running-fine", { status: "running" }),
         campaign("needs-me", {
           status: "awaiting_approval",
-          blocked_reason: "Strategy is waiting for your approval.",
+          blocked_stage_key: "brand-strategy",
         }),
       ],
       null,
@@ -56,11 +56,11 @@ describe("toQueue", () => {
       [
         campaign("stale-one", {
           status: "running",
-          blocked_reason: "Plan rests on a decision you have since re-opened.",
+          blocked_stage_key: "performance-plan",
         }),
         campaign("gate-one", {
           status: "awaiting_approval",
-          blocked_reason: "Strategy is waiting for your approval.",
+          blocked_stage_key: "brand-strategy",
         }),
       ],
       null,
@@ -72,19 +72,51 @@ describe("toQueue", () => {
     expect(queue[1].tag).toBe("Stale");
   });
 
-  it("shows the engine's own reason rather than inventing one", () => {
+  it("names the stage waiting for approval, not the phase it belongs to", () => {
     const queue = toQueue(
       [
         campaign("c", {
           status: "awaiting_approval",
-          blocked_reason: "Strategy is waiting for your approval.",
+          blocked_stage_key: "creative-brief",
         }),
       ],
       null,
       null,
     );
 
-    expect(queue[0].title).toBe("Strategy is waiting for your approval.");
+    expect(queue[0].title).toBe("Creative brief is waiting for your approval.");
+  });
+
+  it("names the stage asking a question", () => {
+    const queue = toQueue(
+      [
+        campaign("c", {
+          status: "awaiting_clarification",
+          blocked_stage_key: "performance-plan",
+        }),
+      ],
+      null,
+      null,
+    );
+
+    expect(queue[0].title).toBe("Performance plan has a question for you.");
+  });
+
+  it("names the stage that rests on a re-opened decision", () => {
+    const queue = toQueue(
+      [
+        campaign("c", {
+          status: "running",
+          blocked_stage_key: "performance-plan",
+        }),
+      ],
+      null,
+      null,
+    );
+
+    expect(queue[0].title).toBe(
+      "Performance plan rests on a decision you have since re-opened.",
+    );
   });
 
   it("is empty when nothing needs anyone", () => {
@@ -96,7 +128,7 @@ describe("toQueue", () => {
       [
         campaign("asking", {
           status: "awaiting_clarification",
-          blocked_reason: "Plan has a question for you.",
+          blocked_stage_key: "performance-plan",
         }),
       ],
       null,
@@ -106,7 +138,7 @@ describe("toQueue", () => {
     expect(queue).toHaveLength(1);
     expect(queue[0]).toMatchObject({
       tag: "Decision",
-      title: "Plan has a question for you.",
+      title: "Performance plan has a question for you.",
       cta: "See questions",
       href: "/campaigns/asking/clarifications",
     });
@@ -117,11 +149,11 @@ describe("toQueue", () => {
       [
         campaign("stale-one", {
           status: "running",
-          blocked_reason: "Plan rests on a decision you have since re-opened.",
+          blocked_stage_key: "performance-plan",
         }),
         campaign("asking", {
           status: "awaiting_clarification",
-          blocked_reason: "Plan has a question for you.",
+          blocked_stage_key: "performance-plan",
         }),
       ],
       null,
@@ -146,7 +178,7 @@ describe("toStats", () => {
       [
         campaign("a", {
           status: "awaiting_approval",
-          blocked_reason: "waiting",
+          blocked_stage_key: "brand-strategy",
         }),
         campaign("b", { status: "running" }),
         campaign("c"),
@@ -298,11 +330,11 @@ describe("toQueue with Brand DNA completeness", () => {
       [
         campaign("stale-one", {
           status: "running",
-          blocked_reason: "Plan rests on a decision you have since re-opened.",
+          blocked_stage_key: "performance-plan",
         }),
         campaign("gate-one", {
           status: "awaiting_approval",
-          blocked_reason: "Strategy is waiting for your approval.",
+          blocked_stage_key: "brand-strategy",
         }),
       ],
       completeness(0, ["Business name"]),
@@ -357,11 +389,11 @@ describe("toQueue, with a Brand DNA review", () => {
       [
         campaign("stale-one", {
           status: "running",
-          blocked_reason: "Plan rests on a decision you have since re-opened.",
+          blocked_stage_key: "performance-plan",
         }),
         campaign("gate-one", {
           status: "awaiting_approval",
-          blocked_reason: "Strategy is waiting for your approval.",
+          blocked_stage_key: "brand-strategy",
         }),
       ],
       null,

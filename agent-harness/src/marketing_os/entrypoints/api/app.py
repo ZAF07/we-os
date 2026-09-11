@@ -1489,7 +1489,7 @@ async def list_campaigns(identity: Identity) -> dict[str, object]:
                 "objective": goal.objective,
                 "status": progress.status,
                 "stage_progress": _stage_progress(stages),
-                "blocked_reason": _blocked_reason(stages, progress.status),
+                "blocked_stage_key": _blocked_stage_key(stages, progress.status),
             }
         )
     return {"campaigns": summaries}
@@ -1620,28 +1620,26 @@ def _stage_progress(stages: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
-def _blocked_reason(stages: list[dict[str, object]], status: str) -> str | None:
-    """Say what is holding a campaign up, in the operator's language.
+def _blocked_stage_key(stages: list[dict[str, object]], status: str) -> str | None:
+    """Name the stage that is holding a campaign up.
+
+    The interface puts the wording on it; the engine reports only which stage
+    a person is needed at, so it never adopts UI vocabulary (ADR-0017).
 
     Args:
         stages: The campaign's stages in pipeline order.
         status: The campaign's lifecycle status.
 
     Returns:
-        The reason, or ``None`` when nothing is blocking the campaign.
+        The key of the stage waiting for approval or asking a question when the
+        campaign is halted on a person, else the first stage resting on a
+        re-opened decision, or ``None`` when nothing is blocking the campaign.
     """
-    if status == AWAITING_APPROVAL:
-        waiting = next((stage for stage in stages if stage["state"] == AWAITING_APPROVAL), None)
-        phase = waiting["phase"] if waiting else "A stage"
-        return f"{phase} is waiting for your approval."
-    if status == AWAITING_CLARIFICATION:
-        asking = next((stage for stage in stages if stage["state"] == AWAITING_CLARIFICATION), None)
-        phase = asking["phase"] if asking else "A stage"
-        return f"{phase} has a question for you."
-    stale = [stage for stage in stages if stage["stale"]]
-    if stale:
-        return f"{stale[0]['phase']} rests on a decision you have since re-opened."
-    return None
+    if status in (AWAITING_APPROVAL, AWAITING_CLARIFICATION):
+        holding = next((stage for stage in stages if stage["state"] == status), None)
+    else:
+        holding = next((stage for stage in stages if stage["stale"]), None)
+    return str(holding["key"]) if holding else None
 
 
 @app.get("/campaigns/{slug}")

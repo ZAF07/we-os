@@ -70,7 +70,7 @@ test("a specialist's question halts the run, reaches Home, and answering resumes
   const row = queue
     .locator("li")
     .filter({ has: page.locator(`a[href="${href}"]`) });
-  await expect(row).toContainText("Plan has a question for you.");
+  await expect(row).toContainText("Performance plan has a question for you.");
   await expect(row.getByText("Decision", { exact: true })).toHaveClass(
     /text-red-700/,
   );

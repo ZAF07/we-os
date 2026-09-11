@@ -6,7 +6,7 @@ import type {
 } from "@/lib/engine";
 import type { StatTone } from "@/components/ui/stat-card";
 import type { Status } from "@/lib/status";
-import { statusLabel } from "@/lib/campaigns";
+import { blockedReason, statusLabel } from "@/lib/campaigns";
 
 /**
  * Projects the engine's campaigns onto what Home shows.
@@ -82,7 +82,8 @@ export function toQueue(
   const stale: QueueItem[] = [];
 
   for (const campaign of campaigns) {
-    if (campaign.blocked_reason === null) continue;
+    const title = blockedReason(campaign);
+    if (title === null) continue;
     const asking = campaign.status === "awaiting_clarification";
     const deciding = asking || campaign.status === "awaiting_approval";
     let cta = "Open";
@@ -96,7 +97,7 @@ export function toQueue(
     const item: QueueItem = {
       slug: campaign.id,
       tag: deciding ? "Decision" : "Stale",
-      title: campaign.blocked_reason,
+      title,
       meta: campaign.name,
       cta,
       href,
@@ -235,7 +236,7 @@ export function toStats(
   usage: UsageReport | null,
 ): HomeStat[] {
   const needsYou = campaigns.filter(
-    (campaign) => campaign.blocked_reason !== null,
+    (campaign) => blockedReason(campaign) !== null,
   ).length;
   const running = campaigns.filter(
     (campaign) => campaign.status === "running",

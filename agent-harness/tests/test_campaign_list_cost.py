@@ -96,15 +96,14 @@ def test_the_list_is_identical_across_a_mixed_portfolio(client: TestClient) -> N
         "total": len(stages),
         "current_stage_key": stages[0],
     }
-    assert by_id[slugs[0]]["blocked_reason"] is None
+    assert by_id[slugs[0]]["blocked_stage_key"] is None
     assert by_id[slugs[1]]["status"] == "running"
     assert by_id[slugs[1]]["stage_progress"]["completed"] == 3
     assert by_id[slugs[1]]["stage_progress"]["current_stage_key"] == stages[3]
     assert by_id[slugs[2]]["status"] == "approved"
     assert by_id[slugs[2]]["stage_progress"]["completed"] == len(stages)
     assert by_id[slugs[3]]["status"] == "running"
-    assert by_id[slugs[3]]["blocked_reason"] is not None
-    assert "re-opened" in by_id[slugs[3]]["blocked_reason"]
+    assert by_id[slugs[3]]["blocked_stage_key"] == stages[1]
 
 
 def test_a_campaign_waiting_on_a_person_says_so_in_the_list(
@@ -143,8 +142,9 @@ def test_a_campaign_waiting_on_a_person_says_so_in_the_list(
         clear_prototype_adapters()
 
     assert campaign["status"] == "awaiting_approval"
-    assert campaign["blocked_reason"] is not None
-    assert "approval" in campaign["blocked_reason"]
+    assert campaign["blocked_stage_key"] == next(
+        stage["key"] for stage in single["stages"] if stage["state"] == "awaiting_approval"
+    )
     assert campaign["status"] == single["status"]
     assert campaign["stage_progress"]["current_stage_key"] == next(
         stage["key"] for stage in single["stages"] if stage["state"] != "completed"
