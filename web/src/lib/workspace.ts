@@ -35,8 +35,12 @@ const STAGE_STATUSES: Record<string, Status> = {
   pending: "Not started",
   completed: "Approved",
   awaiting_approval: "Ready for review",
+  awaiting_clarification: "Needs input",
   stale: "Stale",
 };
+
+/** The engine's stage states that mean the run is waiting on the person reading. */
+const HOLDING_STATES = new Set(["awaiting_approval", "awaiting_clarification"]);
 
 export interface PhaseView {
   name: string;
@@ -96,8 +100,9 @@ export function stageStatus(state: string, running: boolean): Status {
  *
  * A Phase covers one or more stages, so its status is the least-advanced thing
  * a person needs to know about it: a Phase holding a stage at a gate reads
- * Ready for review, one holding stale work reads Stale, and it only reads
- * Approved once every stage under it has completed.
+ * Ready for review, one holding a stage that is asking a question reads Needs
+ * input, one holding stale work reads Stale, and it only reads Approved once
+ * every stage under it has completed.
  *
  * Args:
  *   stages: The campaign's stages in pipeline order, as the engine reports them.
@@ -138,6 +143,9 @@ function phaseStatus(stages: CampaignStage[]): Status {
   if (stages.some((stage) => stage.state === "awaiting_approval")) {
     return "Ready for review";
   }
+  if (stages.some((stage) => stage.state === "awaiting_clarification")) {
+    return "Needs input";
+  }
   if (stages.some((stage) => stage.stale)) return "Stale";
   if (stages.every((stage) => stage.state === "completed")) return "Approved";
   if (stages.some((stage) => stage.latest_version !== null)) {
@@ -162,11 +170,24 @@ export function stageAwaitingApproval(
 }
 
 /**
+ * Finds the stage a campaign is holding at, for a decision or an answer.
+ *
+ * Args:
+ *   stages: The campaign's stages.
+ *
+ * Returns:
+ *   The holding stage, or null when the run is not waiting on a person.
+ */
+export function stageHolding(stages: CampaignStage[]): CampaignStage | null {
+  return stages.find((stage) => HOLDING_STATES.has(stage.state)) ?? null;
+}
+
+/**
  * Chooses the stage the Workspace opens on.
  *
- * A person arriving at a campaign wants the decision in front of them, so a
- * stage at a gate wins; otherwise the newest thing produced, and failing that
- * the first stage of the pipeline.
+ * A person arriving at a campaign wants what is waiting on them in front of
+ * them, so a stage at a gate or asking a question wins; otherwise the newest
+ * thing produced, and failing that the first stage of the pipeline.
  *
  * Args:
  *   stages: The campaign's stages in pipeline order.
@@ -175,8 +196,8 @@ export function stageAwaitingApproval(
  *   The stage key to select, or null when the campaign has no stages.
  */
 export function defaultStageKey(stages: CampaignStage[]): string | null {
-  const waiting = stageAwaitingApproval(stages);
-  if (waiting) return waiting.key;
+  const holding = stageHolding(stages);
+  if (holding) return holding.key;
   const produced = stages.filter((stage) => stage.latest_version !== null);
   if (produced.length > 0) return produced[produced.length - 1].key;
   return stages[0]?.key ?? null;

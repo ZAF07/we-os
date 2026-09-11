@@ -34,7 +34,11 @@ import {
   StaleBanner,
   VersionHistory,
 } from "./deliverable-view";
-import { ApprovalGate, ApprovedPanel } from "./decision-panel";
+import {
+  ApprovalGate,
+  ApprovedPanel,
+  ClarificationPanel,
+} from "./decision-panel";
 import { RunProgress } from "./run-progress";
 import { runningStage, useRunEvents } from "./use-run-events";
 
@@ -530,6 +534,15 @@ function DecisionRail({
         onApprove={() => onApprove(runId, stage.key)}
         onRevise={(feedback) => onRevise(runId, stage.key, feedback)}
         pending={pending}
+      />
+    );
+  }
+
+  if (stage.state === "awaiting_clarification") {
+    return (
+      <ClarificationPanel
+        stageName={stageTitle(stage.key)}
+        href={`/campaigns/${campaign.id}/clarifications`}
       />
     );
   }

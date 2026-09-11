@@ -27,6 +27,7 @@ Endpoints:
   POST /runs/{run_id}/cancel            -> cancel an in-flight run
   POST /runs/{run_id}/approve           -> approve the stage at the gate; the run resumes
   POST /runs/{run_id}/revise            -> send the stage back with feedback (new version)
+  GET  /runs/{run_id}/clarifications    -> the questions a halted run is asking the business
   GET  /runs/{run_id}/stream            -> attach to a run and tail its trace as SSE
 
 Every route except ``/health`` requires a verified bearer token, and the tenant
@@ -64,7 +65,13 @@ from marketing_os.adapters.observability import (
     read_events,
     tail_trace,
 )
-from marketing_os.adapters.runs import AWAITING_APPROVAL, CANCELLED, RUNNING
+from marketing_os.adapters.runs import (
+    AWAITING_APPROVAL,
+    AWAITING_CLARIFICATION,
+    CANCELLED,
+    HELD_STATUSES,
+    RUNNING,
+)
 from marketing_os.adapters.usage import whole_credits
 from marketing_os.campaign import (
     Budget,
@@ -94,6 +101,7 @@ from marketing_os.errors import (
     RevisionLimitError,
     RunConflictError,
     RunLimitError,
+    RunNotAwaitingClarificationError,
     StageNotAwaitingApprovalError,
     UnauthenticatedError,
     ValidationError,
@@ -104,7 +112,7 @@ from marketing_os.governance.pipeline import (
     PIPELINE_BY_KEY,
 )
 from marketing_os.graph.registry import RunRegistry, read_run_status, resolve_trace_path
-from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage
+from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage, pending_hold
 from marketing_os.ports import (
     AnswerStore,
     DeliverableStore,
@@ -118,6 +126,7 @@ from marketing_os.ports import (
 )
 from marketing_os.questionnaire import completeness, render_brand_dna
 from marketing_os.schemas import (
+    CLARIFICATION_HOLD,
     TIER_NAMES,
     ApprovalDecision,
     BrandDnaRecord,
@@ -127,6 +136,7 @@ from marketing_os.schemas import (
     DnaAnswer,
     DnaCompleteness,
     Questionnaire,
+    RunHold,
     RunRecord,
     VerifiedIdentity,
     human_revisions_used,
@@ -982,9 +992,9 @@ class _CampaignRecord:
         latest: The newest version of each stage that has produced one, keyed
             by stage key; stages that produced nothing are absent.
         archived: Whether the archive marker has been written beside the goal.
-        halted: The live run holding at an Approval Gate, if one is. Which
-            stage it is holding at is a checkpoint read, not a store read, so
-            it is resolved by the caller.
+        halted: The live run holding on a person — at an Approval Gate, or for
+            an answer — if one is. What it is holding for is a checkpoint read,
+            not a store read, so it is resolved by the caller.
     """
 
     slug: str
@@ -1034,7 +1044,7 @@ def _read_campaign(
         goal=_named_goal(documents[goal_document], slug),
         latest=deliverables.latest_by_campaign(tenant, [slug]).get(slug, {}),
         archived=archive_marker in documents,
-        halted=live if live is not None and live.status == AWAITING_APPROVAL else None,
+        halted=live if live is not None and live.status in HELD_STATUSES else None,
     )
 
 
@@ -1094,11 +1104,11 @@ async def _stage_report(
     Returns:
         The stages in pipeline order, and the campaign's lifecycle status.
     """
-    waiting = await _waiting_stage(tenant, record.halted) if record.halted else None
+    hold = await _hold_of(tenant, record.halted) if record.halted else None
     progress = progress_from_latest(
         record.latest,
         human_gate_stages=get_settings().human_gate_stages,
-        waiting=waiting,
+        hold=hold,
     )
     return [_render_stage(stage) for stage in progress.stages], progress.status
 
@@ -1214,7 +1224,7 @@ async def list_campaigns(identity: Identity) -> dict[str, object]:
     portfolio = await asyncio.to_thread(
         _read_portfolio, tenant, get_document_store(), get_deliverable_store(), get_registry()
     )
-    waiting_by_slug = await _stages_awaiting_approval(tenant, portfolio.halted)
+    holds_by_slug = await _holds_by_slug(tenant, portfolio.halted)
     human_gate_stages = get_settings().human_gate_stages
 
     summaries: list[dict[str, object]] = []
@@ -1222,7 +1232,7 @@ async def list_campaigns(identity: Identity) -> dict[str, object]:
         progress = progress_from_latest(
             portfolio.latest.get(slug, {}),
             human_gate_stages=human_gate_stages,
-            waiting=waiting_by_slug.get(slug),
+            hold=holds_by_slug.get(slug),
         )
         stages = [_render_stage(stage) for stage in progress.stages]
         goal = portfolio.goals[slug]
@@ -1248,9 +1258,9 @@ class _Portfolio:
         goals: Each active campaign's goal, keyed by slug.
         latest: Each campaign's newest deliverable version per stage, keyed by
             slug then stage key; a campaign that has produced nothing is absent.
-        halted: The listed campaigns' live runs that are holding at an Approval
-            Gate. Which stage each is holding at is a checkpoint read, not a
-            store read, so it is resolved by the caller.
+        halted: The listed campaigns' live runs that are holding on a person,
+            at an Approval Gate or for an answer. What each is holding for is a
+            checkpoint read, not a store read, so it is resolved by the caller.
     """
 
     slugs: list[str]
@@ -1298,48 +1308,49 @@ def _read_portfolio(
         halted=[
             record
             for record in registry.active(tenant)
-            if record.status == AWAITING_APPROVAL and record.slug in goals
+            if record.status in HELD_STATUSES and record.slug in goals
         ],
     )
 
 
-async def _stages_awaiting_approval(tenant: str, halted: list[RunRecord]) -> dict[str, str]:
-    """Return the stage each halted run is holding at, keyed by campaign.
+async def _holds_by_slug(tenant: str, halted: list[RunRecord]) -> dict[str, RunHold]:
+    """Return what each halted run is holding for, keyed by campaign.
 
     Only runs already known to be waiting on a person cost a checkpoint read, and
     one campaign holds at most one run (ADR-0025), so this is bounded by how many
-    of the tenant's campaigns are at a gate rather than by how many exist.
+    of the tenant's campaigns are holding rather than by how many exist.
 
     Args:
         tenant: The tenant that owns the campaigns.
-        halted: The tenant's live runs that are holding at an Approval Gate.
+        halted: The tenant's live runs that are holding on a person.
 
     Returns:
-        The waiting stage key per campaign, with idle campaigns absent.
+        The hold per campaign, with idle campaigns absent.
     """
-    waiting: dict[str, str] = {}
+    holds: dict[str, RunHold] = {}
     for record in halted:
-        stage = await _waiting_stage(tenant, record)
-        if stage is not None:
-            waiting[record.slug] = stage
-    return waiting
+        hold = await _hold_of(tenant, record)
+        if hold is not None:
+            holds[record.slug] = hold
+    return holds
 
 
-async def _waiting_stage(tenant: str, halted: RunRecord) -> str | None:
-    """Return the stage a halted run is holding at.
+async def _hold_of(tenant: str, halted: RunRecord) -> RunHold | None:
+    """Return what a halted run is holding for: which stage, and a decision or an answer.
 
-    Read from the checkpoint, the same durable source the approve and revise
-    endpoints consult, so the stepper cannot disagree with what those endpoints
-    will accept — and so the answer holds when run tracing is switched off.
+    Read from the checkpoint, the same durable source the approve, revise and
+    clarification endpoints consult, so the stepper cannot disagree with what
+    those endpoints will accept — and so the answer holds when run tracing is
+    switched off.
 
     Args:
         tenant: The tenant that owns the campaign.
-        halted: The live run that is holding at an Approval Gate.
+        halted: The live run that is holding on a person.
 
     Returns:
-        The waiting stage key, or ``None`` when the checkpoint shows no gate.
+        The hold, or ``None`` when the checkpoint shows none.
     """
-    return await awaiting_approval_stage(
+    return await pending_hold(
         tenant, halted.slug, stage=halted.stage, checkpointer=get_checkpointer()
     )
 
@@ -1377,6 +1388,10 @@ def _blocked_reason(stages: list[dict[str, object]], status: str) -> str | None:
         waiting = next((stage for stage in stages if stage["state"] == AWAITING_APPROVAL), None)
         phase = waiting["phase"] if waiting else "A stage"
         return f"{phase} is waiting for your approval."
+    if status == AWAITING_CLARIFICATION:
+        asking = next((stage for stage in stages if stage["state"] == AWAITING_CLARIFICATION), None)
+        phase = asking["phase"] if asking else "A stage"
+        return f"{phase} has a question for you."
     stale = [stage for stage in stages if stage["stale"]]
     if stale:
         return f"{stale[0]['phase']} rests on a decision you have since re-opened."
@@ -2132,6 +2147,42 @@ async def revise_stage(run_id: str, body: ReviseStage, identity: Identity) -> di
     _refuse_when_quota_spent(identity.tenant_id)
     decision = ApprovalDecision(stage_key=body.stage_key, approved=False, feedback=feedback)
     return await _resume_run(run_id, identity, decision)
+
+
+@app.get("/runs/{run_id}/clarifications")
+async def run_clarifications(run_id: str, identity: Identity) -> dict[str, object]:
+    """Read the questions a halted run is asking the business, with their reasons.
+
+    Read from the checkpoint, the one place a hold stays true across a restart,
+    so the screen that lists the questions shows exactly what the run will be
+    resumed with (ADR-0028).
+
+    Args:
+        run_id: The halted run.
+        identity: The verified identity that must own the run.
+
+    Returns:
+        The run's id, slug, the stage that asked, and its questions.
+
+    Raises:
+        HTTPException: 404 if the caller has no such run; 409 if the run is not
+            holding for a clarification — at an Approval Gate, finished, or
+            still running.
+    """
+    record = get_registry().get(run_id, identity.tenant_id)
+    if record is None:
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
+    hold = await pending_hold(
+        record.tenant_id, record.slug, stage=record.stage, checkpointer=get_checkpointer()
+    )
+    if hold is None or hold.kind != CLARIFICATION_HOLD:
+        raise _http_error(RunNotAwaitingClarificationError(run_id))
+    return {
+        "run_id": run_id,
+        "slug": record.slug,
+        "stage": hold.stage,
+        "questions": [question.model_dump() for question in hold.questions],
+    }
 
 
 def _refuse_when_quota_spent(tenant: str) -> None:

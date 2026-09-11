@@ -103,6 +103,11 @@ services:
       # accident.
       MARKETING_OS_PROVIDER: scripted
       MARKETING_OS_ALLOW_SCRIPTED_MODEL: "1"
+      # The scripted performance-plan specialist asks the business a fixed
+      # question instead of writing, so the suite can walk a Clarification
+      # (ADR-0028). Two gates deep on purpose: every spec that runs to the
+      # first or second gate is untouched by it.
+      MARKETING_OS_SCRIPTED_ASK_STAGE: performance-plan
       MARKETING_OS_WEB: "0"
       MARKETING_OS_LOG_LEVEL: INFO
     volumes:

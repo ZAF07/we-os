@@ -6,6 +6,7 @@ import {
   deliverableName,
   nextStageKey,
   stageAwaitingApproval,
+  stageHolding,
   stageStatus,
   stageTitle,
   toPhases,
@@ -105,6 +106,20 @@ describe("toPhases", () => {
     expect(phases[0].status).toBe("Stale");
   });
 
+  it("reads a Phase as Needs input when a stage under it is asking a question", () => {
+    const phases = toPhases([
+      stage("campaign-strategy", "Strategy", {
+        state: "completed",
+        latest_version: 1,
+      }),
+      stage("performance-plan", "Plan", { state: "awaiting_clarification" }),
+    ]);
+
+    expect(phases.find((phase) => phase.name === "Plan")?.status).toBe(
+      "Needs input",
+    );
+  });
+
   it("prefers the gate over staleness, because the gate is the live decision", () => {
     const phases = toPhases([
       stage("creative-brief", "Produce", { state: "awaiting_approval" }),
@@ -116,6 +131,10 @@ describe("toPhases", () => {
 });
 
 describe("stageStatus", () => {
+  it("reads a stage asking the owner a question as Needs input", () => {
+    expect(stageStatus("awaiting_clarification", false)).toBe("Needs input");
+  });
+
   it("speaks the operator's vocabulary, never the engine's state string", () => {
     expect(stageStatus("pending", false)).toBe("Not started");
     expect(stageStatus("completed", false)).toBe("Approved");
@@ -156,6 +175,20 @@ describe("defaultStageKey", () => {
 
     expect(defaultStageKey(stages)).toBe("brand-strategy");
     expect(stageAwaitingApproval(stages)?.key).toBe("brand-strategy");
+  });
+
+  it("opens on the stage asking a question, which is what the run is blocked on", () => {
+    const stages = [
+      stage("research", "Research", { state: "completed", latest_version: 1 }),
+      stage("brand-strategy", "Strategy", {
+        state: "awaiting_clarification",
+      }),
+      stage("campaign-strategy", "Strategy"),
+    ];
+
+    expect(defaultStageKey(stages)).toBe("brand-strategy");
+    expect(stageHolding(stages)?.key).toBe("brand-strategy");
+    expect(stageAwaitingApproval(stages)).toBeNull();
   });
 
   it("opens on the newest thing produced when nothing is waiting", () => {

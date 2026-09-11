@@ -10,12 +10,14 @@ The store also carries each run's lifecycle status, so a status outlives the
 process that produced it and a restart can resolve the runs it was holding
 rather than leaving them ``running`` forever.
 
-``awaiting_approval`` is the one non-terminal status besides ``running``: a run
-halted at an Approval Gate is not finished and has not failed, it is waiting on a
-person (ADR-0015, ADR-0017). It **keeps its campaign claim**, because the person
-approving it is going to resume this run and nobody else may start a competing
-one in the meantime — which is what ``LIVE_STATUSES`` names: the statuses that
-still hold a claim.
+``awaiting_approval`` and ``awaiting_clarification`` are the non-terminal
+statuses besides ``running``: a run halted at an Approval Gate, or halted to ask
+the business a question, is not finished and has not failed, it is waiting on a
+person (ADR-0015, ADR-0017, ADR-0028). Both **keep their campaign claim**,
+because the person answering is going to resume this run and nobody else may
+start a competing one in the meantime — which is what ``LIVE_STATUSES`` names:
+the statuses that still hold a claim. ``HELD_STATUSES`` are the live statuses
+that are waiting on a person rather than executing.
 """
 
 from __future__ import annotations
@@ -25,11 +27,13 @@ from marketing_os.schemas import RunRecord
 
 RUNNING = "running"
 AWAITING_APPROVAL = "awaiting_approval"
+AWAITING_CLARIFICATION = "awaiting_clarification"
 COMPLETED = "completed"
 FAILED = "failed"
 CANCELLED = "cancelled"
 INTERRUPTED = "interrupted"
-LIVE_STATUSES = (RUNNING, AWAITING_APPROVAL)
+HELD_STATUSES = (AWAITING_APPROVAL, AWAITING_CLARIFICATION)
+LIVE_STATUSES = (RUNNING, *HELD_STATUSES)
 
 
 def validate_live_status(status: str) -> str:

@@ -55,6 +55,11 @@ class CampaignState(TypedDict, total=False):
         route: The routing decision the review node produced for the router.
         human_feedback: The written feedback a person sent the current stage back
             with, applied on the next specialist attempt.
+        clarifications: The questions the current stage's specialist asked the
+            business, held until the stage's clarification node halts on them.
+        clarification_rounds: How many times each stage has halted to ask within
+            this run, keyed by stage. Survives the per-stage reset at entry,
+            since it is what the cap counts across re-entries (ADR-0028).
     """
 
     tenant: str
@@ -71,3 +76,5 @@ class CampaignState(TypedDict, total=False):
     save_retries: int
     route: str
     human_feedback: str | None
+    clarifications: list[dict[str, Any]] | None
+    clarification_rounds: dict[str, int]

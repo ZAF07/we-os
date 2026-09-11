@@ -24,3 +24,10 @@ def test_performance_plan_rubric_requires_placement_format_specs():
     assert "Placements are specified" in rubric
     assert "aspect ratio" in rubric
     assert "copy limits" in rubric
+
+
+def test_shared_rubric_fails_a_recommendation_resting_on_a_fact_absent_from_the_dna():
+    """ADR-0028: asking must be cheaper for the specialist than guessing."""
+    rubric = (_GUARDRAILS_DIR / "shared.md").read_text(encoding="utf-8")
+    assert "absent from the Brand DNA fails" in rubric
+    assert "ask" in rubric

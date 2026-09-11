@@ -49,10 +49,12 @@ const MISSING_FIELDS_SHOWN = 3;
 /**
  * Builds the decision queue from everything that actually needs a person.
  *
- * Three things land here. A campaign is holding at an Approval Gate, or it
- * rests on a decision that has since been re-opened — both are the owner's to
- * resolve and neither clears itself, which is what makes this a queue rather
- * than a status list. The third is an unfinished Brand DNA, which gates every
+ * Four things land here. A campaign is holding at an Approval Gate, or a
+ * specialist has stopped to ask the owner a question — both block a run in
+ * flight, and both are tagged Decision because both are the owner's to make.
+ * A campaign rests on a decision that has since been re-opened; that clears
+ * itself no more than the others, which is what makes this a queue rather than
+ * a status list. The last is an unfinished Brand DNA, which gates every
  * campaign stage there is, so a business with no campaigns yet still has one
  * thing waiting on it.
  *
@@ -62,7 +64,7 @@ const MISSING_FIELDS_SHOWN = 3;
  *     failed — an unread report costs this one item, not the queue.
  *
  * Returns:
- *   The queue: approvals first, since those block a run in flight; then the
+ *   The queue: decisions first, since those block a run in flight; then the
  *   Brand DNA, which blocks work not yet started; then stale work.
  */
 export function toQueue(
@@ -74,15 +76,19 @@ export function toQueue(
 
   for (const campaign of campaigns) {
     if (campaign.blocked_reason === null) continue;
+    const asking = campaign.status === "awaiting_clarification";
+    const deciding = asking || campaign.status === "awaiting_approval";
     const item: QueueItem = {
       slug: campaign.id,
-      tag: campaign.status === "awaiting_approval" ? "Decision" : "Stale",
+      tag: deciding ? "Decision" : "Stale",
       title: campaign.blocked_reason,
       meta: campaign.name,
-      cta: campaign.status === "awaiting_approval" ? "Review" : "Open",
-      href: `/campaigns/${campaign.id}`,
+      cta: asking ? "See questions" : deciding ? "Review" : "Open",
+      href: asking
+        ? `/campaigns/${campaign.id}/clarifications`
+        : `/campaigns/${campaign.id}`,
     };
-    if (campaign.status === "awaiting_approval") waiting.push(item);
+    if (deciding) waiting.push(item);
     else stale.push(item);
   }
 

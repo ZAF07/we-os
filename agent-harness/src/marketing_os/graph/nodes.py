@@ -11,6 +11,10 @@ Each stage contributes four nodes wired by :mod:`marketing_os.graph.graph`:
   the routing decision.
 * ``<stage>__approval`` halts a ``human``-policy stage on a LangGraph
   ``interrupt()`` until a person approves it or sends it back with feedback.
+* ``<stage>__clarify`` halts a stage whose specialist asked the business for a
+  fact the Brand DNA lacks, on the same ``interrupt()``, until the business
+  answers — or halts the run with an error once the stage has asked as many
+  times as it is allowed (ADR-0028).
 
 The credits are checked in these nodes rather than only at the HTTP edge,
 because they are where the billable call actually happens: an endpoint is not
@@ -40,12 +44,14 @@ from langgraph.types import interrupt
 from marketing_os.adapters.observability import get_logger
 from marketing_os.billing import USAGE_KEYS, billed_call
 from marketing_os.config import Settings
-from marketing_os.errors import QuotaExhaustedError
+from marketing_os.errors import ClarificationRequested, QuotaExhaustedError
 from marketing_os.governance.gate import check_gate
 from marketing_os.governance.pipeline import HUMAN, Stage, prerequisite_met, stage_document
 from marketing_os.graph.state import CampaignState
 from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer, UsageLedger
 from marketing_os.schemas import (
+    APPROVAL_HOLD,
+    CLARIFICATION_HOLD,
     HUMAN_FEEDBACK,
     REVIEWER_FEEDBACK,
     ApprovalDecision,
@@ -162,6 +168,28 @@ def _quota_halt(exc: QuotaExhaustedError, stage: Stage, slug: str) -> dict[str, 
         },
         "halt": True,
         "route": "fail",
+    }
+
+
+def _clarification_ask(asked: ClarificationRequested, usage: dict[str, int]) -> dict[str, Any]:
+    """Hand the questions a specialist asked to the stage's clarification node.
+
+    The specialist's partial conversation is dropped rather than kept: when the
+    business answers, the stage re-enters from scratch seeded with the updated
+    Brand DNA (ADR-0028), so nothing here is worth carrying forward except what
+    the work cost.
+
+    Args:
+        asked: The signal the ask tool raised, carrying the questions.
+        usage: The token usage the specialist consumed before it asked.
+
+    Returns:
+        A state update routing to the clarification node.
+    """
+    return {
+        "clarifications": [question.model_dump() for question in asked.questions],
+        "usage": usage,
+        "route": "clarify",
     }
 
 
@@ -446,25 +474,36 @@ def make_specialist_node(
             state: The campaign state carrying the specialist ``messages`` and slug.
 
         Returns:
-            A state update with the specialist's new messages and token usage, or
-            a halt when the tenant's credits are spent.
+            A state update with the specialist's new messages and token usage; a
+            hand-off to the clarification node when the specialist asked the
+            business a question; or a halt when the tenant's credits are spent.
         """
         inbound = list(state["messages"])
 
         async def invoke_specialist() -> Any:
-            """Run the specialist's tool-use loop over the stage conversation."""
-            return await agent.ainvoke(
-                {"messages": inbound, "slug": state["slug"], "tenant": state["tenant"]},
-                config={
-                    "recursion_limit": recursion_limit,
-                    "run_name": f"specialist:{stage.key}",
-                },
-            )
+            """Run the specialist's tool-use loop, or return the questions it asked.
+
+            The ask tool ends the loop by raising; the signal is returned rather
+            than re-raised so ``billed_call`` still hands back what the loop
+            cost, and the partial work is charged like any other call.
+            """
+            try:
+                return await agent.ainvoke(
+                    {"messages": inbound, "slug": state["slug"], "tenant": state["tenant"]},
+                    config={
+                        "recursion_limit": recursion_limit,
+                        "run_name": f"specialist:{stage.key}",
+                    },
+                )
+            except ClarificationRequested as asked:
+                return asked
 
         try:
             result, usage = await billed_call(ledger, state, stage, invoke_specialist)
         except QuotaExhaustedError as exc:
             return _quota_halt(exc, stage, state["slug"])
+        if isinstance(result, ClarificationRequested):
+            return _clarification_ask(result, usage)
         produced = result["messages"][len(inbound) :]
         return {"messages": produced, "usage": usage}
 
@@ -703,6 +742,7 @@ def make_approval_node(
         decision = ApprovalDecision(
             **interrupt(
                 {
+                    "kind": APPROVAL_HOLD,
                     "stage": stage.key,
                     "deliverable": stage_document(slug, stage),
                     "revisions_used": spent,
@@ -724,6 +764,77 @@ def make_approval_node(
         return {"human_feedback": decision.feedback, "route": "revise"}
 
     return approval_node
+
+
+def make_clarify_node(settings: Settings, stage: Stage) -> CampaignNode:
+    """Build a stage's clarification node.
+
+    Reached only when the stage's specialist asked the business a question. The
+    node halts the run on the same LangGraph ``interrupt()`` the Approval Gate
+    uses, so a run waiting for an answer survives a restart exactly as one
+    waiting for an approval does (ADR-0015, ADR-0028). Resuming routes back to
+    the stage's **entry** node: the stage re-runs from a fresh conversation
+    rather than continuing the one that asked.
+
+    The cap is enforced here, in the graph, so every driver of the pipeline is
+    bound by it. A stage that has already halted to ask as many times as
+    ``settings.max_clarifications`` allows halts the run with an error naming
+    what is still missing — it never proceeds on a guess.
+
+    Args:
+        settings: The harness settings (for the per-stage clarification cap).
+        stage: The pipeline stage this node holds.
+
+    Returns:
+        A node that waits for the business's answer, or fails the run past the cap.
+    """
+    cap = settings.max_clarifications
+
+    def clarify_node(state: CampaignState) -> dict[str, Any]:
+        """Halt until the business answers, or fail the run once the cap is spent.
+
+        Args:
+            state: The campaign state carrying the questions the specialist asked.
+
+        Returns:
+            A state update routing back into the stage once answered, or halting
+            the run when the stage has asked too many times.
+        """
+        slug = state["slug"]
+        questions = list(state.get("clarifications") or [])
+        rounds = dict(state.get("clarification_rounds") or {})
+        used = rounds.get(stage.key, 0)
+        if used >= cap:
+            _emit(
+                "stage.clarification_limit",
+                slug=slug,
+                stage=stage.key,
+                rounds_allowed=cap,
+                questions=questions,
+            )
+            return {
+                "error": {
+                    "type": "clarification",
+                    "stage": stage.key,
+                    "limit": cap,
+                    "questions": questions,
+                },
+                "halt": True,
+                "route": "fail",
+            }
+        _emit(
+            "stage.awaiting_clarification",
+            slug=slug,
+            stage=stage.key,
+            questions=questions,
+            rounds_used=used,
+            rounds_allowed=cap,
+        )
+        interrupt({"kind": CLARIFICATION_HOLD, "stage": stage.key, "questions": questions})
+        rounds[stage.key] = used + 1
+        return {"clarifications": None, "clarification_rounds": rounds, "route": "revise"}
+
+    return clarify_node
 
 
 def _handle_missing_deliverable(
@@ -775,6 +886,32 @@ def route_after_enter(state: CampaignState) -> str:
         ``"specialist"`` to run the stage, or ``"end"`` to halt the run.
     """
     return state.get("route", "specialist")
+
+
+def route_after_specialist(state: CampaignState) -> str:
+    """Route out of a stage's specialist node.
+
+    Args:
+        state: The campaign state after the specialist ran.
+
+    Returns:
+        ``"clarify"`` when the specialist asked the business a question,
+        otherwise ``"review"``.
+    """
+    return "clarify" if state.get("route") == "clarify" else "review"
+
+
+def route_after_clarify(state: CampaignState) -> str:
+    """Route out of a stage's clarification node.
+
+    Args:
+        state: The campaign state after the business answered, or the cap hit.
+
+    Returns:
+        ``"revise"`` to re-run the stage from its entry node, or ``"fail"`` when
+        the stage has asked as many times as it is allowed.
+    """
+    return state.get("route", "fail")
 
 
 def route_after_review(state: CampaignState) -> str:

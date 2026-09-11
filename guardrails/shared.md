@@ -15,6 +15,10 @@ Reject the deliverable if any of these are violated:
   generation prompts in a brief).
 - **Evidence over assertion.** Strong claims are supported; assumptions are
   labelled as assumptions.
+- **Asks, never assumes.** A recommendation that rests on a fact about the
+  business absent from the Brand DNA fails. The specialist should have asked the
+  business for it (the `ask_tenant` tool) rather than inferring it; asking must
+  always be cheaper than guessing.
 - **Specific and usable.** Concrete enough for the next stage to act on — no vague
   platitudes ("great quality", "engaging content") without substance.
 - **Respects hard constraints.** Honors the DNA's constraints (compliance,

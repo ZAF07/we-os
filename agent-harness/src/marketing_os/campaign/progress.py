@@ -3,7 +3,8 @@
 "Where has this campaign got to?" is the question the product exists to answer,
 and it is two questions on separate axes (ADR-0017): each **stage** has a state
 saying how far it got, and the **campaign** has a lifecycle status saying what
-its situation is. A campaign waiting on a person is ``awaiting_approval``
+its situation is. A campaign waiting on a person is ``awaiting_approval`` or
+``awaiting_clarification`` — for a decision, or for an answer (ADR-0028) —
 whichever stage it is holding at.
 
 Both are derived from the deliverables themselves — their version chains and
@@ -24,25 +25,31 @@ from dataclasses import dataclass
 from marketing_os.governance.pipeline import PIPELINE, Stage, apply_approval_policies
 from marketing_os.governance.staleness import stale_from_latest, stale_stages
 from marketing_os.ports import DeliverableStore
-from marketing_os.schemas import DeliverableVersion
+from marketing_os.schemas import APPROVAL_HOLD, CLARIFICATION_HOLD, DeliverableVersion, RunHold
 
 DRAFT = "draft"
 RUNNING = "running"
 AWAITING_APPROVAL = "awaiting_approval"
+AWAITING_CLARIFICATION = "awaiting_clarification"
 APPROVED = "approved"
 """The campaign lifecycle statuses.
 
-``running`` and ``awaiting_approval`` are spelled the same as the *run* statuses
-in :mod:`marketing_os.adapters.runs`, and deliberately defined separately: a run
-and a campaign are different axes (ADR-0017). A campaign with no live run at all
-can still read ``running``, and the day one axis gains a status the other does
-not, these must be free to diverge without an adapter's constant following.
+``running``, ``awaiting_approval`` and ``awaiting_clarification`` are spelled
+the same as the *run* statuses in :mod:`marketing_os.adapters.runs`, and
+deliberately defined separately: a run and a campaign are different axes
+(ADR-0017). A campaign with no live run at all can still read ``running``, and
+the day one axis gains a status the other does not, these must be free to
+diverge without an adapter's constant following.
 """
 
 PENDING = "pending"
 COMPLETED = "completed"
 STALE = "stale"
-"""The per-stage states, saying how far one stage has got."""
+"""The per-stage states, saying how far one stage has got. A holding stage
+reports ``awaiting_approval`` or ``awaiting_clarification`` as its state."""
+
+_HOLD_STATES = {APPROVAL_HOLD: AWAITING_APPROVAL, CLARIFICATION_HOLD: AWAITING_CLARIFICATION}
+"""What a campaign, and the stage holding it, reads for each kind of hold."""
 
 
 @dataclass(frozen=True)
@@ -51,7 +58,8 @@ class StageProgress:
 
     Attributes:
         stage: The pipeline stage, carrying its configured approval policy.
-        state: ``pending``, ``completed``, ``awaiting_approval`` or ``stale``.
+        state: ``pending``, ``completed``, ``awaiting_approval``,
+            ``awaiting_clarification`` or ``stale``.
         latest: The newest version of its deliverable, or ``None`` when the
             stage has produced nothing.
         stale: Whether the stage rests on a decision re-opened since it ran. A
@@ -71,7 +79,8 @@ class CampaignProgress:
     """A campaign's lifecycle status and the state of every stage under it.
 
     Attributes:
-        status: ``draft``, ``running``, ``awaiting_approval`` or ``approved``.
+        status: ``draft``, ``running``, ``awaiting_approval``,
+            ``awaiting_clarification`` or ``approved``.
         stages: Every stage in mandatory pipeline order.
     """
 
@@ -79,12 +88,13 @@ class CampaignProgress:
     stages: list[StageProgress]
 
 
-def campaign_status(produced: set[str], stale: set[str], waiting: str | None) -> str:
+def campaign_status(produced: set[str], stale: set[str], hold: RunHold | None) -> str:
     """Return the campaign's lifecycle status, a separate axis from stage progress.
 
     Lifecycle answers "what is this campaign's situation?" while stage state
     answers "how far has it got?" (ADR-0017), so a campaign waiting on a person
-    is ``awaiting_approval`` whichever stage it is holding at.
+    is ``awaiting_approval`` or ``awaiting_clarification`` whichever stage it is
+    holding at.
 
     A campaign is only ``approved`` once every stage has produced a deliverable
     **and none of them is stale**. That is the criterion that stops re-opening a
@@ -94,13 +104,14 @@ def campaign_status(produced: set[str], stale: set[str], waiting: str | None) ->
     Args:
         produced: The stages that have produced a deliverable.
         stale: The stages resting on a decision that has since been re-opened.
-        waiting: The stage holding at an Approval Gate, if any.
+        hold: What a live run is waiting on a person for, if anything.
 
     Returns:
-        One of ``draft``, ``running``, ``awaiting_approval`` or ``approved``.
+        One of ``draft``, ``running``, ``awaiting_approval``,
+        ``awaiting_clarification`` or ``approved``.
     """
-    if waiting is not None:
-        return AWAITING_APPROVAL
+    if hold is not None:
+        return _HOLD_STATES[hold.kind]
     if not produced:
         return DRAFT
     if stale or len(produced) < len(PIPELINE):
@@ -109,26 +120,26 @@ def campaign_status(produced: set[str], stale: set[str], waiting: str | None) ->
 
 
 def stage_progress(
-    stage: Stage, latest: DeliverableVersion | None, waiting: str | None, stale: set[str]
+    stage: Stage, latest: DeliverableVersion | None, hold: RunHold | None, stale: set[str]
 ) -> StageProgress:
     """Describe how far one stage has got.
 
-    A stage holding at a gate reports ``awaiting_approval`` even when its
-    deliverable is stale: what the person must do next is decide on the draft in
-    front of them, and reporting the stage as stale instead would hide the
-    decision the run is actually blocked on.
+    A holding stage reports what it is waiting for — ``awaiting_approval`` or
+    ``awaiting_clarification`` — even when its deliverable is stale: what the
+    person must do next is decide, or answer, and reporting the stage as stale
+    instead would hide what the run is actually blocked on.
 
     Args:
         stage: The pipeline stage, carrying its configured approval policy.
         latest: The newest version of its deliverable, if it has produced one.
-        waiting: The stage currently halted at an Approval Gate, if any.
+        hold: What a live run is waiting on a person for, if anything.
         stale: The stages resting on a decision that has since been re-opened.
 
     Returns:
         The stage's progress.
     """
-    if stage.key == waiting:
-        state = AWAITING_APPROVAL
+    if hold is not None and stage.key == hold.stage:
+        state = _HOLD_STATES[hold.kind]
     elif stage.key in stale:
         state = STALE
     elif latest is not None:
@@ -149,7 +160,7 @@ async def campaign_progress(
     slug: str,
     *,
     human_gate_stages: list[str] | None,
-    awaiting_stage: Callable[[], Awaitable[str | None]],
+    hold: Callable[[], Awaitable[RunHold | None]],
 ) -> CampaignProgress:
     """Report a campaign's stages and the lifecycle status derived from them.
 
@@ -163,10 +174,10 @@ async def campaign_progress(
         slug: The campaign slug.
         human_gate_stages: The stage keys configured to halt at an Approval
             Gate, or ``None`` to keep each stage's shipped policy (ADR-0015).
-        awaiting_stage: Resolves the stage a live run is halted at, or ``None``
-            when none is. Taken as a callable because answering it means asking
-            the run registry and the checkpointer — a different concern from
-            reading deliverables, and one the caller already owns.
+        hold: Resolves what a live run is waiting on a person for, or ``None``
+            when nothing is. Taken as a callable because answering it means
+            asking the run registry and the checkpointer — a different concern
+            from reading deliverables, and one the caller already owns.
 
     Returns:
         The campaign's lifecycle status and every stage in pipeline order.
@@ -178,7 +189,7 @@ async def campaign_progress(
     return progress_from_latest(
         {key: version for key, version in latest.items() if version is not None},
         human_gate_stages=human_gate_stages,
-        waiting=await awaiting_stage(),
+        hold=await hold(),
     )
 
 
@@ -186,7 +197,7 @@ def progress_from_latest(
     latest: dict[str, DeliverableVersion],
     *,
     human_gate_stages: list[str] | None,
-    waiting: str | None,
+    hold: RunHold | None,
 ) -> CampaignProgress:
     """Derive a campaign's progress from deliverables that have already been read.
 
@@ -200,7 +211,8 @@ def progress_from_latest(
             stage key; stages that produced nothing are simply absent.
         human_gate_stages: The stage keys configured to halt at an Approval
             Gate, or ``None`` to keep each stage's shipped policy (ADR-0015).
-        waiting: The stage a live run is halted at, or ``None`` when none is.
+        hold: What a live run is waiting on a person for, or ``None`` when
+            nothing is.
 
     Returns:
         The campaign's lifecycle status and every stage in pipeline order.
@@ -209,10 +221,8 @@ def progress_from_latest(
     stale = stale_from_latest(latest)
     produced = set(latest)
     return CampaignProgress(
-        status=campaign_status(produced, stale, waiting),
-        stages=[
-            stage_progress(stage, latest.get(stage.key), waiting, stale) for stage in configured
-        ],
+        status=campaign_status(produced, stale, hold),
+        stages=[stage_progress(stage, latest.get(stage.key), hold, stale) for stage in configured],
     )
 
 

@@ -19,6 +19,10 @@ const EVENT_SENTENCES: Record<string, (event: RunEvent) => string> = {
   "stage.review": (event) => `Reviewing ${named(event)} against its guardrail.`,
   "stage.done": (event) => `Finished ${named(event)}.`,
   "stage.approved": (event) => `You approved ${named(event)}.`,
+  "stage.awaiting_clarification": (event) =>
+    `${named(event)} has a question for you.`,
+  "stage.clarification_limit": (event) =>
+    `Stopped: ${named(event)} asked more than it is allowed to.`,
   "stage.revision_requested": (event) => `Revising ${named(event)}.`,
   "stage.blocked": (event) => `${named(event)} is waiting on an earlier stage.`,
   "stage.failed": (event) => `${named(event)} could not be completed.`,
@@ -53,19 +57,38 @@ export function describeEvent(event: RunEvent): string | null {
 }
 
 /**
+ * Reads the outcome of the newest run summary the stream has replayed.
+ *
+ * Args:
+ *   events: The trace events seen so far.
+ *
+ * Returns:
+ *   The outcome, or null when the run has not summarised yet.
+ */
+function lastSummaryOutcome(events: RunEvent[]): string | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index].event === "run.summary") {
+      return events[index].outcome ?? null;
+    }
+  }
+  return null;
+}
+
+/**
  * Renders a run's live progress as it happens.
  *
  * A dropped connection is shown as exactly that, never as a finished run: the
  * work may well still be going, and the honest thing is to say the page stopped
  * hearing about it and how to catch up.
  *
- * A run halted at a gate is neither working nor finished: it is waiting on the
- * person reading this, and the header says so.
+ * A run halted at a gate, or on a question for the owner, is neither working
+ * nor finished: it is waiting on the person reading this, and the header says
+ * which of the two it is waiting for.
  *
  * Args:
  *   events: The trace events seen so far.
  *   finished: Whether the run has reached its terminal event.
- *   halted: Whether the run is holding at an Approval Gate.
+ *   halted: Whether the run is holding on a person.
  *   disconnected: Whether the stream dropped before the run finished.
  */
 export function RunProgress({
@@ -88,6 +111,7 @@ export function RunProgress({
   if (lines.length === 0 && (finished || halted)) return null;
 
   const working = !finished && !halted;
+  const asking = lastSummaryOutcome(events) === "awaiting_clarification";
 
   if (disconnected) {
     return (
@@ -118,7 +142,9 @@ export function RunProgress({
         {finished
           ? "Run finished"
           : halted
-            ? "Waiting for your decision"
+            ? asking
+              ? "Waiting for your answer"
+              : "Waiting for your decision"
             : "Working"}
       </div>
       <ol className="mt-2 flex flex-col gap-1 text-[12.5px] text-indigo-900">

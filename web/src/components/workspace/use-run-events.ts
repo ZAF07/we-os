@@ -18,7 +18,9 @@ export interface RunFeed {
 }
 
 const TERMINAL_EVENT = "run.summary";
-const GATE_OUTCOME = "awaiting_approval";
+
+/** The summary outcomes that mean the run is holding on a person, not done. */
+const HELD_OUTCOMES = new Set(["awaiting_approval", "awaiting_clarification"]);
 
 /** The events after which the run is no longer working on the stage it started. */
 const STAGE_ENDED = new Set([
@@ -87,9 +89,10 @@ export function runningStage(events: RunEvent[]): string | null {
  * run completed when the connection merely died would be a lie about their
  * campaign.
  *
- * A run that halts at a gate writes a summary saying so and ends its stream —
- * that is `halted`, distinct from finished, because the run is waiting on a
- * person rather than done. Approving or revising continues that *same* run,
+ * A run that halts at a gate, or to ask the owner a question, writes a summary
+ * saying so and ends its stream — that is `halted`, distinct from finished,
+ * because the run is waiting on a person rather than done. Approving,
+ * revising or answering continues that *same* run,
  * so the page must attach again or it would never hear what happens next: the
  * version it asked for would land, and the screen would keep showing the one
  * it refused until someone reloaded. `attempt` is what says "this run has been
@@ -128,7 +131,7 @@ export function useRunEvents(runId: string | null, attempt = 0): RunFeed {
     source.onmessage = (message) => {
       const event = JSON.parse(message.data) as RunEvent;
       const summary = event.event === TERMINAL_EVENT;
-      const finished = summary && event.outcome !== GATE_OUTCOME;
+      const finished = summary && !HELD_OUTCOMES.has(event.outcome ?? "");
       setFeed((seen) => {
         const sameRun = seen.runId === runId;
         const sameAttempt = sameRun && seen.attempt === attempt;

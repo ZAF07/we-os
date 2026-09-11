@@ -39,6 +39,7 @@ from marketing_os.adapters.deliverables import InMemoryDeliverableStore
 from marketing_os.campaign.progress import campaign_progress
 from marketing_os.config import Settings
 from marketing_os.governance.staleness import stale_stages
+from marketing_os.schemas import RunHold
 
 
 def _numbered_handler(messages: list[BaseMessage], index: int) -> AIMessage:
@@ -352,23 +353,19 @@ async def _campaign_status(repo: Path, *, waiting: str | None) -> str:
 
     Args:
         repo: The hermetic repository root the deliverables were written under.
-        waiting: The stage a live run is holding at, or ``None`` when the run
-            has finished and nothing is waiting on a person.
+        waiting: The stage a live run is holding at an Approval Gate, or
+            ``None`` when the run has finished and nothing is waiting on a person.
 
     Returns:
         The campaign's lifecycle status.
     """
     from marketing_os.adapters.deliverables import FilesystemDeliverableStore
 
-    async def waiting_stage() -> str | None:
-        return waiting
+    async def hold() -> RunHold | None:
+        return None if waiting is None else RunHold(stage=waiting, kind="approval")
 
     progress = await campaign_progress(
-        FilesystemDeliverableStore(repo),
-        TENANT,
-        SLUG,
-        human_gate_stages=None,
-        awaiting_stage=waiting_stage,
+        FilesystemDeliverableStore(repo), TENANT, SLUG, human_gate_stages=None, hold=hold
     )
     return progress.status
 

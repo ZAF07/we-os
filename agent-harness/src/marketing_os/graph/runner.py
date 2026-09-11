@@ -8,9 +8,10 @@ and every thread is tenant-scoped so two businesses running the same slug cannot
 share checkpointed state.
 
 ``INTERRUPT_CHANNEL`` is the channel LangGraph records a pending ``interrupt()``
-under in a checkpoint's writes, and is how a halted run's Approval Gate is found
-after a restart. LangGraph exports the name only from a module it asks callers
-not to import, so it is spelled here instead.
+under in a checkpoint's writes, and is how a halted run's hold — an Approval
+Gate, or a question for the business — is found after a restart. LangGraph
+exports the name only from a module it asks callers not to import, so it is
+spelled here instead.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from marketing_os.adapters.observability import (
     new_run_id,
     run_config,
 )
-from marketing_os.adapters.runs import AWAITING_APPROVAL
+from marketing_os.adapters.runs import AWAITING_APPROVAL, AWAITING_CLARIFICATION
 from marketing_os.adapters.tools import WebSearchTool
 from marketing_os.config import Settings
 from marketing_os.errors import exception_from_state_error
@@ -38,11 +39,22 @@ from marketing_os.graph.graph import build_campaign_graph, build_single_stage_gr
 from marketing_os.graph.state import CampaignState
 from marketing_os.ports import DeliverableStore, DocumentStore, UsageLedger
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
-from marketing_os.schemas import CampaignResult, Questionnaire, StageResult, Usage
+from marketing_os.schemas import (
+    APPROVAL_HOLD,
+    CLARIFICATION_HOLD,
+    CampaignResult,
+    Questionnaire,
+    RunHold,
+    StageResult,
+    Usage,
+)
 
 _LOGGER = get_logger("marketing_os.runner")
 
 INTERRUPT_CHANNEL = "__interrupt__"
+
+_HOLD_OUTCOMES = {APPROVAL_HOLD: AWAITING_APPROVAL, CLARIFICATION_HOLD: AWAITING_CLARIFICATION}
+"""The run status, and trace outcome, each kind of hold leaves the run in."""
 
 
 def _select_graph(
@@ -158,7 +170,7 @@ def _to_result(
     slug: str,
     state: CampaignState,
     run_log: str | None,
-    awaiting: str | None = None,
+    hold: RunHold | None = None,
 ) -> CampaignResult:
     """Assemble a :class:`CampaignResult` from the final graph state.
 
@@ -167,7 +179,7 @@ def _to_result(
         slug: The campaign slug.
         state: The final campaign state.
         run_log: The repo-relative path of the run's JSONL trace, if any.
-        awaiting: The stage halted at an Approval Gate, if the run stopped there.
+        hold: What the run halted on, if it is waiting on a person.
 
     Returns:
         The structured campaign result.
@@ -180,7 +192,10 @@ def _to_result(
         stages=stages,
         usage=usage,
         run_log=run_log,
-        awaiting_approval_stage=awaiting,
+        awaiting_approval_stage=hold.stage if hold and hold.kind == APPROVAL_HOLD else None,
+        awaiting_clarification_stage=(
+            hold.stage if hold and hold.kind == CLARIFICATION_HOLD else None
+        ),
     )
 
 
@@ -253,7 +268,8 @@ def _emit_summary(
         trace: The open trace, or ``None``.
         run_log: The repo-relative trace path, if any.
         outcome: The terminal outcome — ``"ok"``, ``"error"``, ``"cancelled"``,
-            or ``"awaiting_approval"`` when a person is holding the run.
+            or ``"awaiting_approval"`` / ``"awaiting_clarification"`` when a
+            person is holding the run.
         error: The structured error payload, or ``None`` on success.
         results: The per-stage results to record.
         usage: The token usage to record.
@@ -333,67 +349,77 @@ def _write_error_summary(trace: RunTrace | None, exc: BaseException, run_log: st
     )
 
 
-def _gated_stage(pending: Any) -> str | None:
-    """Return the stage named by the first Approval Gate interrupt in a sequence.
+def _hold_from(pending: Any) -> RunHold | None:
+    """Return the hold described by the first stage-naming interrupt in a sequence.
 
-    The one place a pending ``interrupt()`` is read, so the snapshot path and the
-    checkpoint path cannot come to different answers about which stage is
-    waiting.
+    The one place a pending ``interrupt()`` payload is read, so the snapshot path
+    and the checkpoint path cannot come to different answers about what the run
+    is waiting for. A payload with no ``kind`` was written by an Approval Gate
+    before clarifications existed, and is read as one.
 
     Args:
         pending: The pending interrupts to inspect.
 
     Returns:
-        The waiting stage key, or ``None`` when none of them names a stage.
+        The hold, or ``None`` when none of the interrupts names a stage.
     """
     for interrupted in pending or ():
         payload = getattr(interrupted, "value", None)
         if isinstance(payload, dict) and payload.get("stage"):
-            return str(payload["stage"])
+            return RunHold(
+                stage=str(payload["stage"]),
+                kind=payload.get("kind", APPROVAL_HOLD),
+                questions=payload.get("questions", []),
+            )
     return None
 
 
-def _awaiting_stage(snapshot: Any) -> str | None:
-    """Return the stage a graph snapshot is halted at an Approval Gate for.
+def _hold_in(snapshot: Any) -> RunHold | None:
+    """Return what a graph snapshot is halted on, if it is waiting on a person.
 
     LangGraph records a pending ``interrupt()`` on the snapshot's tasks. Reading
     it from the snapshot rather than from the stream is what makes the answer the
     same whether the run just halted or was reloaded from a checkpoint after a
-    restart — which is the whole point of a durable gate (ADR-0015).
+    restart — which is the whole point of a durable halt (ADR-0015).
 
     Args:
         snapshot: The graph state snapshot to inspect.
 
     Returns:
-        The waiting stage key, or ``None`` when nothing is waiting on a person.
+        The hold, or ``None`` when nothing is waiting on a person.
     """
     for task in getattr(snapshot, "tasks", ()) or ():
-        waiting = _gated_stage(getattr(task, "interrupts", ()))
-        if waiting is not None:
-            return waiting
+        hold = _hold_from(getattr(task, "interrupts", ()))
+        if hold is not None:
+            return hold
     return None
 
 
-def _write_awaiting_summary(trace: RunTrace | None, stage_key: str, run_log: str | None) -> None:
-    """Write the terminal ``awaiting_approval`` summary for a gated run.
+def _write_held_summary(trace: RunTrace | None, hold: RunHold, run_log: str | None) -> None:
+    """Write the terminal summary for a run halted on a person.
 
-    A run halted at an Approval Gate has stopped executing, so its trace needs a
-    terminal event exactly as a finished one does — but the outcome says the run
-    is waiting on a person, not that it is done (ADR-0017).
+    A run halted at an Approval Gate, or to ask the business a question, has
+    stopped executing, so its trace needs a terminal event exactly as a finished
+    one does — but the outcome says the run is waiting on a person, not that it
+    is done (ADR-0017). A clarification hold records its questions, so the trace
+    shows what was asked.
 
     Args:
         trace: The open trace, or ``None``.
-        stage_key: The stage waiting for approval.
+        hold: What the run is waiting for.
         run_log: The repo-relative trace path, if any.
     """
+    extra: dict[str, Any] = {"stage": hold.stage}
+    if hold.kind == CLARIFICATION_HOLD:
+        extra["questions"] = [question.model_dump() for question in hold.questions]
     _emit_summary(
         trace,
         run_log,
-        outcome=AWAITING_APPROVAL,
+        outcome=_HOLD_OUTCOMES[hold.kind],
         error=None,
         results=[],
         usage={},
-        stage=stage_key,
+        **extra,
     )
 
 
@@ -403,7 +429,7 @@ async def _drive(
     config: dict[str, Any],
     trace: RunTrace | None,
     on_event: Callable[[dict[str, Any]], None] | None,
-) -> tuple[CampaignState, str | None]:
+) -> tuple[CampaignState, RunHold | None]:
     """Stream a graph to a halt and report where it stopped.
 
     Args:
@@ -414,7 +440,7 @@ async def _drive(
         on_event: An optional callback invoked with each progress event.
 
     Returns:
-        The final state and the stage waiting at an Approval Gate, if any.
+        The final state and what the run is waiting on a person for, if anything.
     """
     stream = graph.astream(inbound, config=config, stream_mode=["custom", "updates"])
     async for mode, chunk in stream:
@@ -425,7 +451,7 @@ async def _drive(
         if on_event is not None:
             on_event(chunk)
     snapshot = await graph.aget_state(config)
-    return snapshot.values, _awaiting_stage(snapshot)
+    return snapshot.values, _hold_in(snapshot)
 
 
 def _initial_state(tenant: str, slug: str, feedback: str | None) -> dict[str, Any]:
@@ -450,17 +476,17 @@ def _initial_state(tenant: str, slug: str, feedback: str | None) -> dict[str, An
     return state
 
 
-async def awaiting_approval_stage(
+async def pending_hold(
     tenant: str,
     slug: str,
     *,
     stage: str | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
-) -> str | None:
-    """Return the stage a campaign's checkpointed run is halted at, if any.
+) -> RunHold | None:
+    """Return what a campaign's checkpointed run is waiting on a person for, if anything.
 
     Read from the checkpoint rather than from memory or from the trace, so the
-    answer survives a restart: a halted run's gate is exactly where its persisted
+    answer survives a restart: a halted run's hold is exactly where its persisted
     state says it is, whichever process asks (ADR-0015). Only the saved state is
     needed, so this asks the checkpointer directly rather than compiling the
     pipeline to get a snapshot.
@@ -472,7 +498,8 @@ async def awaiting_approval_stage(
         checkpointer: The checkpointer holding the run's state.
 
     Returns:
-        The waiting stage key, or ``None`` when nothing is waiting on a person.
+        The hold — the stage, whether it waits for an approval or an answer, and
+        the questions asked — or ``None`` when nothing is waiting on a person.
     """
     if checkpointer is None:
         return None
@@ -484,9 +511,9 @@ async def awaiting_approval_stage(
     for _, channel, value in writes:
         if channel != INTERRUPT_CHANNEL:
             continue
-        waiting = _gated_stage(value if isinstance(value, list) else [value])
-        if waiting is not None:
-            return waiting
+        hold = _hold_from(value if isinstance(value, list) else [value])
+        if hold is not None:
+            return hold
     if writes:
         _LOGGER.warning(
             "run.gate_unreadable tenant=%s slug=%s channels=%s — a halted run will look "
@@ -497,6 +524,34 @@ async def awaiting_approval_stage(
             INTERRUPT_CHANNEL,
         )
     return None
+
+
+async def awaiting_approval_stage(
+    tenant: str,
+    slug: str,
+    *,
+    stage: str | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> str | None:
+    """Return the stage a campaign's checkpointed run is halted at an Approval Gate.
+
+    A run holding for a clarification is **not** at a gate: there is no
+    deliverable to approve, only questions to answer, so an approval sent to it
+    must be refused (ADR-0028).
+
+    Args:
+        tenant: The tenant that owns the campaign.
+        slug: The campaign slug.
+        stage: The single stage the run targeted, or ``None`` for a full run.
+        checkpointer: The checkpointer holding the run's state.
+
+    Returns:
+        The gated stage key, or ``None`` when no stage is waiting for approval.
+    """
+    hold = await pending_hold(tenant, slug, stage=stage, checkpointer=checkpointer)
+    if hold is None or hold.kind != APPROVAL_HOLD:
+        return None
+    return hold.stage
 
 
 async def arun_campaign(
@@ -560,14 +615,17 @@ async def arun_campaign(
             deliverable rather than starting from a blank page (ADR-0015).
 
     Returns:
-        The structured campaign result. A run halted at an Approval Gate returns
-        the work done so far rather than raising: it has not failed, it is
-        waiting on a person (ADR-0015).
+        The structured campaign result. A run halted at an Approval Gate, or to
+        ask the business a question, returns the work done so far rather than
+        raising: it has not failed, it is waiting on a person (ADR-0015,
+        ADR-0028).
 
     Raises:
         GateError: If the run halted on the Stage 0 gate.
         PipelineError: If a prerequisite was missing or a deliverable never saved.
         GuardrailError: If a deliverable failed QA within the revision budget.
+        ClarificationLimitError: If a stage asked the business more times than
+            the cap allows and still lacks its answer.
         QuotaExhaustedError: If the tenant's credits ran out mid-run.
     """
     trace = _open_trace(settings, tenant, slug, run_id or new_run_id())
@@ -589,9 +647,9 @@ async def arun_campaign(
         )
         config = _config(tenant, slug, stage)
         inbound: Any = resume if resume is not None else _initial_state(tenant, slug, feedback)
-        state, awaiting = await _drive(graph, inbound, config, trace, on_event)
-        if awaiting is not None:
-            _write_awaiting_summary(trace, awaiting, run_log)
+        state, hold = await _drive(graph, inbound, config, trace, on_event)
+        if hold is not None:
+            _write_held_summary(trace, hold, run_log)
         else:
             _write_summary(trace, state, run_log)
     except asyncio.CancelledError:
@@ -606,4 +664,4 @@ async def arun_campaign(
         if owns_backend and backend is not None:
             backend.close()
     _raise_on_error(state, run_log)
-    return _to_result(tenant, slug, state, run_log, awaiting)
+    return _to_result(tenant, slug, state, run_log, hold)

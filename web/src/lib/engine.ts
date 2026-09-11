@@ -476,6 +476,18 @@ export interface ActiveRun {
   stage: string | null;
 }
 
+export interface ClarificationQuestion {
+  question: string;
+  reason: string;
+}
+
+export interface RunClarifications {
+  run_id: string;
+  slug: string;
+  stage: string;
+  questions: ClarificationQuestion[];
+}
+
 /**
  * Lists what a campaign has produced, with each deliverable's staleness.
  *
@@ -573,6 +585,23 @@ export function listActiveRuns(): Promise<{ runs: ActiveRun[] }> {
  */
 export function getRun(runId: string): Promise<RunHandle> {
   return engineFetch<RunHandle>(`/runs/${encodeURIComponent(runId)}`);
+}
+
+/**
+ * Reads the questions a halted run is asking the business, with their reasons.
+ *
+ * Args:
+ *   runId: The run holding for an answer.
+ *
+ * Throws:
+ *   EngineError: 409 when the run is not holding for a clarification.
+ */
+export function getRunClarifications(
+  runId: string,
+): Promise<RunClarifications> {
+  return engineFetch<RunClarifications>(
+    `/runs/${encodeURIComponent(runId)}/clarifications`,
+  );
 }
 
 /**

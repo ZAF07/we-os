@@ -36,3 +36,14 @@ On Home, the **Action Queue** shows a **Decision** item for each campaign awaiti
 ## Blocked by
 
 None - can start immediately.
+
+## Comments
+
+**2026-09-11 — plan (agent).** Branch `feat/clarifications-01-ask-and-halt`, worked in a scratchpad worktree.
+
+- Domain: `ClarificationQuestion(question, reason)` and `RunHold(stage, kind, questions)` in `schemas.py`; `CampaignResult.awaiting_clarification_stage`. A hold is what a halted run waits on a person for, `approval` or `clarification`, read from the pending interrupt's payload (both payloads now carry `kind`).
+- Tool: `adapters/tools/clarify.py` builds `ask_tenant`; its docstring is the Questionnaire rule. Calling it raises `ClarificationRequested` (a signal, not a `MarketingOSError`), which ends the specialist's loop at once. `build_tools` grants it to every specialist; agent frontmatter is unchanged.
+- Graph: the specialist node turns the signal into `route: clarify`; a new `<stage>__clarify` node checks the cap (`Settings.max_clarifications`, `MARKETING_OS_MAX_CLARIFICATIONS`, default 2), emits `stage.awaiting_clarification`, and `interrupt()`s exactly as the Approval Gate does. Past the cap it halts with `error.type = "clarification"` → `ClarificationLimitError`. Resume routes back to the stage's entry node; re-reading the DNA is issue 02.
+- Lifecycle: `awaiting_clarification` joins the live run statuses (claim index in Postgres widened), the campaign statuses and stage states in `campaign/progress.py` (which now takes a `RunHold` rather than a stage string), the trace outcomes, and the registry's held statuses. `GET /runs/{run_id}/clarifications` reads the pending questions; 409 when the run is not holding for one.
+- Scripted model: `MARKETING_OS_SCRIPTED_ASK_STAGE=<stage>` makes that stage ask a fixed question unless the seeded DNA already carries a `## Clarifications` section. The e2e engine sets it to `performance-plan`, two gates deep, so existing specs are untouched.
+- Web: Decision item (red) for `awaiting_clarification` linking to `/campaigns/{slug}/clarifications`, a read-only page listing questions and reasons; the Workspace rail says the stage has a question and links there; the run rail narrates the new event.

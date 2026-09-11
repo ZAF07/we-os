@@ -40,10 +40,12 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from marketing_os.adapters.observability import find_trace, get_logger, terminal_summary
 from marketing_os.adapters.runs import (
     AWAITING_APPROVAL,
+    AWAITING_CLARIFICATION,
     CANCELLED,
     COMPLETED,
     FAILED,
     INTERRUPTED,
+    LIVE_STATUSES,
     RUNNING,
     InMemoryRunStore,
 )
@@ -59,6 +61,7 @@ _OUTCOME_TO_STATUS = {
     "error": FAILED,
     "cancelled": CANCELLED,
     AWAITING_APPROVAL: AWAITING_APPROVAL,
+    AWAITING_CLARIFICATION: AWAITING_CLARIFICATION,
 }
 
 
@@ -69,8 +72,9 @@ class RunStatus:
     Attributes:
         run_id: The run id queried.
         slug: The campaign slug the run belongs to.
-        status: One of ``running``, ``completed``, ``failed``, ``cancelled``, or
-            ``interrupted``.
+        status: One of ``running``, ``awaiting_approval``,
+            ``awaiting_clarification``, ``completed``, ``failed``, ``cancelled``,
+            or ``interrupted``.
         stage: The single stage the run targeted, when known.
     """
 
@@ -299,10 +303,11 @@ class RunRegistry:
     def _forget(self, record: RunRecord, task: asyncio.Task[CampaignResult]) -> None:
         """Resolve a finished run in the store and drop its local task.
 
-        A task that returned having halted at an Approval Gate is **not**
-        finished: it is waiting on a person, so it is *held* at
-        ``awaiting_approval`` and keeps its campaign claim, ready to be resumed
-        (ADR-0015). Everything else is terminal.
+        A task that returned having halted at an Approval Gate, or to ask the
+        business a question, is **not** finished: it is waiting on a person, so
+        it is *held* at ``awaiting_approval`` or ``awaiting_clarification`` and
+        keeps its campaign claim, ready to be resumed (ADR-0015, ADR-0028).
+        Everything else is terminal.
 
         The store keeps whatever terminal status it already holds, so a run
         cancelled or reclaimed elsewhere is not overwritten by this callback. A
@@ -321,13 +326,15 @@ class RunRegistry:
             status = FAILED
         else:
             result = task.result()
-            if result.awaiting_approval_stage:
-                self._store.set_live_status(record.run_id, AWAITING_APPROVAL)
+            held = _held_status(result)
+            if held is not None:
+                self._store.set_live_status(record.run_id, held)
                 _LOGGER.info(
-                    "run.awaiting_approval run_id=%s slug=%s stage=%s",
+                    "run.%s run_id=%s slug=%s stage=%s",
+                    held,
                     record.run_id,
                     record.slug,
-                    result.awaiting_approval_stage,
+                    result.awaiting_approval_stage or result.awaiting_clarification_stage,
                 )
                 return
             status = COMPLETED
@@ -356,9 +363,10 @@ class RunRegistry:
             run_id: The id of the run to cancel.
             tenant: The tenant the caller acts for. A run belonging to another
                 tenant is treated as absent, so one business can never cancel
-                another's work. A run halted at an Approval Gate is cancellable
-                too: waiting on a person is not a terminal state, and the owner
-                may decide they no longer want the work at all.
+                another's work. A run halted at an Approval Gate, or holding for
+                an answer, is cancellable too: waiting on a person is not a
+                terminal state, and the owner may decide they no longer want
+                the work at all.
             user_id: The person cancelling. A run started by a colleague is
                 treated as absent rather than refused, so cancelling stays the
                 privilege of whoever is driving the campaign.
@@ -369,7 +377,7 @@ class RunRegistry:
             belongs to a colleague.
         """
         record = self._store.get(run_id, tenant)
-        if record is None or record.status not in (RUNNING, AWAITING_APPROVAL):
+        if record is None or record.status not in LIVE_STATUSES:
             return None
         if record.user_id and record.user_id != user_id:
             return None
@@ -405,6 +413,23 @@ class RunRegistry:
             await clear_campaign_threads(self._checkpointer, record.tenant_id, record.slug)
             _LOGGER.info("run.reclaimed run_id=%s slug=%s", record.run_id, record.slug)
         return reclaimed
+
+
+def _held_status(result: CampaignResult) -> str | None:
+    """Return the live status a run's result says it is holding at, if any.
+
+    Args:
+        result: The result the run's task returned.
+
+    Returns:
+        ``awaiting_approval`` or ``awaiting_clarification`` when the run is
+        waiting on a person, or ``None`` when it finished.
+    """
+    if result.awaiting_approval_stage:
+        return AWAITING_APPROVAL
+    if result.awaiting_clarification_stage:
+        return AWAITING_CLARIFICATION
+    return None
 
 
 def read_run_status(

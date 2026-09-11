@@ -46,7 +46,7 @@ from marketing_os.adapters.postgres import (
     PostgresTenantDirectory,
 )
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
-from marketing_os.adapters.runs import AWAITING_APPROVAL
+from marketing_os.adapters.runs import AWAITING_APPROVAL, AWAITING_CLARIFICATION
 from marketing_os.config import Settings
 from marketing_os.errors import RunConflictError, TierAlreadySetError, ToolError
 from marketing_os.graph.checkpoints import clear_campaign_threads, thread_id
@@ -640,3 +640,22 @@ def test_publishing_a_question_set_changes_what_the_gate_requires(
     published = PostgresQuestionnaireStore(postgres_pool).published()
     assert published.version == tightened.version
     assert "Seasonality" in [question.field for question in published.required_questions]
+
+
+def test_a_run_holding_for_a_clarification_keeps_its_campaign_claim(postgres_pool: Any) -> None:
+    """A run asking the business a question is waiting on a person too (ADR-0028).
+
+    The partial unique index has to cover ``awaiting_clarification`` as it does
+    ``awaiting_approval``, or the campaign quietly becomes free the moment its
+    specialist stops to ask.
+    """
+    store = PostgresRunStore(postgres_pool)
+    asking = new_run_id()
+    store.claim(_record(asking, user="usr_a"))
+
+    store.set_live_status(asking, AWAITING_CLARIFICATION)
+
+    with pytest.raises(RunConflictError) as refused:
+        store.claim(_record(new_run_id(), user="usr_b"))
+    assert refused.value.active_run_id == asking
+    assert store.active_for_campaign(TENANT, SLUG).run_id == asking

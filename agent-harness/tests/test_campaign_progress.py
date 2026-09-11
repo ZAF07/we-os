@@ -15,6 +15,7 @@ from marketing_os.adapters.deliverables import InMemoryDeliverableStore
 from marketing_os.campaign.progress import (
     APPROVED,
     AWAITING_APPROVAL,
+    AWAITING_CLARIFICATION,
     COMPLETED,
     DRAFT,
     PENDING,
@@ -27,8 +28,25 @@ from marketing_os.campaign.progress import (
     stale_keys,
 )
 from marketing_os.governance.pipeline import PIPELINE
+from marketing_os.schemas import ClarificationQuestion, RunHold
 
 ALL_STAGES = [stage.key for stage in PIPELINE]
+
+QUESTION = ClarificationQuestion(question="Do you have an email list?", reason="Email needs one.")
+
+
+def _hold(stage_key: str, kind: str = "approval") -> RunHold:
+    """Describe a live run holding at a stage.
+
+    Args:
+        stage_key: The stage that is holding.
+        kind: ``approval`` at an Approval Gate, ``clarification`` for a question.
+
+    Returns:
+        The hold as the runner reports it.
+    """
+    questions = [QUESTION] if kind == "clarification" else []
+    return RunHold(stage=stage_key, kind=kind, questions=questions)  # type: ignore[arg-type]
 
 
 def _store(*stage_keys: str) -> InMemoryDeliverableStore:
@@ -49,48 +67,42 @@ def _store(*stage_keys: str) -> InMemoryDeliverableStore:
     return store
 
 
-async def _progress_of(store: InMemoryDeliverableStore, *, waiting: str | None = None):
+async def _progress_of(store: InMemoryDeliverableStore, *, hold: RunHold | None = None):
     """Report a campaign's progress from a store, naming what is waiting.
 
     Args:
         store: The deliverable store to read.
-        waiting: The stage a live run is holding at, or ``None``.
+        hold: What a live run is waiting on a person for, or ``None``.
 
     Returns:
         The campaign's progress.
     """
 
-    async def waiting_stage() -> str | None:
-        return waiting
+    async def pending() -> RunHold | None:
+        return hold
 
-    return await campaign_progress(
-        store,
-        TENANT,
-        SLUG,
-        human_gate_stages=None,
-        awaiting_stage=waiting_stage,
-    )
+    return await campaign_progress(store, TENANT, SLUG, human_gate_stages=None, hold=pending)
 
 
 def test_a_campaign_that_has_produced_nothing_is_a_draft() -> None:
-    assert campaign_status(produced=set(), stale=set(), waiting=None) == DRAFT
+    assert campaign_status(produced=set(), stale=set(), hold=None) == DRAFT
 
 
 def test_a_campaign_waiting_on_a_person_says_so_whatever_else_is_true() -> None:
     """Lifecycle is its own axis: the gate wins over how far the stages got."""
     every_stage = set(ALL_STAGES)
 
-    assert campaign_status(every_stage, stale=set(), waiting="research") == AWAITING_APPROVAL
-    assert campaign_status(set(), stale=set(), waiting="research") == AWAITING_APPROVAL
-    assert campaign_status(every_stage, {"research"}, waiting="research") == AWAITING_APPROVAL
+    assert campaign_status(every_stage, stale=set(), hold=_hold("research")) == AWAITING_APPROVAL
+    assert campaign_status(set(), stale=set(), hold=_hold("research")) == AWAITING_APPROVAL
+    assert campaign_status(every_stage, {"research"}, hold=_hold("research")) == AWAITING_APPROVAL
 
 
 def test_a_campaign_part_way_through_the_pipeline_is_running() -> None:
-    assert campaign_status({"research"}, stale=set(), waiting=None) == RUNNING
+    assert campaign_status({"research"}, stale=set(), hold=None) == RUNNING
 
 
 def test_a_campaign_is_approved_only_once_every_stage_has_produced_current_work() -> None:
-    assert campaign_status(set(ALL_STAGES), stale=set(), waiting=None) == APPROVED
+    assert campaign_status(set(ALL_STAGES), stale=set(), hold=None) == APPROVED
 
 
 def test_stale_work_un_approves_a_finished_campaign() -> None:
@@ -99,7 +111,7 @@ def test_stale_work_un_approves_a_finished_campaign() -> None:
     The criterion from ADR-0015: creative resting on strategy the owner has
     since replaced is not approved work, however complete it looks.
     """
-    assert campaign_status(set(ALL_STAGES), {"brand-strategy"}, waiting=None) == RUNNING
+    assert campaign_status(set(ALL_STAGES), {"brand-strategy"}, hold=None) == RUNNING
 
 
 async def test_a_stage_that_has_produced_nothing_is_pending() -> None:
@@ -136,7 +148,7 @@ async def test_a_stage_at_a_gate_reports_the_decision_not_its_staleness() -> Non
     """
     store = _store("research", "brand-strategy", "research")
 
-    progress = await _progress_of(store, waiting="brand-strategy")
+    progress = await _progress_of(store, hold=_hold("brand-strategy"))
 
     held = next(stage for stage in progress.stages if stage.stage.key == "brand-strategy")
     assert held.state == AWAITING_APPROVAL
@@ -181,12 +193,30 @@ async def test_progress_from_pre_read_deliverables_matches_reading_the_store() -
         tuple(ALL_STAGES),
         (*ALL_STAGES, "brand-strategy"),
     ):
-        for waiting in (None, "creative-direction"):
+        for hold in (None, _hold("creative-direction"), _hold("research", "clarification")):
             store = _store(*written)
-            expected = await _progress_of(store, waiting=waiting)
+            expected = await _progress_of(store, hold=hold)
             actual = progress_from_latest(
                 store.latest_by_campaign(TENANT, [SLUG]).get(SLUG, {}),
                 human_gate_stages=None,
-                waiting=waiting,
+                hold=hold,
             )
-            assert actual == expected, (written, waiting)
+            assert actual == expected, (written, hold)
+
+
+def test_a_campaign_asking_the_business_a_question_says_so() -> None:
+    """A run holding for an answer is waiting on a person too, but for a different thing."""
+    hold = _hold("research", "clarification")
+    assert campaign_status(set(), stale=set(), hold=hold) == AWAITING_CLARIFICATION
+    assert campaign_status(set(ALL_STAGES), {"research"}, hold=hold) == AWAITING_CLARIFICATION
+
+
+async def test_the_holding_stage_reports_awaiting_clarification_as_its_state() -> None:
+    store = _store("research")
+
+    progress = await _progress_of(store, hold=_hold("brand-strategy", "clarification"))
+
+    states = {stage.stage.key: stage.state for stage in progress.stages}
+    assert states["research"] == COMPLETED
+    assert states["brand-strategy"] == AWAITING_CLARIFICATION
+    assert progress.status == AWAITING_CLARIFICATION

@@ -24,8 +24,12 @@ import { loadHome } from "./actions";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The tag palette. Decision is red because it blocks a run in flight; Setup is
+ * amber because it blocks work not yet started; Stale keeps its status colour.
+ */
 const TAG_CLASSES: Record<QueueTag, string> = {
-  Decision: "bg-indigo-50 text-indigo-700",
+  Decision: "bg-red-100 text-red-700",
   Setup: "bg-amber-100 text-amber-800",
   Stale: statusPillClasses("Stale"),
 };
@@ -113,8 +117,8 @@ function ActionQueue({ queue }: { queue: ReturnType<typeof toQueue> }) {
       {queue.length === 0 ? (
         <p className="px-[18px] py-4 text-[13px] text-muted-foreground">
           Nothing is waiting on a decision. When a campaign reaches an approval
-          gate, or work goes stale because you re-opened something upstream, it
-          appears here.
+          gate, a specialist has a question for you, or work goes stale because
+          you re-opened something upstream, it appears here.
         </p>
       ) : (
         <ul aria-label="Decision queue">

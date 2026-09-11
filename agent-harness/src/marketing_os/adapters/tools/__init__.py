@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from langchain_core.tools import BaseTool
 
+from marketing_os.adapters.tools.clarify import ask_tenant_tool
 from marketing_os.adapters.tools.filesystem import filesystem_tools
 from marketing_os.adapters.tools.sandbox import FilesystemSandbox
 from marketing_os.adapters.tools.websearch import NoopWebSearch, WebSearchTool, web_tools
@@ -28,6 +29,7 @@ __all__ = [
     "FallbackWebSearch",
     "build_web_backend",
     "build_tools",
+    "ask_tenant_tool",
 ]
 
 
@@ -39,6 +41,11 @@ def build_tools(
     document_store: DocumentStore,
 ) -> list[BaseTool]:
     """Assemble the concrete tools an agent is granted from its declared capabilities.
+
+    Every specialist is also granted ``ask_tenant``, whatever its frontmatter
+    declares: asking the business for a fact the Brand DNA lacks is not a
+    capability an agent opts into but the alternative to guessing that every
+    stage must have (ADR-0028).
 
     Args:
         declared_tools: Capability names from the agent frontmatter, for example
@@ -52,7 +59,7 @@ def build_tools(
             database.
 
     Returns:
-        The list of LangChain tools the agent may call.
+        The list of LangChain tools the agent may call, the ask tool last.
     """
     declared = set(declared_tools)
     available: dict[str, BaseTool] = {}
@@ -61,4 +68,5 @@ def build_tools(
     )
     if declared & {"WebSearch", "WebFetch"}:
         available.update(web_tools(web_backend or NoopWebSearch()))
-    return [tool for capability, tool in available.items() if capability in declared]
+    granted = [tool for capability, tool in available.items() if capability in declared]
+    return [*granted, ask_tenant_tool()]
