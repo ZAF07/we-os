@@ -21,7 +21,7 @@ The governance the platform ships and every tenant shares — the eight rules, t
 _Avoid_: static files, config, assets.
 
 **Brand DNA**:
-The stable, reusable, human-authored profile of the tenant's business — what it sells, at what price, to which audience segments, why they choose it, where, in what languages, and under what constraints. It holds **facts the business owner uniquely knows**, never the crafted artifacts the pipeline produces: positioning, messaging and brand voice are outputs approved at the stage gates, not inputs asked for at signup. The single source of truth every recommendation is grounded in. One per tenant, reused across every campaign; read-only to agents. Authored by answering the Questionnaire — never drafted or guessed by a model (see [ADR-0018](docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md)).
+The stable, reusable, human-authored profile of the tenant's business — what it sells, at what price, to which audience segments, why they choose it, where, in what languages, and under what constraints. It holds **facts the business owner uniquely knows**, never the crafted artifacts the pipeline produces: positioning, messaging and brand voice are outputs approved at the stage gates, not inputs asked for at signup. The single source of truth every recommendation is grounded in. One per tenant, reused across every campaign; read-only to agents. Authored by answering the Questionnaire, plus any Clarification a specialist asked for — never drafted or guessed by a model (see [ADR-0018](docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md)).
 _Avoid_: "Customer DNA" (the old name — it implied an agency serving many businesses), profile, brief, persona.
 
 **Customer**:
@@ -56,9 +56,17 @@ _Avoid_: onboarding (that is the Brand DNA wizard), setup, registration, create 
 A person who is signed in but whose session carries no organization claim — a new sign-up between authentication and naming their business, or one who left partway. They may reach only **Welcome** and **Get Started**; every other signed-in route sends them to Welcome. The engine refuses them independently with `NO_ORGANIZATION` (**401**), which is the real boundary — the redirect is only a convenience (see [ADR-0013](docs/adr/0013-multi-tenant-saas-with-dual-verified-jwt.md)).
 _Avoid_: anonymous user (they are authenticated), guest, incomplete account.
 
+**Action Queue**:
+The list on Home of everything waiting on the business owner, each item tagged by urgency: **Decision** (a run is blocked on a person: an Approval Gate, or a Clarification to answer), **Review** (nothing is blocked, but something should be looked at: a Brand DNA review that is due), **Setup**, and **Stale**.
+_Avoid_: alert queue, decision queue, notifications, inbox.
+
 **Questionnaire**:
 The admin-curated set of questions a business answers to author its Brand DNA. It asks only for **facts the business owner uniquely knows** — never for crafted artifacts like positioning or channel choice, which the pipeline produces. One artifact drives three things: the onboarding wizard, the shape of the DNA, and what the DNA Gate enforces as Required.
 _Avoid_: survey, form, intake, onboarding flow.
+
+**Clarification**:
+A fact about the business that a Specialist found missing from the Brand DNA mid-stage and asked the tenant for. The question is written by the specialist for that one business; the answer is written by the business, never inferred. It lives in the DNA under its own **Clarifications** section, is never Required by the DNA Gate, and is reused by every later campaign so the same fact is asked for once. Editable by the tenant after the fact; an edit reruns nothing (see [ADR-0028](docs/adr/0028-clarifications-are-brand-dna-the-specialist-asks-for.md)).
+_Avoid_: follow-up question, agent question, inferred detail, assumption.
 
 **Campaign Goal**:
 The per-campaign business objective and success metrics (`campaigns/<slug>/goal.md`). The DNA is shared across campaigns; the goal is specific to one. It never names the business — a tenant is one business, so which business the campaign belongs to is already known.
@@ -125,7 +133,7 @@ The point where a `human`-policy stage halts and waits for a person to approve t
 _Avoid_: sign-off, checkpoint (reserved for LangGraph state), review (reserved for QA).
 
 **Campaign Lifecycle Status**:
-Where a campaign sits as a whole — `draft`, `running`, `awaiting_approval`, `approved`, `published`, `measuring`, `archived`. A separate axis from stage progress: `Approve`, `Publish` and `Measure` are lifecycle, not pipeline stages.
+Where a campaign sits as a whole — `draft`, `running`, `awaiting_approval`, `awaiting_clarification`, `approved`, `published`, `measuring`, `archived`. A separate axis from stage progress: `Approve`, `Publish` and `Measure` are lifecycle, not pipeline stages.
 _Avoid_: state, stage, phase.
 
 **DNA Gate**:
