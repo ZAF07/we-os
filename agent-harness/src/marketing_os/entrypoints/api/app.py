@@ -10,6 +10,7 @@ Endpoints:
   GET  /brand-dna/completeness          -> what still stands between them and a run
   POST /brand-dna/answers               -> save answers, returning the updated report
   DELETE /brand-dna/answers/{id}        -> withdraw one answer, returning the updated report
+  PUT  /brand-dna/clarifications/{id}   -> re-answer one Clarification; only the DNA changes
   GET  /brand-dna/segments              -> the audience segments a campaign may target
   POST /campaigns                       -> create a campaign from its goal (201)
   GET  /campaigns                       -> list active campaigns with status and progress
@@ -904,6 +905,69 @@ def remove_brand_dna_answer(question_id: str, identity: Identity) -> DnaComplete
     project_brand_dna(identity, published, record)
     answered_against = get_questionnaire_store().version(record.questionnaire_version)
     return completeness(published, record, answered_against=answered_against)
+
+
+class ClarificationEdit(BaseModel):
+    """Request body for re-answering one Clarification.
+
+    Attributes:
+        answer: The business's new answer. Blank is refused: a Clarification
+            with no answer is a question, and questions are asked by a run.
+    """
+
+    answer: str
+
+    @field_validator("answer")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        """Refuse a blank answer.
+
+        Args:
+            value: The answer as sent.
+
+        Returns:
+            The answer, whitespace trimmed.
+
+        Raises:
+            ValueError: If the answer is blank.
+        """
+        if not value.strip():
+            raise ValueError("An answer cannot be blank.")
+        return value.strip()
+
+
+@app.put("/brand-dna/clarifications/{clarification_id}")
+def edit_clarification(
+    clarification_id: str, body: ClarificationEdit, identity: Identity
+) -> Clarification:
+    """Re-answer one Clarification; the Brand DNA follows and nothing else moves.
+
+    A retrospective correction to a fact a specialist once asked for. It
+    rewrites the DNA markdown, as a questionnaire save does, so every later
+    campaign is seeded with the current truth — and it touches no campaign:
+    no deliverable, version, stale flag or run changes, because staleness is a
+    property of deliverable versions and this writes none (ADR-0028).
+
+    Args:
+        clarification_id: The Clarification to re-answer.
+        body: The new answer.
+        identity: The verified identity whose tenant owns the DNA.
+
+    Returns:
+        The Clarification as it now stands.
+
+    Raises:
+        HTTPException: 404 if the caller's tenant has no such Clarification;
+            422 if the answer is blank.
+    """
+    try:
+        record = get_answer_store().update_clarification(
+            identity.tenant_id, clarification_id=clarification_id, answer=body.answer
+        )
+    except DocumentNotFoundError as exc:
+        raise _http_error(exc) from exc
+    project_brand_dna(identity, get_questionnaire_store().published(), record)
+    return next(item for item in record.clarifications if item.id == clarification_id)
 
 
 ARCHIVED = "archived"

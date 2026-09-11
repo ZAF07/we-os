@@ -27,6 +27,7 @@ from langgraph.types import Command
 
 from conftest import (
     ASK_QUESTIONS,
+    OTHER_TENANT,
     PASS_VERDICT,
     SLUG,
     TENANT,
@@ -630,3 +631,126 @@ def test_clarifications_409_for_a_run_not_asking(
 
     assert response.status_code == 409
     assert response.json()["type"] == "run_not_awaiting_clarification"
+
+
+# --- Editing a Clarification: the Brand page's tab ----------------------------
+
+EDITED_ANSWER = "No list yet; we collect emails at the front desk."
+
+
+def _everything_but_the_dna(client: TestClient, run_id: str) -> dict[str, Any]:
+    """Read every campaign-side fact an edit must leave alone.
+
+    Args:
+        client: The entered test client.
+        run_id: The campaign's run.
+
+    Returns:
+        The campaign, its stages, its deliverables with their current content
+        and every version's content, the run, the in-flight run list, and the
+        completeness report — as the API reports them, so a before/after
+        comparison is byte-for-byte.
+    """
+    listing = client.get(f"/campaigns/{SLUG}/deliverables").json()
+    documents = {}
+    for document in listing["files"]:
+        name = document["name"]
+        base = f"/campaigns/{SLUG}/deliverables/{name}"
+        history = client.get(f"{base}/versions")
+        documents[name] = {
+            "current": client.get(base).json(),
+            "history": (history.status_code, history.json()),
+            "versions": [
+                client.get(f"{base}/versions/{version['version']}").json()
+                for version in history.json().get("versions", [])
+            ],
+        }
+    return {
+        "campaign": client.get(f"/campaigns/{SLUG}").json(),
+        "stages": client.get(f"/campaigns/{SLUG}/stages").json(),
+        "deliverables": listing,
+        "documents": documents,
+        "run": client.get(f"/runs/{run_id}").json(),
+        "runs": client.get("/runs").json(),
+        "completeness": client.get("/brand-dna/completeness").json(),
+    }
+
+
+def test_editing_a_clarification_changes_the_dna_and_nothing_else(
+    answering_client: TestClient, repo: Path
+) -> None:
+    """An edit is retrospective: it rewrites the Brand DNA and touches no campaign."""
+    client = answering_client
+    run_id = _halt(client)
+    client.post(f"/runs/{run_id}/clarifications", json={"answers": _answers()})
+    _wait_for_status(client, run_id, "awaiting_approval")
+    saved, other = client.get("/brand-dna").json()["clarifications"]
+    before = _everything_but_the_dna(client, run_id)
+
+    response = client.put(
+        f"/brand-dna/clarifications/{saved['id']}", json={"answer": EDITED_ANSWER}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["id"] == saved["id"]
+    assert response.json()["answer"] == EDITED_ANSWER
+    dna = client.get("/brand-dna").json()
+    edited, kept = dna["clarifications"]
+    assert edited["answer"] == EDITED_ANSWER
+    unchanged = {key for key in saved if key not in ("answer", "answered_at")}
+    assert {key: edited[key] for key in unchanged} == {key: saved[key] for key in unchanged}
+    assert kept == other
+    assert EDITED_ANSWER in dna["markdown"]
+    assert "Yes, about 1,200 subscribers." not in dna["markdown"]
+    assert EDITED_ANSWER in (repo / "tenants" / TENANT / "dna.md").read_text()
+    assert _everything_but_the_dna(client, run_id) == before
+
+
+def _seed_clarifications(stage: str = "brand-strategy") -> list[str]:
+    """Record answered Clarifications for the tenant, as a past campaign would have.
+
+    Args:
+        stage: The stage that asked.
+
+    Returns:
+        The ids of the recorded Clarifications, in order.
+    """
+    from marketing_os.entrypoints.api.app import get_answer_store
+
+    record = get_answer_store().add_clarifications(
+        TENANT, clarifications=answered_clarifications(stage)
+    )
+    return [item.id for item in record.clarifications]
+
+
+def test_editing_a_clarification_the_business_does_not_have_is_404(client: TestClient) -> None:
+    _seed_clarifications()
+
+    response = client.put("/brand-dna/clarifications/clr_missing", json={"answer": EDITED_ANSWER})
+
+    assert response.status_code == 404
+
+
+def test_a_blank_edit_is_refused_and_the_answer_stands(client: TestClient) -> None:
+    first = _seed_clarifications()[0]
+
+    response = client.put(f"/brand-dna/clarifications/{first}", json={"answer": "   "})
+
+    assert response.status_code == 422
+    saved = client.get("/brand-dna").json()["clarifications"][0]
+    assert saved["answer"] == "Yes, about 1,200 subscribers."
+
+
+def test_one_business_cannot_edit_anothers_clarification(client: TestClient) -> None:
+    """A foreign id is indistinguishable from a missing one (ADR-0013)."""
+    from marketing_os.entrypoints.api.app import app
+
+    first = _seed_clarifications()[0]
+    authenticate(app, tenant=OTHER_TENANT)
+
+    response = client.put(f"/brand-dna/clarifications/{first}", json={"answer": EDITED_ANSWER})
+
+    authenticate(app)
+    assert response.status_code == 404
+    saved = client.get("/brand-dna").json()["clarifications"][0]
+    assert saved["answer"] == "Yes, about 1,200 subscribers."

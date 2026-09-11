@@ -237,11 +237,27 @@ export interface DnaAnswer {
   answer: string;
 }
 
+/**
+ * A fact a specialist asked the business for mid-campaign, with the answer the
+ * business gave. Part of the Brand DNA under its own section, never Required
+ * (ADR-0028).
+ */
+export interface Clarification {
+  id: string;
+  question: string;
+  reason: string;
+  answer: string;
+  stage: string;
+  slug: string;
+  answered_at: string;
+}
+
 export interface BrandDna {
   questionnaire_version: number;
   updated_at: string | null;
   markdown: string;
   answers: DnaAnswer[];
+  clarifications: Clarification[];
 }
 
 export interface MissingField {
@@ -310,6 +326,30 @@ export function deleteBrandDnaAnswer(
   return engineFetch<DnaCompleteness>(
     `/brand-dna/answers/${encodeURIComponent(questionId)}`,
     { method: "DELETE" },
+  );
+}
+
+/**
+ * Re-answers one Clarification. The Brand DNA follows; no campaign is touched.
+ *
+ * Args:
+ *   clarificationId: The Clarification to re-answer.
+ *   answer: The new answer; blank is refused.
+ *
+ * Returns:
+ *   The Clarification as it now stands.
+ *
+ * Throws:
+ *   EngineError: 404 when the tenant has no such Clarification; 422 when the
+ *     answer is blank.
+ */
+export function updateClarificationAnswer(
+  clarificationId: string,
+  answer: string,
+): Promise<Clarification> {
+  return engineFetch<Clarification>(
+    `/brand-dna/clarifications/${encodeURIComponent(clarificationId)}`,
+    { method: "PUT", body: JSON.stringify({ answer }) },
   );
 }
 

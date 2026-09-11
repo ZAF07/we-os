@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from marketing_os.errors import ValidationError
+from marketing_os.errors import DocumentNotFoundError, ValidationError
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import BrandDnaRecord, Clarification, DnaAnswer, Questionnaire
 
@@ -198,5 +198,34 @@ class InMemoryAnswerStore:
         record = existing.model_copy(
             update={"clarifications": [*existing.clarifications, *clarifications]}
         )
+        self._records[tenant] = record
+        return record.model_copy(deep=True)
+
+    def update_clarification(
+        self, tenant: str, *, clarification_id: str, answer: str
+    ) -> BrandDnaRecord:
+        """Replace the business's answer to one Clarification.
+
+        Args:
+            tenant: The tenant whose answer changes.
+            clarification_id: The Clarification to re-answer.
+            answer: The new answer.
+
+        Returns:
+            The business's full record after the edit.
+
+        Raises:
+            DocumentNotFoundError: If the tenant has no such Clarification.
+        """
+        existing = self.read(tenant)
+        if all(item.id != clarification_id for item in existing.clarifications):
+            raise DocumentNotFoundError(f"No clarification '{clarification_id}'")
+        edited = [
+            item.model_copy(update={"answer": answer, "answered_at": now_iso()})
+            if item.id == clarification_id
+            else item
+            for item in existing.clarifications
+        ]
+        record = existing.model_copy(update={"clarifications": edited})
         self._records[tenant] = record
         return record.model_copy(deep=True)

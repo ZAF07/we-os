@@ -20,6 +20,7 @@ from typing import Any
 from marketing_os.adapters.documents import validate_tenant_id
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
 from marketing_os.adapters.questionnaire import UNANSWERED_VERSION, validate_publication
+from marketing_os.errors import DocumentNotFoundError
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import (
     BrandDnaRecord,
@@ -264,6 +265,35 @@ class PostgresAnswerStore:
                         item.answered_at,
                     ),
                 )
+        return self.read(tenant)
+
+    def update_clarification(
+        self, tenant: str, *, clarification_id: str, answer: str
+    ) -> BrandDnaRecord:
+        """Replace the business's answer to one Clarification.
+
+        The row is found under the tenant's own scope, so another business's id
+        matches nothing and is refused as missing.
+
+        Args:
+            tenant: The tenant whose answer changes.
+            clarification_id: The Clarification to re-answer.
+            answer: The new answer.
+
+        Returns:
+            The business's full record after the edit.
+
+        Raises:
+            DocumentNotFoundError: If the tenant has no such Clarification.
+        """
+        with self._scoped_to(tenant) as (connection, scoped):
+            edited = connection.execute(
+                "UPDATE dna_clarifications SET answer = %s, answered_at = now() "
+                "WHERE tenant_id = %s AND clarification_id = %s",
+                (answer, scoped, clarification_id),
+            ).rowcount
+        if edited == 0:
+            raise DocumentNotFoundError(f"No clarification '{clarification_id}'")
         return self.read(tenant)
 
 

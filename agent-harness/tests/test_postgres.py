@@ -52,7 +52,12 @@ from marketing_os.adapters.postgres import (
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
 from marketing_os.adapters.runs import AWAITING_APPROVAL, AWAITING_CLARIFICATION
 from marketing_os.config import Settings
-from marketing_os.errors import RunConflictError, TierAlreadySetError, ToolError
+from marketing_os.errors import (
+    DocumentNotFoundError,
+    RunConflictError,
+    TierAlreadySetError,
+    ToolError,
+)
 from marketing_os.graph.checkpoints import clear_campaign_threads, thread_id
 from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage, pending_hold
 from marketing_os.questionnaire import CLARIFICATIONS_HEADING, SEED_QUESTIONNAIRE, render_brand_dna
@@ -772,6 +777,40 @@ def test_one_business_cannot_read_anothers_clarifications(postgres_pool: Any) ->
         connection.execute("SELECT set_config(%s, %s, true)", (TENANT_SETTING, OTHER_TENANT))
         rows = connection.execute("SELECT clarification_id FROM dna_clarifications").fetchall()
     assert rows == []
+
+
+def test_a_clarification_answer_can_be_edited_in_place(postgres_pool: Any) -> None:
+    """The edit changes one answer; the others, and the order, stay as they were."""
+    store = PostgresAnswerStore(postgres_pool)
+    first, second = answered_clarifications("research")
+    store.add_clarifications(TENANT, clarifications=[first, second])
+
+    record = store.update_clarification(
+        TENANT, clarification_id=first.id, answer="No list yet; we collect emails at the desk."
+    )
+
+    edited, kept = record.clarifications
+    assert edited.answer == "No list yet; we collect emails at the desk."
+    assert edited.answered_at != first.answered_at
+    assert edited.model_dump(exclude={"answer", "answered_at"}) == first.model_dump(
+        exclude={"answer", "answered_at"}
+    )
+    assert kept == second
+    assert store.read(TENANT).clarifications == [edited, kept]
+
+
+def test_one_business_cannot_edit_anothers_clarification(postgres_pool: Any) -> None:
+    """A foreign id is indistinguishable from a missing one, and the owner's answer stands."""
+    store = PostgresAnswerStore(postgres_pool)
+    email_list = answered_clarifications("research")[0]
+    store.add_clarifications(TENANT, clarifications=[email_list])
+
+    with pytest.raises(DocumentNotFoundError):
+        store.update_clarification(OTHER_TENANT, clarification_id=email_list.id, answer="x")
+    with pytest.raises(DocumentNotFoundError):
+        store.update_clarification(TENANT, clarification_id="clr_missing", answer="x")
+
+    assert store.read(TENANT).clarifications == [email_list]
 
 
 def test_a_run_holding_for_a_clarification_keeps_its_campaign_claim(postgres_pool: Any) -> None:
