@@ -257,6 +257,9 @@ class Settings:
         max_runs_per_campaign: How many runs one campaign may accumulate. The
             companion cap to ``max_revisions``: that bounds re-working one
             deliverable, this bounds re-running the whole campaign (ADR-0020).
+        max_clarifications: How many times one stage may halt to ask the
+            business a question within one run. Past it the run halts with what
+            is still missing rather than proceeding on a guess (ADR-0028).
         usage_credits: What a tenant may spend before billable work is
             refused, in credits. The platform-wide default; a tenant may carry
             its own override, so raising one business's cap is a row rather than
@@ -321,6 +324,9 @@ class Settings:
     )
     max_runs_per_campaign: int = field(
         default_factory=lambda: int(os.environ.get("MARKETING_OS_MAX_RUNS", "20"))
+    )
+    max_clarifications: int = field(
+        default_factory=lambda: int(os.environ.get("MARKETING_OS_MAX_CLARIFICATIONS", "2"))
     )
     usage_credits: float = field(
         default_factory=lambda: float(os.environ.get("MARKETING_OS_CREDITS", "25"))

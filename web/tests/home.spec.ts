@@ -22,8 +22,14 @@ test("home renders its sections", async ({ page }) => {
 test("the stat tiles report real counts", async ({ page }) => {
   await page.goto("/home");
 
-  await expect(page.getByText("Need you", { exact: true })).toBeVisible();
-  await expect(page.getByText("In progress", { exact: true })).toBeVisible();
+  // Addressed as the named tiles they are: "In progress" is also a campaign
+  // status, so a text lookup collides with whatever another worker has running.
+  await expect(page.getByRole("group", { name: "Need you" })).toContainText(
+    /\d+/,
+  );
+  await expect(page.getByRole("group", { name: "In progress" })).toContainText(
+    /\d+/,
+  );
 });
 
 test("a campaign at an approval gate appears in the queue and links to it", async ({

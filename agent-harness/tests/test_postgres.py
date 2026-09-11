@@ -28,9 +28,11 @@ import pytest
 from langgraph.types import Command
 
 from conftest import (
+    ASK_QUESTIONS,
     OTHER_TENANT,
     SLUG,
     TENANT,
+    asking_handler,
     install_scripted_graph,
     prototype_adapters,
     write_all_agent_specs,
@@ -46,11 +48,11 @@ from marketing_os.adapters.postgres import (
     PostgresTenantDirectory,
 )
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
-from marketing_os.adapters.runs import AWAITING_APPROVAL
+from marketing_os.adapters.runs import AWAITING_APPROVAL, AWAITING_CLARIFICATION
 from marketing_os.config import Settings
 from marketing_os.errors import RunConflictError, TierAlreadySetError, ToolError
 from marketing_os.graph.checkpoints import clear_campaign_threads, thread_id
-from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage
+from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage, pending_hold
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import DnaAnswer, RunRecord
 
@@ -455,6 +457,37 @@ async def test_a_run_halted_at_a_gate_is_approvable_after_a_restart(
     assert versions.latest(TENANT, SLUG, "campaign-strategy") is not None
 
 
+async def test_a_run_holding_for_a_question_still_carries_it_after_a_restart(
+    settings: Settings,
+    postgres_superuser_dsn: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The questions the business must answer are read back from the database alone.
+
+    Two savers stand in for a deploy, as in the approval test above: the first
+    process halts on the specialist's question and goes away; the second finds
+    the run still holding, with the same questions and reasons (ADR-0028).
+    """
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+    write_all_agent_specs(settings)
+    install_scripted_graph(monkeypatch, handler=asking_handler("research"))
+    adapters = prototype_adapters(settings.root)
+
+    async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as first:
+        await first.setup()
+        halted = await arun_campaign(settings, TENANT, SLUG, **{**adapters, "checkpointer": first})
+    assert halted.awaiting_clarification_stage == "research"
+
+    async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as second:
+        hold = await pending_hold(TENANT, SLUG, checkpointer=second)
+
+    assert hold is not None
+    assert hold.kind == "clarification"
+    assert hold.stage == "research"
+    assert [question.model_dump() for question in hold.questions] == ASK_QUESTIONS
+
+
 async def test_clearing_a_campaigns_threads_removes_its_durable_state(
     settings: Settings,
     postgres_superuser_dsn: str,
@@ -640,3 +673,22 @@ def test_publishing_a_question_set_changes_what_the_gate_requires(
     published = PostgresQuestionnaireStore(postgres_pool).published()
     assert published.version == tightened.version
     assert "Seasonality" in [question.field for question in published.required_questions]
+
+
+def test_a_run_holding_for_a_clarification_keeps_its_campaign_claim(postgres_pool: Any) -> None:
+    """A run asking the business a question is waiting on a person too (ADR-0028).
+
+    The partial unique index has to cover ``awaiting_clarification`` as it does
+    ``awaiting_approval``, or the campaign quietly becomes free the moment its
+    specialist stops to ask.
+    """
+    store = PostgresRunStore(postgres_pool)
+    asking = new_run_id()
+    store.claim(_record(asking, user="usr_a"))
+
+    store.set_live_status(asking, AWAITING_CLARIFICATION)
+
+    with pytest.raises(RunConflictError) as refused:
+        store.claim(_record(new_run_id(), user="usr_b"))
+    assert refused.value.active_run_id == asking
+    assert store.active_for_campaign(TENANT, SLUG).run_id == asking

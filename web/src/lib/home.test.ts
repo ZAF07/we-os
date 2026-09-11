@@ -86,6 +86,44 @@ describe("toQueue", () => {
   it("is empty when nothing needs anyone", () => {
     expect(toQueue([campaign("a"), campaign("b")], null)).toEqual([]);
   });
+
+  it("tags a campaign asking the owner a question as a Decision, and leads to the questions", () => {
+    const queue = toQueue(
+      [
+        campaign("asking", {
+          status: "awaiting_clarification",
+          blocked_reason: "Plan has a question for you.",
+        }),
+      ],
+      null,
+    );
+
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({
+      tag: "Decision",
+      title: "Plan has a question for you.",
+      cta: "See questions",
+      href: "/campaigns/asking/clarifications",
+    });
+  });
+
+  it("puts a question before stale work, since it blocks a run in flight too", () => {
+    const queue = toQueue(
+      [
+        campaign("stale-one", {
+          status: "running",
+          blocked_reason: "Plan rests on a decision you have since re-opened.",
+        }),
+        campaign("asking", {
+          status: "awaiting_clarification",
+          blocked_reason: "Plan has a question for you.",
+        }),
+      ],
+      null,
+    );
+
+    expect(queue.map((item) => item.slug)).toEqual(["asking", "stale-one"]);
+  });
 });
 
 describe("toStats", () => {

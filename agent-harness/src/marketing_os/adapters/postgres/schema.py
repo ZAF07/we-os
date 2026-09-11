@@ -23,10 +23,13 @@ Seven tables (ADR-0014, ADR-0015, ADR-0018, ADR-0020):
     lifecycle status. The partial unique index is what makes the claim real: a
     second live row for the same ``(tenant_id, slug)`` cannot exist, so the
     guard is Postgres's to enforce rather than a check some new call site can
-    forget. The index covers ``awaiting_approval`` as well as ``running``,
-    because a run halted at an Approval Gate still owns its campaign — it is
-    going to be resumed (ADR-0015). ``user_id`` records the person driving the
-    campaign, since one campaign is run by one person at a time.
+    forget. The index covers ``awaiting_approval`` and ``awaiting_clarification``
+    as well as ``running``, because a run halted at an Approval Gate or to ask
+    the business a question still owns its campaign — it is going to be resumed
+    (ADR-0015, ADR-0028). The index is dropped and recreated on every
+    ``ensure_schema`` so widening its predicate reaches existing databases.
+    ``user_id`` records the person driving the campaign, since one campaign is
+    run by one person at a time.
 
 ``questionnaires``
     The admin-curated question set, one row per published version, holding its
@@ -179,7 +182,8 @@ CREATE TABLE IF NOT EXISTS runs (
 
 DROP INDEX IF EXISTS runs_one_active_per_campaign;
 CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_campaign
-    ON runs (tenant_id, slug) WHERE status IN ('running', 'awaiting_approval');
+    ON runs (tenant_id, slug)
+    WHERE status IN ('running', 'awaiting_approval', 'awaiting_clarification');
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS runs_by_status ON runs (status);

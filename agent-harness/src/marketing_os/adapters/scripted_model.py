@@ -12,6 +12,13 @@ So this adapter satisfies the same ``BaseChatModel`` port the real providers do
 deliverable through the ``write_file`` tool and passes every QA review, so a run
 walks the pipeline and halts at each gate exactly as it would in production.
 
+It has one more mode, for the suite to walk a Clarification (ADR-0028): with
+``MARKETING_OS_SCRIPTED_ASK_STAGE=<stage key>``, that stage asks the business a
+fixed question through the ``ask_tenant`` tool instead of writing — unless the
+Brand DNA it was seeded with already carries a Clarifications section, which is
+what the second run after an answer sees. So the stage asks once and writes on
+the re-run, with no state kept between the two.
+
 Test-only. It is refused unless ``MARKETING_OS_ALLOW_SCRIPTED_MODEL=1``, so it
 cannot be selected by a misconfigured deployment: a provider that silently
 fabricates deliverables is far worse than one that fails to start.
@@ -33,10 +40,26 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
 
 from marketing_os.errors import ConfigError
-from marketing_os.schemas import ReviewVerdict
+from marketing_os.schemas import ClarificationQuestion, ReviewVerdict
 
 PROVIDER_NAME = "scripted"
 ENABLE_FLAG = "MARKETING_OS_ALLOW_SCRIPTED_MODEL"
+ASK_STAGE_ENV = "MARKETING_OS_SCRIPTED_ASK_STAGE"
+
+CLARIFICATIONS_HEADING = "## Clarifications"
+"""The heading the Brand DNA renders answered Clarifications under.
+
+Its presence in the seed is how the ask mode tells a re-run from a first run.
+"""
+
+SCRIPTED_QUESTION = ClarificationQuestion(
+    question="Does the business have an email list it can send to, and roughly how big is it?",
+    reason=(
+        "The performance plan can only include email as a channel if there is a list "
+        "to send to; if there is none, the right recommendation is to build one."
+    ),
+)
+"""The one question the ask mode asks, fixed so a spec can assert on it."""
 
 _DELIVERABLE_BODY = (
     "# {stage}\n\n"
@@ -86,7 +109,14 @@ class ScriptedChatModel(BaseChatModel):
     specialist's inner loop expects. Asked for structured output it returns a
     passing :class:`ReviewVerdict`, which is what the QA reviewer needs to let a
     stage advance to its gate.
+
+    Attributes:
+        ask_stage: The stage whose specialist asks :data:`SCRIPTED_QUESTION`
+            instead of writing, until the Brand DNA carries the answer; ``None``
+            for no asking at all.
     """
+
+    ask_stage: str | None = None
 
     @property
     def _llm_type(self) -> str:
@@ -114,12 +144,16 @@ class ScriptedChatModel(BaseChatModel):
 
         Returns:
             A ``write_file`` tool call, or a plain acknowledgement once the write
-            has come back.
+            has come back — or an ``ask_tenant`` call at the configured ask
+            stage while the Brand DNA lacks the answer.
         """
         if messages and isinstance(messages[-1], ToolMessage):
             return _result(AIMessage(content="Saved the deliverable."))
         path = _deliverable_path(messages)
-        stage = path.rsplit("/", 1)[-1].removesuffix(".md").replace("-", " ").title()
+        stage_key = path.rsplit("/", 1)[-1].removesuffix(".md")
+        if stage_key == self.ask_stage and not _carries_clarifications(messages):
+            return _result(_ask_call())
+        stage = stage_key.replace("-", " ").title()
         return _result(
             AIMessage(
                 content="",
@@ -197,6 +231,36 @@ class ScriptedChatModel(BaseChatModel):
         )
 
 
+def _carries_clarifications(messages: list[BaseMessage]) -> bool:
+    """Say whether the seeded Brand DNA already carries answered Clarifications.
+
+    Args:
+        messages: The conversation so far.
+
+    Returns:
+        ``True`` when any message contains the Clarifications heading.
+    """
+    return any(CLARIFICATIONS_HEADING in str(message.content) for message in messages)
+
+
+def _ask_call() -> AIMessage:
+    """Build the ``ask_tenant`` call that asks the fixed question.
+
+    Returns:
+        An assistant message carrying the one tool call.
+    """
+    return AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "ask_tenant",
+                "args": {"questions": [SCRIPTED_QUESTION.model_dump()]},
+                "id": "call_scripted_ask",
+            }
+        ],
+    )
+
+
 def _result(message: AIMessage) -> ChatResult:
     """Wrap one message as a chat result.
 
@@ -213,7 +277,8 @@ def build_scripted_model() -> BaseChatModel:
     """Build the scripted model, refusing unless it was explicitly allowed.
 
     Returns:
-        The scripted chat model.
+        The scripted chat model, asking at the stage ``MARKETING_OS_SCRIPTED_ASK_STAGE``
+        names, if any.
 
     Raises:
         ConfigError: Unless ``MARKETING_OS_ALLOW_SCRIPTED_MODEL=1``. A provider
@@ -225,4 +290,4 @@ def build_scripted_model() -> BaseChatModel:
             f"The '{PROVIDER_NAME}' provider writes fabricated deliverables and is "
             f"for testing only. Set {ENABLE_FLAG}=1 if that is genuinely what you want."
         )
-    return ScriptedChatModel()
+    return ScriptedChatModel(ask_stage=os.environ.get(ASK_STAGE_ENV) or None)

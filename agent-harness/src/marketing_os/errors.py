@@ -9,6 +9,32 @@ from __future__ import annotations
 
 from typing import Any
 
+from marketing_os.schemas import ClarificationQuestion
+
+
+class ClarificationRequested(Exception):
+    """A specialist asked the business for facts; the stage halts rather than fails.
+
+    Raised by the ``ask_tenant`` tool and caught by the specialist node, which
+    turns it into a halt at the stage's clarification hold (ADR-0028). It is a
+    control signal, not a failure, so it sits outside the
+    :class:`MarketingOSError` hierarchy: nothing maps it to an HTTP status, and
+    the tool-error recovery middleware lets it through rather than handing it
+    back to the model as an error to correct.
+
+    Attributes:
+        questions: The questions the specialist asked, each with its reason.
+    """
+
+    def __init__(self, questions: list[ClarificationQuestion]) -> None:
+        """Initialise the signal.
+
+        Args:
+            questions: The questions the specialist asked.
+        """
+        super().__init__(f"The specialist asked the business {len(questions)} question(s).")
+        self.questions = list(questions)
+
 
 class MarketingOSError(Exception):
     """Base class for every error raised by the harness.
@@ -187,6 +213,70 @@ class StageNotAwaitingApprovalError(MarketingOSError):
         }
 
 
+class RunNotAwaitingClarificationError(MarketingOSError):
+    """A run's questions were read or answered while it was not holding for any.
+
+    Refusing rather than answering with an empty list is the point: a screen
+    that shows "no questions" for a run that is at an Approval Gate, or has
+    already moved on, would be telling the owner something false about it.
+    """
+
+    http_status = 409
+    error_type = "run_not_awaiting_clarification"
+
+    def __init__(self, run_id: str) -> None:
+        """Initialise the error.
+
+        Args:
+            run_id: The run that is not holding for a clarification.
+        """
+        message = f"Run '{run_id}' is not waiting for a clarification."
+        super().__init__(message)
+        self.run_id = run_id
+        self.detail = {
+            "type": self.error_type,
+            "status": self.http_status,
+            "message": message,
+        }
+
+
+class ClarificationLimitError(MarketingOSError):
+    """One stage has halted to ask the business as many times as it is allowed to.
+
+    The cap exists so a confused specialist cannot spend a tenant's credits
+    asking indefinitely (ADR-0028). The run never proceeds on a guess instead:
+    it halts naming what is still missing, the way a spent QA budget does.
+    """
+
+    http_status = 409
+    error_type = "clarification_limit_reached"
+
+    def __init__(self, stage_key: str, limit: int, questions: list[ClarificationQuestion]) -> None:
+        """Initialise the error.
+
+        Args:
+            stage_key: The stage that has hit its cap.
+            limit: How many times one stage may halt to ask within a run.
+            questions: The questions still unanswered when the cap was hit.
+        """
+        missing = "; ".join(question.question for question in questions)
+        message = (
+            f"Stage '{stage_key}' asked the business for facts more times than allowed "
+            f"({limit}) and still lacks: {missing}"
+        )
+        super().__init__(message)
+        self.stage_key = stage_key
+        self.limit = limit
+        self.questions = list(questions)
+        self.detail = {
+            "type": self.error_type,
+            "status": self.http_status,
+            "message": message,
+            "limit": limit,
+            "questions": [question.model_dump() for question in questions],
+        }
+
+
 class RevisionLimitError(MarketingOSError):
     """One deliverable has been sent back as many times as it is allowed to be.
 
@@ -358,7 +448,7 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
 
     The graph records why a run halted as a plain, JSON-serialisable dict on
     ``state["error"]`` (its ``type`` is one of ``gate`` / ``pipeline`` / ``save`` /
-    ``guardrail`` / ``revision_limit`` / ``quota``). Those are the graph's
+    ``guardrail`` / ``revision_limit`` / ``clarification`` / ``quota``). Those are the graph's
     internal discriminators; the ``type`` on the returned payload is the
     exception's ``error_type``, which is the name the frozen API contract uses.
     This is the one place that maps between them, building the human message and
@@ -396,6 +486,19 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
         exc = RevisionLimitError(str(stage), int(limit) if limit is not None else 0)
         message = str(exc)
         detail = {"message": message, "limit": limit}
+    elif kind == "clarification":
+        limit = error.get("limit")
+        questions = [
+            ClarificationQuestion.model_validate(question)
+            for question in error.get("questions", [])
+        ]
+        exc = ClarificationLimitError(str(stage), int(limit) if limit is not None else 0, questions)
+        message = str(exc)
+        detail = {
+            "message": message,
+            "limit": limit,
+            "questions": [question.model_dump() for question in questions],
+        }
     elif kind == "quota":
         used = float(error.get("used", 0.0))
         credits = float(error.get("credits", 0.0))

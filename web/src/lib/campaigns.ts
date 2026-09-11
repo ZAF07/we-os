@@ -12,6 +12,7 @@ const STATUS_LABELS: Record<string, Status> = {
   draft: "Draft",
   running: "In progress",
   awaiting_approval: "Ready for review",
+  awaiting_clarification: "Needs input",
   approved: "Approved",
   published: "Published",
   measuring: "In progress",

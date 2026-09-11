@@ -2,8 +2,10 @@
 
 The top-level graph is flat and generated from :data:`PIPELINE`: a gate node
 followed by, for each stage, an enter/specialist/review trio wired with the QA
-revise loop. A single-stage graph reuses the same stage builder for the ``--stage``
-workflow. Both compile with a checkpointer so runs are resumable by ``thread_id``.
+revise loop, plus a clarification node the specialist hands off to when it asks
+the business a question (ADR-0028). A single-stage graph reuses the same stage
+builder for the ``--stage`` workflow. Both compile with a checkpointer so runs
+are resumable by ``thread_id``.
 """
 
 from __future__ import annotations
@@ -31,13 +33,16 @@ from marketing_os.governance.pipeline import (
 )
 from marketing_os.graph.nodes import (
     make_approval_node,
+    make_clarify_node,
     make_enter_node,
     make_gate_node,
     make_review_node,
     make_specialist_node,
     route_after_approval,
+    route_after_clarify,
     route_after_enter,
     route_after_review,
+    route_after_specialist,
 )
 from marketing_os.graph.state import CampaignState
 from marketing_os.ports import DeliverableStore, DocumentStore, Reviewer, UsageLedger
@@ -86,7 +91,12 @@ def _add_stage(
 ) -> str:
     """Add a stage's nodes and wire the QA loop and, when gated, its Approval Gate.
 
-    A ``human``-policy stage gets a fourth node between review and the next
+    Every stage gets a clarification node beside its specialist: when the
+    specialist asks the business a question instead of writing, the run halts
+    there, and answering routes back to the stage's entry node so the stage
+    re-runs from the updated Brand DNA (ADR-0028).
+
+    A ``human``-policy stage gets a further node between review and the next
     stage. Everything downstream of that node is unreachable until a person
     decides, which is how "creative cannot be produced before a human-approved
     strategy exists" becomes a property of the graph rather than a convention
@@ -112,13 +122,18 @@ def _add_stage(
     enter = f"{stage.key}__enter"
     specialist = f"{stage.key}__specialist"
     review = f"{stage.key}__review"
+    clarify = f"{stage.key}__clarify"
     builder.add_node(enter, make_enter_node(stage, store))
     builder.add_node(specialist, make_specialist_node(settings, stage, agent, ledger))
     builder.add_node(
         review, make_review_node(settings, stage, reviewer, store, deliverables, ledger)
     )
+    builder.add_node(clarify, make_clarify_node(settings, stage))
     builder.add_conditional_edges(enter, route_after_enter, {"specialist": specialist, "end": END})
-    builder.add_edge(specialist, review)
+    builder.add_conditional_edges(
+        specialist, route_after_specialist, {"clarify": clarify, "review": review}
+    )
+    builder.add_conditional_edges(clarify, route_after_clarify, {"revise": enter, "fail": END})
 
     passed_target = advance_target
     if stage.approval_policy == HUMAN:

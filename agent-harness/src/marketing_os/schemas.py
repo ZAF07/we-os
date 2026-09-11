@@ -304,6 +304,9 @@ class CampaignResult(BaseModel):
             when the run reached the end of the pipeline. A halted run is not a
             finished one, so the caller must not record it as completed
             (ADR-0015).
+        awaiting_clarification_stage: The stage halted to ask the business a
+            question, or ``None``. Held for the same reason as a gate: the run
+            is waiting on a person, not done (ADR-0028).
     """
 
     tenant: str
@@ -312,6 +315,7 @@ class CampaignResult(BaseModel):
     usage: Usage = Field(default_factory=Usage)
     run_log: str | None = None
     awaiting_approval_stage: str | None = None
+    awaiting_clarification_stage: str | None = None
 
 
 class DeliverableVersion(BaseModel):
@@ -399,6 +403,47 @@ class ApprovalDecision(BaseModel):
     feedback: str | None = None
 
 
+class ClarificationQuestion(BaseModel):
+    """One fact a specialist asked the business for, and why it needs it.
+
+    Written by the specialist for that one business at run time — the exception
+    ADR-0028 makes to the admin-curated Questionnaire. The answer is always the
+    business's own; a model never supplies it.
+
+    Attributes:
+        question: What the specialist needs to know, as a question to the owner.
+        reason: Why the stage cannot proceed without it, in a sentence or two.
+    """
+
+    question: str
+    reason: str
+
+
+APPROVAL_HOLD = "approval"
+CLARIFICATION_HOLD = "clarification"
+HoldKind = Literal["approval", "clarification"]
+"""The two things a halted run can be waiting on a person for.
+
+Both halt through the same interrupt and both keep the campaign claimed; what
+differs is what the person is asked to do — decide on a deliverable, or answer
+questions — and therefore what the interface shows (ADR-0015, ADR-0028).
+"""
+
+
+class RunHold(BaseModel):
+    """What a halted run is waiting on a person for, read from its checkpoint.
+
+    Attributes:
+        stage: The stage that is holding.
+        kind: ``approval`` at an Approval Gate, ``clarification`` for questions.
+        questions: The questions the specialist asked; empty at an Approval Gate.
+    """
+
+    stage: str
+    kind: HoldKind
+    questions: list[ClarificationQuestion] = Field(default_factory=list)
+
+
 class RunRecord(BaseModel):
     """One execution attempt of a campaign's pipeline, as the run store records it.
 
@@ -415,8 +460,9 @@ class RunRecord(BaseModel):
             cancel it while it is in flight.
         slug: The campaign slug the run claims.
         stage: The single stage being run, or ``None`` for the full pipeline.
-        status: One of ``running``, ``completed``, ``failed``, ``cancelled``, or
-            ``interrupted``.
+        status: One of ``running``, ``awaiting_approval``,
+            ``awaiting_clarification``, ``completed``, ``failed``, ``cancelled``,
+            or ``interrupted``.
         started_at: When the run was claimed, as a UTC epoch timestamp.
     """
 

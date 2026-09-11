@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 /**
  * Renders the Approval Gate: approve the deliverable, or send it back.
@@ -181,6 +182,48 @@ export function ApprovedPanel({
           Re-open this decision
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * Renders the panel for a stage whose specialist stopped to ask a question.
+ *
+ * There is nothing to approve: the specialist found a fact the Brand DNA does
+ * not carry and asked for it rather than guessing (ADR-0028). The run is
+ * paused until the owner answers, so the panel says so and leads to the
+ * questions.
+ *
+ * Args:
+ *   stageName: The stage that asked, as the interface names it.
+ *   href: Where the questions are read and answered.
+ */
+export function ClarificationPanel({
+  stageName,
+  href,
+}: {
+  stageName: string;
+  href: string;
+}) {
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3.5">
+      <div className="text-[11px] font-bold tracking-wide text-red-700 uppercase">
+        Decision required
+      </div>
+      <div className="mt-1 text-sm font-bold">
+        {stageName} has a question for you
+      </div>
+      <p className="mt-2 text-xs text-red-900">
+        The specialist needs a fact about your business that your Brand DNA does
+        not carry. Nothing is written on a guess: the run is paused until you
+        answer.
+      </p>
+      <Link
+        href={href}
+        className="mt-3 block w-full rounded-lg bg-primary py-2 text-center text-[13px] font-semibold text-primary-foreground hover:bg-indigo-700"
+      >
+        See the questions
+      </Link>
     </div>
   );
 }

@@ -393,6 +393,66 @@ def write_call(path: str, content: str, call_id: str = "call_write") -> AIMessag
     )
 
 
+ASK_QUESTIONS = [
+    {
+        "question": "Does the business have an email list it can send to?",
+        "reason": "Email can only be planned as a channel if there is a list to send to.",
+    },
+    {
+        "question": "Roughly how many people are on it?",
+        "reason": "The size decides whether email can carry the campaign or only support it.",
+    },
+]
+"""The questions the asking handler puts to the business, each with its reason."""
+
+ASK_TOKENS = {"input_tokens": 120, "output_tokens": 30, "total_tokens": 150}
+ASK_MODEL = "scripted-asker"
+"""The token cost, and the model name, the asking handler reports. The usage
+callback the ledger charges from drops a call that names no model, so both are
+needed for the ledger to have something to charge."""
+
+
+def ask_call(questions: list[dict[str, str]], call_id: str = "call_ask") -> AIMessage:
+    """Build an assistant message that calls the ``ask_tenant`` tool.
+
+    Args:
+        questions: The questions to ask, each with its reason.
+        call_id: The tool-call id.
+
+    Returns:
+        An ``AIMessage`` carrying a single ``ask_tenant`` tool call and a known
+        token cost.
+    """
+    return AIMessage(
+        content="",
+        tool_calls=[{"name": "ask_tenant", "args": {"questions": questions}, "id": call_id}],
+        usage_metadata=ASK_TOKENS,
+        response_metadata={"model_name": ASK_MODEL},
+    )
+
+
+def asking_handler(stage_key: str) -> Handler:
+    """Build a handler that asks the business at one stage and writes at every other.
+
+    Args:
+        stage_key: The stage whose specialist asks :data:`ASK_QUESTIONS` rather
+            than writing its deliverable.
+
+    Returns:
+        A handler for :class:`ProgrammableChatModel`.
+    """
+
+    def handler(messages: list[BaseMessage], index: int) -> AIMessage:
+        if isinstance(messages[-1], ToolMessage):
+            return AIMessage(content="Saved. Done.")
+        path = deliverable_from(messages)
+        if path.endswith(f"/{stage_key}.md"):
+            return ask_call(ASK_QUESTIONS)
+        return write_call(path, f"# Deliverable\n\nDraft {index} for {path}.")
+
+    return handler
+
+
 def read_call(path: str, call_id: str = "call_read") -> AIMessage:
     """Build an assistant message that calls the ``read_file`` tool.
 

@@ -320,3 +320,18 @@ def test_rendered_dna_falls_back_to_the_identity_name_when_unanswered():
     record = answers_for(SEED_QUESTIONNAIRE, skip={business.id})
     markdown = render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Harbour Bikes")
     assert markdown.startswith("# Brand DNA — Harbour Bikes")
+
+
+def test_the_ask_tool_states_the_questionnaire_rule():
+    """ADR-0028: the rule is checked in both places it is stated.
+
+    The questionnaire is checked above by what it asks; the tool is checked by
+    what it tells the specialist, since its questions are written at run time.
+    """
+    from marketing_os.adapters.tools.clarify import ask_tenant_tool
+
+    description = ask_tenant_tool().description.lower()
+    assert "uniquely knows" in description
+    for term in ("positioning", "messaging", "channel"):
+        assert term in description, f"the tool must forbid asking for '{term}'"
+    assert "never" in description

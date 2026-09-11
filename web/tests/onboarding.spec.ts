@@ -162,7 +162,9 @@ test("an unfinished Brand DNA is on Home's queue and badged in the nav", async (
   // On Home it is a queue item, so a business with no campaigns yet is told
   // the one thing that is actually waiting on it rather than "nothing is".
   await page.goto("/home");
-  await expect(page.getByText("Setup", { exact: true })).toBeVisible();
+  const setup = page.getByText("Setup", { exact: true });
+  await expect(setup).toBeVisible();
+  await expect(setup).toHaveClass(/text-amber-800/);
   await expect(
     page.getByText(
       /Brand DNA is not filled in yet|still needed in your Brand DNA/,

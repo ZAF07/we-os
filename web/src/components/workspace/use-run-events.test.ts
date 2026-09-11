@@ -30,7 +30,12 @@ describe("runningStage", () => {
   });
 
   it("reads nothing running once the run summarises, whatever the outcome", () => {
-    for (const outcome of ["ok", "error", "awaiting_approval"]) {
+    for (const outcome of [
+      "ok",
+      "error",
+      "awaiting_approval",
+      "awaiting_clarification",
+    ]) {
       expect(
         runningStage([
           { event: "stage.start", stage: "brand-strategy" },

@@ -11,6 +11,10 @@ const TONE_CLASSES: Record<StatTone, string> = {
 /**
  * Renders a labeled metric, optionally with a delta line.
  *
+ * The tile is a named group, so a screen reader — and a test — can address
+ * the metric by its label without colliding with the same words used as a
+ * status elsewhere on the page.
+ *
  * Args:
  *   label: The metric name.
  *   value: The metric value.
@@ -37,7 +41,7 @@ export function StatCard({
 }) {
   if (size === "lg") {
     return (
-      <div>
+      <div role="group" aria-label={label}>
         <div className="text-xs text-muted-foreground">{label}</div>
         <div className="text-[22px] font-bold tracking-tight">{value}</div>
         {delta && (
@@ -47,7 +51,11 @@ export function StatCard({
     );
   }
   return (
-    <div className="min-w-[104px] rounded-[10px] border bg-card px-3.5 py-2">
+    <div
+      role="group"
+      aria-label={label}
+      className="min-w-[104px] rounded-[10px] border bg-card px-3.5 py-2"
+    >
       <div className="text-[11.5px] text-muted-foreground">{label}</div>
       <div className={cn("text-[17px] font-bold", TONE_CLASSES[tone])}>
         {value}

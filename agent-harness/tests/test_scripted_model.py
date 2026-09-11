@@ -7,8 +7,11 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from marketing_os.adapters.models import get_model
 from marketing_os.adapters.scripted_model import (
+    ASK_STAGE_ENV,
+    CLARIFICATIONS_HEADING,
     ENABLE_FLAG,
     PROVIDER_NAME,
+    SCRIPTED_QUESTION,
     ScriptedChatModel,
     build_scripted_model,
 )
@@ -145,3 +148,66 @@ def test_it_writes_the_deliverable_not_the_goal_it_was_told_to_read(
 
     assert isinstance(result, AIMessage)
     assert result.tool_calls[0]["args"]["path"] == f"campaigns/{slug}/{stage.deliverable}"
+
+
+def test_ask_mode_asks_a_fixed_question_at_the_configured_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The browser suite walks the halt without a real model."""
+    monkeypatch.setenv(ENABLE_FLAG, "1")
+    monkeypatch.setenv(ASK_STAGE_ENV, "performance-plan")
+    model = build_scripted_model()
+
+    result = model.invoke(
+        [HumanMessage("# Brand DNA\n\nFacts.\n\nSave to `campaigns/spring/performance-plan.md`.")]
+    )
+
+    assert isinstance(result, AIMessage)
+    assert result.tool_calls[0]["name"] == "ask_tenant"
+    questions = result.tool_calls[0]["args"]["questions"]
+    assert questions == [SCRIPTED_QUESTION.model_dump()]
+    assert questions[0]["question"].strip() and questions[0]["reason"].strip()
+
+
+def test_ask_mode_leaves_every_other_stage_writing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(ENABLE_FLAG, "1")
+    monkeypatch.setenv(ASK_STAGE_ENV, "performance-plan")
+    model = build_scripted_model()
+
+    result = model.invoke([HumanMessage("Save to `campaigns/spring/brand-strategy.md`.")])
+
+    assert isinstance(result, AIMessage)
+    assert result.tool_calls[0]["name"] == "write_file"
+
+
+def test_ask_mode_writes_once_the_dna_carries_the_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The second run is seeded with the answered DNA, so the stage writes instead."""
+    monkeypatch.setenv(ENABLE_FLAG, "1")
+    monkeypatch.setenv(ASK_STAGE_ENV, "performance-plan")
+    model = build_scripted_model()
+
+    result = model.invoke(
+        [
+            HumanMessage(
+                f"# Brand DNA\n\nFacts.\n\n{CLARIFICATIONS_HEADING}\n\n- Yes, 400 people.\n\n"
+                "Save to `campaigns/spring/performance-plan.md`."
+            )
+        ]
+    )
+
+    assert isinstance(result, AIMessage)
+    assert result.tool_calls[0]["name"] == "write_file"
+    assert result.tool_calls[0]["args"]["path"] == "campaigns/spring/performance-plan.md"
+
+
+def test_ask_mode_is_off_unless_a_stage_is_named(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(ENABLE_FLAG, "1")
+    monkeypatch.delenv(ASK_STAGE_ENV, raising=False)
+    model = build_scripted_model()
+
+    result = model.invoke([HumanMessage("Save to `campaigns/spring/performance-plan.md`.")])
+
+    assert isinstance(result, AIMessage)
+    assert result.tool_calls[0]["name"] == "write_file"
