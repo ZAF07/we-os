@@ -17,6 +17,8 @@
  * head.
  */
 
+import { expect, type Page } from "@playwright/test";
+
 let sequence = 0;
 
 /**
@@ -34,4 +36,39 @@ let sequence = 0;
 export function uniqueName(label: string): string {
   sequence += 1;
   return `${label} ${Date.now()}-${sequence}`;
+}
+
+/**
+ * Creates a campaign through the wizard and lands on its Workspace.
+ *
+ * The same walk every campaign spec makes; a spec asserting on what happens
+ * to a campaign should start here rather than re-typing the wizard.
+ *
+ * Args:
+ *   page: The Playwright page.
+ *   name: The campaign name, which must be unique per run.
+ *
+ * Returns:
+ *   The slug the engine gave the campaign, read from the Workspace URL.
+ */
+export async function createCampaign(
+  page: Page,
+  name: string,
+): Promise<string> {
+  await page.goto("/campaigns/new");
+  await page.getByLabel("Campaign name").fill(name);
+  await page.getByLabel("Primary business objective").fill("An objective");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await page.getByLabel("Business KPI").fill("A business target");
+  await page.getByLabel("Marketing KPI").fill("A marketing target");
+  await page.getByLabel("Creative KPI").fill("A creative target");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await page.getByRole("radio").first().click();
+  await page.getByLabel("Campaign budget").fill("1000");
+  await page.getByLabel("Start date").fill("2026-09-01");
+  await page.getByLabel("End date").fill("2026-10-27");
+  await page.getByRole("button", { name: "Next →" }).click();
+  await page.getByRole("button", { name: "Create campaign" }).click();
+  await expect(page.getByRole("navigation", { name: "Stages" })).toBeVisible();
+  return new URL(page.url()).pathname.split("/campaigns/")[1];
 }

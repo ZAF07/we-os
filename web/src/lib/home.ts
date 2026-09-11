@@ -78,15 +78,21 @@ export function toQueue(
     if (campaign.blocked_reason === null) continue;
     const asking = campaign.status === "awaiting_clarification";
     const deciding = asking || campaign.status === "awaiting_approval";
+    let cta = "Open";
+    let href = `/campaigns/${campaign.id}`;
+    if (asking) {
+      cta = "See questions";
+      href = `/campaigns/${campaign.id}/clarifications`;
+    } else if (deciding) {
+      cta = "Review";
+    }
     const item: QueueItem = {
       slug: campaign.id,
       tag: deciding ? "Decision" : "Stale",
       title: campaign.blocked_reason,
       meta: campaign.name,
-      cta: asking ? "See questions" : deciding ? "Review" : "Open",
-      href: asking
-        ? `/campaigns/${campaign.id}/clarifications`
-        : `/campaigns/${campaign.id}`,
+      cta,
+      href,
     };
     if (deciding) waiting.push(item);
     else stale.push(item);

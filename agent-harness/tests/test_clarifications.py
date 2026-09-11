@@ -16,29 +16,31 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
 from conftest import (
+    ASK_QUESTIONS,
     PASS_VERDICT,
     SLUG,
     TENANT,
     FakeReviewer,
+    Handler,
     ProgrammableChatModel,
+    asking_handler,
     authenticate,
     clear_prototype_adapters,
-    deliverable_from,
     install_prototype_adapters,
     install_scripted_graph,
     prototype_adapters,
     write_all_agent_specs,
-    write_call,
+    writing_handler,
 )
 from marketing_os.adapters.observability import read_events
 from marketing_os.adapters.usage import InMemoryUsageLedger
@@ -47,54 +49,6 @@ from marketing_os.errors import ClarificationLimitError
 from marketing_os.graph.graph import build_campaign_graph
 from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage, pending_hold
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
-
-QUESTIONS = [
-    {
-        "question": "Does the business have an email list it can send to?",
-        "reason": "Email can only be planned as a channel if there is a list to send to.",
-    },
-    {
-        "question": "Roughly how many people are on it?",
-        "reason": "The size decides whether email can carry the campaign or only support it.",
-    },
-]
-
-
-def ask_call(questions: list[dict[str, str]], call_id: str = "call_ask") -> AIMessage:
-    """Build an assistant message that calls the ``ask_tenant`` tool.
-
-    Args:
-        questions: The questions to ask, each with its reason.
-        call_id: The tool-call id.
-
-    Returns:
-        An ``AIMessage`` carrying a single ``ask_tenant`` tool call.
-    """
-    return AIMessage(
-        content="",
-        tool_calls=[{"name": "ask_tenant", "args": {"questions": questions}, "id": call_id}],
-    )
-
-
-def asking_at(stage_key: str) -> Any:
-    """Build a handler that asks the business at one stage and writes at every other.
-
-    Args:
-        stage_key: The stage whose specialist asks rather than writes.
-
-    Returns:
-        A handler for :class:`ProgrammableChatModel`.
-    """
-
-    def handler(messages: list[BaseMessage], index: int) -> AIMessage:
-        if isinstance(messages[-1], ToolMessage):
-            return AIMessage(content="Done.")
-        path = deliverable_from(messages)
-        if path.endswith(f"/{stage_key}.md"):
-            return ask_call(QUESTIONS)
-        return write_call(path, f"# Deliverable\n\nDraft {index} for {path}.")
-
-    return handler
 
 
 def _adapters(settings: Settings, saver: MemorySaver) -> dict[str, Any]:
@@ -114,7 +68,7 @@ async def test_the_run_halts_and_reports_the_questions_it_is_holding_for(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_all_agent_specs(settings)
-    install_scripted_graph(monkeypatch, handler=asking_at("research"))
+    install_scripted_graph(monkeypatch, handler=asking_handler("research"))
     saver = MemorySaver()
 
     result = await arun_campaign(settings, TENANT, SLUG, **_adapters(settings, saver))
@@ -125,7 +79,7 @@ async def test_the_run_halts_and_reports_the_questions_it_is_holding_for(
     assert hold is not None
     assert hold.kind == "clarification"
     assert hold.stage == "research"
-    assert [question.model_dump() for question in hold.questions] == QUESTIONS
+    assert [question.model_dump() for question in hold.questions] == ASK_QUESTIONS
 
 
 async def test_a_clarification_hold_is_not_an_approval_gate(
@@ -133,7 +87,7 @@ async def test_a_clarification_hold_is_not_an_approval_gate(
 ) -> None:
     """Approving a run that is asking a question must be refused, so the two never blur."""
     write_all_agent_specs(settings)
-    install_scripted_graph(monkeypatch, handler=asking_at("research"))
+    install_scripted_graph(monkeypatch, handler=asking_handler("research"))
     saver = MemorySaver()
 
     await arun_campaign(settings, TENANT, SLUG, **_adapters(settings, saver))
@@ -145,7 +99,7 @@ async def test_nothing_is_written_on_a_guess(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_all_agent_specs(settings)
-    install_scripted_graph(monkeypatch, handler=asking_at("research"))
+    install_scripted_graph(monkeypatch, handler=asking_handler("research"))
 
     result = await arun_campaign(settings, TENANT, SLUG, **_adapters(settings, MemorySaver()))
 
@@ -157,7 +111,7 @@ async def test_a_later_stage_can_ask_after_earlier_ones_completed(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_all_agent_specs(settings)
-    install_scripted_graph(monkeypatch, handler=asking_at("brand-strategy"))
+    install_scripted_graph(monkeypatch, handler=asking_handler("brand-strategy"))
     saver = MemorySaver()
 
     result = await arun_campaign(settings, TENANT, SLUG, **_adapters(settings, saver))
@@ -172,7 +126,7 @@ async def test_asking_past_the_cap_halts_with_a_clarification_error(
     """The run never proceeds on a guess; a confused specialist is stopped instead."""
     write_all_agent_specs(settings)
     settings.max_clarifications = 1
-    install_scripted_graph(monkeypatch, handler=asking_at("research"))
+    install_scripted_graph(monkeypatch, handler=asking_handler("research"))
     adapters = _adapters(settings, MemorySaver())
     await arun_campaign(settings, TENANT, SLUG, **adapters)
 
@@ -185,8 +139,8 @@ async def test_asking_past_the_cap_halts_with_a_clarification_error(
     assert raised.value.detail["halt_reason"] == "clarification"
     assert raised.value.detail["stage"] == "research"
     assert raised.value.detail["limit"] == 1
-    assert raised.value.detail["questions"] == QUESTIONS
-    assert QUESTIONS[0]["question"] in str(raised.value)
+    assert raised.value.detail["questions"] == ASK_QUESTIONS
+    assert ASK_QUESTIONS[0]["question"] in str(raised.value)
 
 
 async def test_the_cap_is_read_from_settings(
@@ -195,7 +149,7 @@ async def test_the_cap_is_read_from_settings(
     """With room left under the cap, a second ask halts again rather than erroring."""
     write_all_agent_specs(settings)
     settings.max_clarifications = 2
-    install_scripted_graph(monkeypatch, handler=asking_at("research"))
+    install_scripted_graph(monkeypatch, handler=asking_handler("research"))
     adapters = _adapters(settings, MemorySaver())
     await arun_campaign(settings, TENANT, SLUG, **adapters)
 
@@ -220,7 +174,7 @@ async def test_the_ledger_is_charged_for_the_work_before_the_halt(settings: Sett
     adapters = _adapters(settings, MemorySaver())
     graph = build_campaign_graph(
         settings,
-        model=ProgrammableChatModel(handler=asking_at("research")),
+        model=ProgrammableChatModel(handler=asking_handler("research")),
         reviewer=FakeReviewer([PASS_VERDICT]),
         checkpointer=MemorySaver(),
         document_store=adapters["document_store"],
@@ -233,14 +187,16 @@ async def test_the_ledger_is_charged_for_the_work_before_the_halt(settings: Sett
         {"tenant": TENANT, "slug": SLUG}, config={"configurable": {"thread_id": "billed"}}
     )
 
-    assert [entry.stage_key for entry in ledger.entries(TENANT, SLUG)] == ["research"]
+    entries = ledger.entries(TENANT, SLUG)
+    assert [entry.stage_key for entry in entries] == ["research"]
+    assert entries[0].units > 0
 
 
 async def test_the_trace_carries_the_questions(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_all_agent_specs(settings)
-    install_scripted_graph(monkeypatch, handler=asking_at("research"))
+    install_scripted_graph(monkeypatch, handler=asking_handler("research"))
 
     result = await arun_campaign(settings, TENANT, SLUG, **_adapters(settings, MemorySaver()))
 
@@ -249,28 +205,39 @@ async def test_the_trace_carries_the_questions(
     asked = [event for event in events if event["event"] == "stage.awaiting_clarification"]
     assert len(asked) == 1
     assert asked[0]["stage"] == "research"
-    assert asked[0]["questions"] == QUESTIONS
+    assert asked[0]["questions"] == ASK_QUESTIONS
     summary = events[-1]
     assert summary["event"] == "run.summary"
     assert summary["outcome"] == "awaiting_clarification"
     assert summary["stage"] == "research"
 
 
-def _make_client(repo: Path) -> TestClient:
-    """Build a TestClient bound to the hermetic repo with caches cleared.
+@contextmanager
+def _client_for(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, handler: Handler
+) -> Iterator[TestClient]:
+    """Enter a hermetic API client whose specialists follow one scripted handler.
 
     Args:
         repo: The hermetic repository root fixture.
+        monkeypatch: The pytest monkeypatch fixture.
+        handler: The scripted chat-model handler every specialist follows.
 
-    Returns:
-        A configured (not yet entered) FastAPI test client.
+    Yields:
+        An entered FastAPI test client, with caches cleared on exit.
     """
     from marketing_os.entrypoints.api.app import app, get_settings
 
+    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
+    write_all_agent_specs(Settings(root=repo))
+    install_scripted_graph(monkeypatch, handler=handler)
     get_settings.cache_clear()
     install_prototype_adapters(repo)
     authenticate(app)
-    return TestClient(app)
+    with TestClient(app) as entered:
+        yield entered
+    get_settings.cache_clear()
+    clear_prototype_adapters()
 
 
 def _wait_for_status(client: TestClient, run_id: str, target: str) -> dict:
@@ -303,15 +270,8 @@ def client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     Yields:
         An entered FastAPI test client.
     """
-    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
-    write_all_agent_specs(Settings(root=repo))
-    install_scripted_graph(monkeypatch, handler=asking_at("brand-strategy"))
-    from marketing_os.entrypoints.api.app import get_settings
-
-    with _make_client(repo) as entered:
+    with _client_for(repo, monkeypatch, asking_handler("brand-strategy")) as entered:
         yield entered
-    get_settings.cache_clear()
-    clear_prototype_adapters()
 
 
 def _halt(client: TestClient) -> str:
@@ -359,7 +319,7 @@ def test_the_questions_and_reasons_are_readable_from_the_run(client: TestClient)
     assert body["run_id"] == run_id
     assert body["slug"] == SLUG
     assert body["stage"] == "brand-strategy"
-    assert body["questions"] == QUESTIONS
+    assert body["questions"] == ASK_QUESTIONS
 
 
 def test_a_halted_run_still_holds_its_campaign(client: TestClient) -> None:
@@ -394,18 +354,11 @@ def test_clarifications_404_for_an_unknown_run(client: TestClient) -> None:
 def test_clarifications_409_for_a_run_not_asking(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("MARKETING_OS_ROOT", str(repo))
-    write_all_agent_specs(Settings(root=repo))
-    install_scripted_graph(monkeypatch)
-    from marketing_os.entrypoints.api.app import get_settings
-
-    with _make_client(repo) as client:
+    with _client_for(repo, monkeypatch, writing_handler) as client:
         run_id = client.post(f"/campaigns/{SLUG}/run", json={}).json()["run_id"]
         _wait_for_status(client, run_id, "awaiting_approval")
 
         response = client.get(f"/runs/{run_id}/clarifications")
 
-        assert response.status_code == 409
-        assert response.json()["type"] == "run_not_awaiting_clarification"
-    get_settings.cache_clear()
-    clear_prototype_adapters()
+    assert response.status_code == 409
+    assert response.json()["type"] == "run_not_awaiting_clarification"

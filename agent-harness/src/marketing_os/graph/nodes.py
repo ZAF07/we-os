@@ -806,9 +806,10 @@ def make_clarify_node(settings: Settings, stage: Stage) -> CampaignNode:
         used = rounds.get(stage.key, 0)
         if used >= cap:
             _emit(
-                "stage.clarification_limit",
+                "stage.failed",
                 slug=slug,
                 stage=stage.key,
+                reason="clarification",
                 rounds_allowed=cap,
                 questions=questions,
             )

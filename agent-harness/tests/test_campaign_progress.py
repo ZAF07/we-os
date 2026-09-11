@@ -28,14 +28,14 @@ from marketing_os.campaign.progress import (
     stale_keys,
 )
 from marketing_os.governance.pipeline import PIPELINE
-from marketing_os.schemas import ClarificationQuestion, RunHold
+from marketing_os.schemas import ClarificationQuestion, HoldKind, RunHold
 
 ALL_STAGES = [stage.key for stage in PIPELINE]
 
 QUESTION = ClarificationQuestion(question="Do you have an email list?", reason="Email needs one.")
 
 
-def _hold(stage_key: str, kind: str = "approval") -> RunHold:
+def _hold(stage_key: str, kind: HoldKind = "approval") -> RunHold:
     """Describe a live run holding at a stage.
 
     Args:
@@ -46,7 +46,7 @@ def _hold(stage_key: str, kind: str = "approval") -> RunHold:
         The hold as the runner reports it.
     """
     questions = [QUESTION] if kind == "clarification" else []
-    return RunHold(stage=stage_key, kind=kind, questions=questions)  # type: ignore[arg-type]
+    return RunHold(stage=stage_key, kind=kind, questions=questions)
 
 
 def _store(*stage_keys: str) -> InMemoryDeliverableStore:

@@ -251,7 +251,7 @@ class ClarificationLimitError(MarketingOSError):
     http_status = 409
     error_type = "clarification_limit_reached"
 
-    def __init__(self, stage_key: str, limit: int, questions: list[dict[str, Any]]) -> None:
+    def __init__(self, stage_key: str, limit: int, questions: list[ClarificationQuestion]) -> None:
         """Initialise the error.
 
         Args:
@@ -259,7 +259,7 @@ class ClarificationLimitError(MarketingOSError):
             limit: How many times one stage may halt to ask within a run.
             questions: The questions still unanswered when the cap was hit.
         """
-        missing = "; ".join(str(question.get("question", "")) for question in questions)
+        missing = "; ".join(question.question for question in questions)
         message = (
             f"Stage '{stage_key}' asked the business for facts more times than allowed "
             f"({limit}) and still lacks: {missing}"
@@ -273,7 +273,7 @@ class ClarificationLimitError(MarketingOSError):
             "status": self.http_status,
             "message": message,
             "limit": limit,
-            "questions": self.questions,
+            "questions": [question.model_dump() for question in questions],
         }
 
 
@@ -488,10 +488,17 @@ def exception_from_state_error(error: dict[str, Any], run_log: str | None) -> Ma
         detail = {"message": message, "limit": limit}
     elif kind == "clarification":
         limit = error.get("limit")
-        questions = [dict(question) for question in error.get("questions", [])]
+        questions = [
+            ClarificationQuestion.model_validate(question)
+            for question in error.get("questions", [])
+        ]
         exc = ClarificationLimitError(str(stage), int(limit) if limit is not None else 0, questions)
         message = str(exc)
-        detail = {"message": message, "limit": limit, "questions": questions}
+        detail = {
+            "message": message,
+            "limit": limit,
+            "questions": [question.model_dump() for question in questions],
+        }
     elif kind == "quota":
         used = float(error.get("used", 0.0))
         credits = float(error.get("credits", 0.0))

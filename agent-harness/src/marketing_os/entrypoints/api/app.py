@@ -1791,8 +1791,9 @@ async def _release_gate_held_by(identity: VerifiedIdentity, slug: str) -> None:
     would refuse them their own campaign until they separately cancelled a run
     they have already moved on from.
 
-    Only a run halted at a gate is released, and only the caller's own. A run
-    that is genuinely executing is left alone, so re-opening still refuses a
+    Only a run holding on a person — at a gate, or for an answer to a
+    specialist's question — is released, and only the caller's own. A run that
+    is genuinely executing is left alone, so re-opening still refuses a
     campaign someone is actively working on rather than pulling the work out
     from under it.
 
@@ -1802,7 +1803,7 @@ async def _release_gate_held_by(identity: VerifiedIdentity, slug: str) -> None:
     """
     registry = get_registry()
     held = registry.active_for_campaign(identity.tenant_id, slug)
-    if held is None or held.status != AWAITING_APPROVAL:
+    if held is None or held.status not in HELD_STATUSES:
         return
     if held.user_id and held.user_id != identity.user_id:
         return

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { uniqueName } from "./fixtures";
+import { createCampaign, uniqueName } from "./fixtures";
 
 /**
  * A specialist that lacks a fact only the business knows asks for it and the
@@ -14,40 +14,10 @@ import { uniqueName } from "./fixtures";
  * shows the question and the reason the specialist gave.
  */
 
-/**
- * Creates a campaign through the wizard and lands on its Workspace.
- *
- * Args:
- *   page: The Playwright page.
- *   name: The campaign name, which must be unique per run.
- */
-async function createCampaign(
-  page: import("@playwright/test").Page,
-  name: string,
-): Promise<void> {
-  await page.goto("/campaigns/new");
-  await page.getByLabel("Campaign name").fill(name);
-  await page.getByLabel("Primary business objective").fill("An objective");
-  await page.getByRole("button", { name: "Next →" }).click();
-  await page.getByLabel("Business KPI").fill("A business target");
-  await page.getByLabel("Marketing KPI").fill("A marketing target");
-  await page.getByLabel("Creative KPI").fill("A creative target");
-  await page.getByRole("button", { name: "Next →" }).click();
-  await page.getByRole("radio").first().click();
-  await page.getByLabel("Campaign budget").fill("1000");
-  await page.getByLabel("Start date").fill("2026-09-01");
-  await page.getByLabel("End date").fill("2026-10-27");
-  await page.getByRole("button", { name: "Next →" }).click();
-  await page.getByRole("button", { name: "Create campaign" }).click();
-  await expect(page.getByRole("navigation", { name: "Stages" })).toBeVisible();
-}
-
 test("a specialist's question halts the run and reaches Home as a Decision", async ({
   page,
 }) => {
-  const name = uniqueName("Clarify");
-  await createCampaign(page, name);
-  const slug = new URL(page.url()).pathname.split("/campaigns/")[1];
+  const slug = await createCampaign(page, uniqueName("Clarify"));
 
   // Two approvals take the run to the performance plan, whose specialist asks.
   await page.getByRole("button", { name: "Start run" }).click();
@@ -64,9 +34,11 @@ test("a specialist's question halts the run and reaches Home as a Decision", asy
   });
   await approve.click();
 
-  // The Workspace follows the run to the stage that asked, and says so.
+  // The Workspace follows the run to the stage that asked, and says so: the
+  // decision rail names the stage (exact, since the progress rail narrates the
+  // same sentence with a full stop) and offers no approval.
   await expect(
-    page.getByText("Performance plan has a question for you"),
+    page.getByText("Performance plan has a question for you", { exact: true }),
   ).toBeVisible({ timeout: 120_000 });
   await expect(page.getByRole("log", { name: "Run progress" })).toContainText(
     "Waiting for your answer",
@@ -79,9 +51,12 @@ test("a specialist's question halts the run and reaches Home as a Decision", asy
   // on it — tagged Decision in red, and leading to the questions.
   await page.goto("/home");
   const queue = page.getByRole("list", { name: "Decision queue" });
-  const link = queue.locator(`a[href="/campaigns/${slug}/clarifications"]`);
+  const href = `/campaigns/${slug}/clarifications`;
+  const link = queue.locator(`a[href="${href}"]`);
   await expect(link).toBeVisible();
-  const row = queue.locator("li").filter({ has: link });
+  const row = queue
+    .locator("li")
+    .filter({ has: page.locator(`a[href="${href}"]`) });
   await expect(row).toContainText("Plan has a question for you.");
   await expect(row.getByText("Decision", { exact: true })).toHaveClass(
     /text-red-700/,

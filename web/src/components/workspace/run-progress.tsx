@@ -21,8 +21,6 @@ const EVENT_SENTENCES: Record<string, (event: RunEvent) => string> = {
   "stage.approved": (event) => `You approved ${named(event)}.`,
   "stage.awaiting_clarification": (event) =>
     `${named(event)} has a question for you.`,
-  "stage.clarification_limit": (event) =>
-    `Stopped: ${named(event)} asked more than it is allowed to.`,
   "stage.revision_requested": (event) => `Revising ${named(event)}.`,
   "stage.blocked": (event) => `${named(event)} is waiting on an earlier stage.`,
   "stage.failed": (event) => `${named(event)} could not be completed.`,
