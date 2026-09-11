@@ -1,6 +1,11 @@
 "use server";
 
-import { updateClarificationAnswer, type Clarification } from "@/lib/engine";
+import {
+  markDnaReviewed,
+  updateClarificationAnswer,
+  type Clarification,
+  type DnaReview,
+} from "@/lib/engine";
 
 /**
  * Saves a corrected answer to one Clarification.
@@ -20,4 +25,17 @@ export async function saveClarificationAnswer(
   answer: string,
 ): Promise<Clarification> {
   return updateClarificationAnswer(clarificationId, answer);
+}
+
+/**
+ * Records that the business looked over its Brand DNA and found it still true.
+ *
+ * The Reviewed action. It clears the Review item on Home for another interval;
+ * editing any answer does the same on its own (ADR-0028).
+ *
+ * Returns:
+ *   The review as it now stands: not due.
+ */
+export async function markReviewed(): Promise<DnaReview> {
+  return markDnaReviewed();
 }

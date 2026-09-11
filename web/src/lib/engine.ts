@@ -102,6 +102,25 @@ export async function engineStream(
 export { EngineError };
 
 /**
+ * Turns an engine refusal into a missing value, for a read a screen can do
+ * without: the tile or item it feeds is left out rather than the screen.
+ *
+ * Args:
+ *   error: What the read threw.
+ *
+ * Returns:
+ *   Null for an engine error.
+ *
+ * Throws:
+ *   Anything that is not an engine error, since an unreachable engine is not
+ *   an optional condition.
+ */
+export function nullOnEngineError(error: unknown): null {
+  if (error instanceof EngineError) return null;
+  throw error;
+}
+
+/**
  * Turns a failed engine call into the sentence a screen shows.
  *
  * The engine explains its own refusals in the operator's terms, so its message
@@ -288,6 +307,30 @@ export function getBrandDna(): Promise<BrandDna> {
 /** Reports which Required Brand DNA fields the business still owes. */
 export function getBrandDnaCompleteness(): Promise<DnaCompleteness> {
   return engineFetch<DnaCompleteness>("/brand-dna/completeness");
+}
+
+/**
+ * Whether the business is due to look at its Brand DNA again, and when it
+ * last did — by marking a review done, or by editing an answer (ADR-0028).
+ */
+export interface DnaReview {
+  due: boolean;
+  reviewed_at: string | null;
+}
+
+/** Reports whether the Brand DNA is due a review, and when it was last reviewed. */
+export function getDnaReview(): Promise<DnaReview> {
+  return engineFetch<DnaReview>("/brand-dna/review");
+}
+
+/**
+ * Records that the business reviewed its Brand DNA and found it still true.
+ *
+ * Returns:
+ *   The review as it now stands: not due.
+ */
+export function markDnaReviewed(): Promise<DnaReview> {
+  return engineFetch<DnaReview>("/brand-dna/review", { method: "POST" });
 }
 
 /**

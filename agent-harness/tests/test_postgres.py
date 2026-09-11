@@ -22,6 +22,7 @@ Every test here is marked ``slow`` and skips unless
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -192,6 +193,40 @@ def test_repeating_the_tier_is_harmless_and_changing_it_is_refused(postgres_pool
 def test_a_tier_cannot_be_set_for_a_tenant_that_does_not_exist(postgres_pool: Any) -> None:
     with pytest.raises(ToolError):
         PostgresTenantDirectory(postgres_pool).set_tier("ten_never_minted", "operator")
+
+
+def test_a_new_tenant_has_never_reviewed_its_dna(postgres_pool: Any) -> None:
+    directory = PostgresTenantDirectory(postgres_pool)
+
+    tenant = directory.resolve(external_auth_id="org_unreviewed", name="Coast Coffee")
+
+    assert tenant.dna_reviewed_at is None
+
+
+def test_a_dna_review_is_recorded_and_read_back_by_every_path(postgres_pool: Any) -> None:
+    """The column is the one timestamp the Review item and the reminder derive from (ADR-0028)."""
+    directory = PostgresTenantDirectory(postgres_pool)
+    tenant = directory.resolve(external_auth_id="org_reviewed", name="Coast Coffee")
+    at = datetime(2026, 9, 11, 9, 0, tzinfo=UTC)
+
+    marked = directory.mark_dna_reviewed(tenant.tenant_id, at=at)
+
+    assert marked.dna_reviewed_at == at
+    found = directory.get(tenant.tenant_id)
+    assert found is not None and found.dna_reviewed_at == at
+    resolved = directory.resolve(external_auth_id="org_reviewed", name="Coast Coffee Roasters")
+    assert resolved.dna_reviewed_at == at
+    later = directory.mark_dna_reviewed(tenant.tenant_id, at=at + timedelta(days=7))
+    assert later.dna_reviewed_at == at + timedelta(days=7)
+
+
+def test_a_review_cannot_be_recorded_for_a_tenant_that_does_not_exist(
+    postgres_pool: Any,
+) -> None:
+    with pytest.raises(ToolError):
+        PostgresTenantDirectory(postgres_pool).mark_dna_reviewed(
+            "ten_missing", at=datetime.now(UTC)
+        )
 
 
 # --- The shared run claim -------------------------------------------------------

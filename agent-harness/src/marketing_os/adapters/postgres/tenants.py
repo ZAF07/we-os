@@ -7,11 +7,14 @@ document path, run row and checkpoint thread is partitioned by (ADR-0014).
 
 The same row records the business's tier, once (ADR-0027): a fact the product
 will bill on belongs in the platform's own table, not only in a vendor's
-organization metadata.
+organization metadata. It also records when the business last reviewed its
+Brand DNA (ADR-0028), the one timestamp both the Review item and the reminder
+email are derived from.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from marketing_os.adapters.tenants import (
@@ -23,7 +26,7 @@ from marketing_os.adapters.tenants import (
 from marketing_os.errors import ToolError
 from marketing_os.schemas import Tenant, TierName
 
-TENANT_COLUMNS = "tenant_id, name, external_auth_id, tier"
+TENANT_COLUMNS = "tenant_id, name, external_auth_id, tier, dna_reviewed_at"
 
 
 def _tenant_from_row(row: Any) -> Tenant:
@@ -35,7 +38,13 @@ def _tenant_from_row(row: Any) -> Tenant:
     Returns:
         The tenant the row describes.
     """
-    return Tenant(tenant_id=row[0], name=row[1], external_auth_id=row[2], tier=row[3])
+    return Tenant(
+        tenant_id=row[0],
+        name=row[1],
+        external_auth_id=row[2],
+        tier=row[3],
+        dna_reviewed_at=row[4],
+    )
 
 
 class PostgresTenantDirectory:
@@ -140,3 +149,26 @@ class PostgresTenantDirectory:
         if row is None:
             raise ToolError(f"No tenant '{tenant_id}' is registered.")
         return refuse_a_different_tier(_tenant_from_row(row), tier)
+
+    def mark_dna_reviewed(self, tenant_id: str, *, at: datetime) -> Tenant:
+        """Record when a tenant reviewed its Brand DNA.
+
+        Args:
+            tenant_id: The platform tenant id.
+            at: When the review happened.
+
+        Returns:
+            The tenant, carrying the review it now has recorded.
+
+        Raises:
+            ToolError: If no tenant has that id.
+        """
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "UPDATE tenants SET dna_reviewed_at = %s WHERE tenant_id = %s "
+                f"RETURNING {TENANT_COLUMNS}",
+                (at, tenant_id),
+            ).fetchone()
+        if row is None:
+            raise ToolError(f"No tenant '{tenant_id}' is registered.")
+        return _tenant_from_row(row)

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CampaignSummary,
   DnaCompleteness,
+  DnaReview,
   UsageReport,
 } from "@/lib/engine";
 import { progressWidth, toActiveCampaigns, toQueue, toStats } from "@/lib/home";
@@ -43,6 +44,7 @@ describe("toQueue", () => {
         }),
       ],
       null,
+      null,
     );
 
     expect(queue).toHaveLength(1);
@@ -62,6 +64,7 @@ describe("toQueue", () => {
         }),
       ],
       null,
+      null,
     );
 
     expect(queue.map((item) => item.slug)).toEqual(["gate-one", "stale-one"]);
@@ -78,13 +81,14 @@ describe("toQueue", () => {
         }),
       ],
       null,
+      null,
     );
 
     expect(queue[0].title).toBe("Strategy is waiting for your approval.");
   });
 
   it("is empty when nothing needs anyone", () => {
-    expect(toQueue([campaign("a"), campaign("b")], null)).toEqual([]);
+    expect(toQueue([campaign("a"), campaign("b")], null, null)).toEqual([]);
   });
 
   it("tags a campaign asking the owner a question as a Decision, and leads to the questions", () => {
@@ -95,6 +99,7 @@ describe("toQueue", () => {
           blocked_reason: "Plan has a question for you.",
         }),
       ],
+      null,
       null,
     );
 
@@ -119,6 +124,7 @@ describe("toQueue", () => {
           blocked_reason: "Plan has a question for you.",
         }),
       ],
+      null,
       null,
     );
 
@@ -252,6 +258,7 @@ describe("toQueue with Brand DNA completeness", () => {
     const queue = toQueue(
       [],
       completeness(0, ["Business name", "What you sell"]),
+      null,
     );
 
     expect(queue).toHaveLength(1);
@@ -265,13 +272,13 @@ describe("toQueue with Brand DNA completeness", () => {
   });
 
   it("says how many answers are left once the business has started", () => {
-    const queue = toQueue([], completeness(3, ["Pricing", "Languages"]));
+    const queue = toQueue([], completeness(3, ["Pricing", "Languages"]), null);
 
     expect(queue[0].title).toBe("2 answers still needed in your Brand DNA");
   });
 
   it("says one answer in the singular", () => {
-    const queue = toQueue([], completeness(4, ["Pricing"]));
+    const queue = toQueue([], completeness(4, ["Pricing"]), null);
 
     expect(queue[0].title).toBe("1 answer still needed in your Brand DNA");
   });
@@ -280,6 +287,7 @@ describe("toQueue with Brand DNA completeness", () => {
     const queue = toQueue(
       [],
       completeness(0, ["One", "Two", "Three", "Four", "Five"]),
+      null,
     );
 
     expect(queue[0].meta).toBe("One, Two, Three +2 more");
@@ -298,6 +306,7 @@ describe("toQueue with Brand DNA completeness", () => {
         }),
       ],
       completeness(0, ["Business name"]),
+      null,
     );
 
     expect(queue.map((item) => item.tag)).toEqual([
@@ -308,10 +317,69 @@ describe("toQueue with Brand DNA completeness", () => {
   });
 
   it("leaves the queue alone once every Required answer is in", () => {
-    expect(toQueue([], completeness(5, []))).toEqual([]);
+    expect(toQueue([], completeness(5, []), null)).toEqual([]);
   });
 
   it("leaves the queue alone when completeness could not be read", () => {
-    expect(toQueue([], null)).toEqual([]);
+    expect(toQueue([], null, null)).toEqual([]);
+  });
+});
+
+describe("toQueue, with a Brand DNA review", () => {
+  const dueReview: DnaReview = {
+    due: true,
+    reviewed_at: "2026-09-03T09:00:00Z",
+  };
+
+  it("adds an amber Review item leading to the Brand page when a review is due", () => {
+    const queue = toQueue([], null, dueReview);
+
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({
+      tag: "Review",
+      title: "Your Brand DNA is due a review",
+      cta: "Review",
+      href: "/brand",
+    });
+    expect(queue[0].meta).toContain("Last reviewed");
+    expect(queue[0].meta).toContain("2026");
+  });
+
+  it("adds nothing when no review is due, or the review could not be read", () => {
+    expect(
+      toQueue([], null, { due: false, reviewed_at: "2026-09-10T09:00:00Z" }),
+    ).toEqual([]);
+    expect(toQueue([], null, null)).toEqual([]);
+  });
+
+  it("puts the review after decisions and before stale work, since it blocks nothing", () => {
+    const queue = toQueue(
+      [
+        campaign("stale-one", {
+          status: "running",
+          blocked_reason: "Plan rests on a decision you have since re-opened.",
+        }),
+        campaign("gate-one", {
+          status: "awaiting_approval",
+          blocked_reason: "Strategy is waiting for your approval.",
+        }),
+      ],
+      null,
+      dueReview,
+    );
+
+    expect(queue.map((item) => item.tag)).toEqual([
+      "Decision",
+      "Review",
+      "Stale",
+    ]);
+  });
+
+  it("does not repeat the date when the engine reports no last review", () => {
+    const queue = toQueue([], null, { due: true, reviewed_at: null });
+
+    expect(queue[0].meta).toBe(
+      "Check the facts every campaign is grounded in still hold.",
+    );
   });
 });

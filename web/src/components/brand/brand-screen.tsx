@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 
 import { ClarificationsTab } from "@/components/brand/clarifications-tab";
 import { EditActions } from "@/components/brand/edit-actions";
+import { ReviewBanner } from "@/components/brand/review-banner";
 import { EntryListInput } from "@/components/questionnaire/entry-list-input";
 import { StatusPill } from "@/components/ui/status-pill";
 import type {
   BrandDna,
   DnaCompleteness,
+  DnaReview,
   Question,
   Questionnaire,
 } from "@/lib/engine";
@@ -17,7 +19,10 @@ import { ENTRY_LIST_TYPE, parseEntries } from "@/lib/entry-list";
 import { questionSteps, type QuestionStep } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
-import { saveClarificationAnswer } from "@/app/(app)/brand/actions";
+import {
+  markReviewed,
+  saveClarificationAnswer,
+} from "@/app/(app)/brand/actions";
 import { deleteAnswer, saveAnswers } from "@/app/(app)/onboarding/actions";
 
 /**
@@ -44,19 +49,26 @@ type Tab = number | typeof CLARIFICATIONS_TAB;
  * last tab: the same editor, over questions a model wrote for this one
  * business rather than the curated set.
  *
+ * When a review is due, a banner above either tab asks for a look and offers
+ * a Reviewed action; saving any answer counts as that look too (ADR-0028).
+ *
  * Args:
  *   questionnaire: The published question set, which defines the sections.
  *   dna: The business's saved answers and Clarifications.
  *   completeness: Which Required answers are still owed.
+ *   review: Whether the Brand DNA is due a review, or null when that could
+ *     not be read.
  */
 export function BrandScreen({
   questionnaire,
   dna,
   completeness,
+  review,
 }: {
   questionnaire: Questionnaire;
   dna: BrandDna;
   completeness: DnaCompleteness;
+  review: DnaReview | null;
 }) {
   const router = useRouter();
   const sections = questionSteps(questionnaire);
@@ -130,6 +142,7 @@ export function BrandScreen({
       onSelect={setSelected}
     />
   );
+  const banner = <ReviewBanner review={review} markReviewed={markReviewed} />;
 
   if (selected === CLARIFICATIONS_TAB) {
     return (
@@ -137,6 +150,7 @@ export function BrandScreen({
         {nav}
         <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
           <div className="max-w-[680px]">
+            {banner}
             <h1 className="text-xl font-bold tracking-tight">Clarifications</h1>
             <p className="mt-1.5 mb-[18px] text-[13px] text-muted-foreground">
               Facts a specialist asked you for while working a campaign, in your
@@ -161,6 +175,7 @@ export function BrandScreen({
 
       <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-7">
         <div className="max-w-[680px]">
+          {banner}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-bold tracking-tight">{section.name}</h1>
             <StatusPill status={shown.complete ? "Approved" : "Needs input"} />

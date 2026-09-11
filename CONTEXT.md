@@ -68,6 +68,10 @@ _Avoid_: survey, form, intake, onboarding flow.
 A fact about the business that a Specialist found missing from the Brand DNA mid-stage and asked the tenant for. The question is written by the specialist for that one business; the answer is written by the business, never inferred. It lives in the DNA under its own **Clarifications** section, is never Required by the DNA Gate, and is reused by every later campaign so the same fact is asked for once. Editable by the tenant after the fact; an edit reruns nothing (see [ADR-0028](docs/adr/0028-clarifications-are-brand-dna-the-specialist-asks-for.md)).
 _Avoid_: follow-up question, agent question, inferred detail, assumption.
 
+**Brand DNA Review**:
+The platform's periodic ask that the business look at its Brand DNA and Clarifications again, because facts drift. A review is **due** when more than the review interval (`MARKETING_OS_DNA_REVIEW_INTERVAL`: a week by default, a minute in development) has passed since the DNA was last reviewed — by the **Reviewed** action on the Brand page, or by saving or editing any answer, so the business is never asked to review what it just changed. A business that has never marked one counts from when its answers were last saved; an incomplete DNA is owed answers, not a review. Due-ness is derived from that one `dna_reviewed_at` timestamp on every read and never stored, so the **Review** item on Home and the reminder email cannot disagree (see [ADR-0028](docs/adr/0028-clarifications-are-brand-dna-the-specialist-asks-for.md)).
+_Avoid_: audit, refresh, expiry, stale DNA (Stale is a property of deliverable versions, never of the DNA).
+
 **Campaign Goal**:
 The per-campaign business objective and success metrics (`campaigns/<slug>/goal.md`). The DNA is shared across campaigns; the goal is specific to one. It never names the business — a tenant is one business, so which business the campaign belongs to is already known.
 _Avoid_: objective doc, spec.

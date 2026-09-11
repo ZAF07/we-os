@@ -11,6 +11,8 @@ Endpoints:
   POST /brand-dna/answers               -> save answers, returning the updated report
   DELETE /brand-dna/answers/{id}        -> withdraw one answer, returning the updated report
   PUT  /brand-dna/clarifications/{id}   -> re-answer one Clarification; only the DNA changes
+  GET  /brand-dna/review                -> whether the Brand DNA is due a review
+  POST /brand-dna/review                -> mark it reviewed; every DNA write does the same
   GET  /brand-dna/segments              -> the audience segments a campaign may target
   POST /campaigns                       -> create a campaign from its goal (201)
   GET  /campaigns                       -> list active campaigns with status and progress
@@ -47,6 +49,7 @@ import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, Annotated
 from uuid import uuid4
@@ -68,7 +71,7 @@ from marketing_os.adapters.observability import (
     read_events,
     tail_trace,
 )
-from marketing_os.adapters.questionnaire import now_iso
+from marketing_os.adapters.questionnaire import iso_z, now_iso
 from marketing_os.adapters.runs import (
     AWAITING_APPROVAL,
     AWAITING_CLARIFICATION,
@@ -128,7 +131,7 @@ from marketing_os.ports import (
     TokenVerifier,
     UsageLedger,
 )
-from marketing_os.questionnaire import completeness, render_brand_dna
+from marketing_os.questionnaire import DnaReview, completeness, dna_review, render_brand_dna
 from marketing_os.schemas import (
     CLARIFICATION_HOLD,
     TIER_NAMES,
@@ -248,6 +251,38 @@ def get_settings() -> Settings:
         The process-wide :class:`Settings` instance.
     """
     return load_settings()
+
+
+def _utc_now() -> datetime:
+    """Return the current time, timezone-aware in UTC.
+
+    Returns:
+        The current instant.
+    """
+    return datetime.now(UTC)
+
+
+def _now() -> datetime:
+    """Return the current instant as the configured clock reports it.
+
+    Returns:
+        The current instant.
+    """
+    return get_clock()()
+
+
+def get_clock() -> Callable[[], datetime]:
+    """Return the clock the service reads the current time from.
+
+    The one seam for time. Whether a Brand DNA review is due is a comparison
+    against now, and a test that has to wait a week to see the answer change
+    is no test — so the clock is resolved here and a test hands in one it
+    moves by hand.
+
+    Returns:
+        A callable returning the current instant.
+    """
+    return _utc_now
 
 
 _backend_override: StorageBackend | None = None
@@ -870,6 +905,7 @@ def answer_brand_dna(body: DnaAnswersUpsert, identity: Identity) -> DnaCompleten
         identity.tenant_id, version=published.version, answers=body.answers
     )
     project_brand_dna(identity, published, record)
+    _record_dna_review(identity.tenant_id)
     answered_against = get_questionnaire_store().version(record.questionnaire_version)
     return completeness(published, record, answered_against=answered_against)
 
@@ -903,6 +939,7 @@ def remove_brand_dna_answer(question_id: str, identity: Identity) -> DnaComplete
         )
     record = get_answer_store().remove(identity.tenant_id, question_id=question_id)
     project_brand_dna(identity, published, record)
+    _record_dna_review(identity.tenant_id)
     answered_against = get_questionnaire_store().version(record.questionnaire_version)
     return completeness(published, record, answered_against=answered_against)
 
@@ -967,7 +1004,97 @@ def edit_clarification(
     except DocumentNotFoundError as exc:
         raise _http_error(exc) from exc
     project_brand_dna(identity, get_questionnaire_store().published(), record)
+    _record_dna_review(identity.tenant_id)
     return next(item for item in record.clarifications if item.id == clarification_id)
+
+
+def _record_dna_review(tenant: str) -> None:
+    """Record that the business looked at its Brand DNA just now.
+
+    Called by every write to the DNA as well as by the mark-reviewed endpoint,
+    so the owner is never asked to review what they just edited (ADR-0028).
+
+    Args:
+        tenant: The tenant whose review to record.
+    """
+    get_tenant_directory().mark_dna_reviewed(tenant, at=_now())
+
+
+def _dna_review(tenant: str) -> DnaReview:
+    """Decide whether a business's Brand DNA is due a review, from what is stored.
+
+    Derived on every read from the tenant's recorded review and its answers,
+    never stored, so it cannot drift from the truth.
+
+    Args:
+        tenant: The tenant whose DNA to judge.
+
+    Returns:
+        The review.
+    """
+    published, record = read_brand_dna(tenant)
+    answered_against = get_questionnaire_store().version(record.questionnaire_version)
+    report = completeness(published, record, answered_against=answered_against)
+    registered = get_tenant_directory().get(tenant)
+    return dna_review(
+        reviewed_at=registered.dna_reviewed_at if registered else None,
+        dna_updated_at=(datetime.fromisoformat(record.updated_at) if record.updated_at else None),
+        complete=report.complete,
+        now=_now(),
+        interval=get_settings().dna_review_interval,
+    )
+
+
+def _review_payload(review: DnaReview) -> dict[str, object]:
+    """Render a review as the API reports it.
+
+    Args:
+        review: The review.
+
+    Returns:
+        Whether it is due, and when the DNA was last reviewed as an ISO-8601
+        timestamp in the form every other timestamp the API reports takes.
+    """
+    return {
+        "due": review.due,
+        "reviewed_at": iso_z(review.reviewed_at) if review.reviewed_at else None,
+    }
+
+
+@app.get("/brand-dna/review")
+def brand_dna_review(identity: Identity) -> dict[str, object]:
+    """Report whether the business is due to look at its Brand DNA again.
+
+    Due when more than the configured interval has passed since the DNA was
+    last reviewed — by marking it so, or by editing it. A business that has
+    never marked a review counts from when its answers were last saved; one
+    whose DNA is incomplete is owed answers, not a review (ADR-0028).
+
+    Args:
+        identity: The verified identity whose tenant owns the DNA.
+
+    Returns:
+        Whether a review is due, and when the DNA was last reviewed.
+    """
+    return _review_payload(_dna_review(identity.tenant_id))
+
+
+@app.post("/brand-dna/review")
+def mark_brand_dna_reviewed(identity: Identity) -> dict[str, object]:
+    """Record that the business reviewed its Brand DNA and found it still true.
+
+    The Reviewed action on the Brand page. It writes the one timestamp the
+    Review item and the reminder email are both derived from, so both clear
+    together (ADR-0028).
+
+    Args:
+        identity: The verified identity whose tenant owns the DNA.
+
+    Returns:
+        The review as it now stands: not due.
+    """
+    _record_dna_review(identity.tenant_id)
+    return _review_payload(_dna_review(identity.tenant_id))
 
 
 ARCHIVED = "archived"
@@ -2432,6 +2559,7 @@ async def answer_clarifications(
             identity.tenant_id, clarifications=clarifications
         )
         project_brand_dna(identity, get_questionnaire_store().published(), updated)
+        _record_dna_review(identity.tenant_id)
 
     await _relaunch(
         record,

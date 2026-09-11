@@ -70,8 +70,13 @@ test("a campaign at an approval gate appears in the queue and links to it", asyn
 test("an empty queue says so rather than showing nothing", async ({ page }) => {
   await page.goto("/home");
 
-  const queueCount = await page.getByText("Decision", { exact: true }).count();
-  if (queueCount === 0) {
+  // Counted as rows rather than as Decision tags: a due Brand DNA review is a
+  // row too, and a queue holding only that one is not empty.
+  const rows = await page
+    .getByRole("list", { name: "Decision queue" })
+    .locator("li")
+    .count();
+  if (rows === 0) {
     await expect(
       page.getByText("Nothing is waiting on a decision"),
     ).toBeVisible();

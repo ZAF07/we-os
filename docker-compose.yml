@@ -92,6 +92,9 @@ services:
       MARKETING_OS_WEB: ${MARKETING_OS_WEB:-0}
       MARKETING_OS_TAVILY_API_KEY: ${MARKETING_OS_TAVILY_API_KEY:-}
       MARKETING_OS_LOG_LEVEL: ${MARKETING_OS_LOG_LEVEL:-INFO}
+      # A minute in development so the Brand DNA review can be seen without
+      # waiting a week; production keeps the engine's weekly default (ADR-0028).
+      MARKETING_OS_DNA_REVIEW_INTERVAL: ${MARKETING_OS_DNA_REVIEW_INTERVAL:-1m}
     volumes:
       # The engine reads code-shipped material — agent specs, guardrails,
       # templates — from the repo root at runtime (ADR-0003). Read-only, so a

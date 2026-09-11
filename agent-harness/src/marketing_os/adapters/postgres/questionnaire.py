@@ -19,7 +19,7 @@ from typing import Any
 
 from marketing_os.adapters.documents import validate_tenant_id
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
-from marketing_os.adapters.questionnaire import UNANSWERED_VERSION, validate_publication
+from marketing_os.adapters.questionnaire import UNANSWERED_VERSION, iso_z, validate_publication
 from marketing_os.errors import DocumentNotFoundError
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
 from marketing_os.schemas import (
@@ -326,4 +326,4 @@ def _iso(timestamp: Any) -> str:
     Returns:
         The ISO-8601 text, in the form the in-memory store writes.
     """
-    return timestamp.isoformat().replace("+00:00", "Z")
+    return iso_z(timestamp)

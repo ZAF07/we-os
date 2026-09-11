@@ -2,12 +2,14 @@
 
 import {
   getBrandDnaCompleteness,
+  getDnaReview,
   getMe,
   getUsage,
   listCampaigns,
-  EngineError,
+  nullOnEngineError,
   type CampaignSummary,
   type DnaCompleteness,
+  type DnaReview,
   type UsageReport,
 } from "@/lib/engine";
 
@@ -15,6 +17,7 @@ export interface HomeData {
   campaigns: CampaignSummary[];
   usage: UsageReport | null;
   completeness: DnaCompleteness | null;
+  review: DnaReview | null;
   tier: string | null;
 }
 
@@ -39,27 +42,27 @@ export interface HomeData {
  * same report for its nav badge, so a Home render makes the call twice; that is
  * a deliberate trade, made in the layout's own docstring.
  *
+ * Whether the Brand DNA is due a review is read for the same reason: it is the
+ * one thing waiting on a business whose campaigns are all fine (ADR-0028).
+ * Optional too, costing the Review item alone.
+ *
  * Returns:
  *   The campaigns, the usage report (null when it could not be read), what the
- *   Brand DNA still owes (null when that could not be read), and the tier the
- *   business recorded (null when it never did).
+ *   Brand DNA still owes (null when that could not be read), whether it is due
+ *   a review (null when that could not be read), and the tier the business
+ *   recorded (null when it never did).
  *
  * Throws:
  *   EngineError: When the campaigns or the tier cannot be read, since there
  *     is no useful Home without them.
  */
 export async function loadHome(): Promise<HomeData> {
-  const [{ campaigns }, usage, completeness, me] = await Promise.all([
+  const [{ campaigns }, usage, completeness, review, me] = await Promise.all([
     listCampaigns(),
-    getUsage().catch((error: unknown) => {
-      if (error instanceof EngineError) return null;
-      throw error;
-    }),
-    getBrandDnaCompleteness().catch((error: unknown) => {
-      if (error instanceof EngineError) return null;
-      throw error;
-    }),
+    getUsage().catch(nullOnEngineError),
+    getBrandDnaCompleteness().catch(nullOnEngineError),
+    getDnaReview().catch(nullOnEngineError),
     getMe(),
   ]);
-  return { campaigns, usage, completeness, tier: me.tier };
+  return { campaigns, usage, completeness, review, tier: me.tier };
 }
