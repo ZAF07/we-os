@@ -53,7 +53,7 @@ None - can start immediately.
 ## Completion
 
 - Completed: 2026-09-11
-- Commits: `8d64b68` (the slice), `58c562c` (review fixes), `76e3f05` (stat tiles, glossary), on branch `feat/clarifications-01-ask-and-halt`, merged into `main`.
+- Commits: `8d64b68` (the slice), `58c562c` (review fixes), `76e3f05` (stat tiles, glossary), on branch `feat/clarifications-01-ask-and-halt`; status commit `77397f6`; merged into `main` as `a7ac06b`.
 - Evidence per criterion:
   - Graph halts, run and campaign read `awaiting_clarification`, questions readable — `tests/test_clarifications.py` (`test_the_run_halts_and_reports_the_questions_it_is_holding_for`, `test_the_campaign_and_its_stage_read_awaiting_clarification`, `test_the_questions_and_reasons_are_readable_from_the_run`).
   - Cap from settings, `clarification` error naming what is missing — `test_asking_past_the_cap_halts_with_a_clarification_error`, `test_the_cap_is_read_from_settings`, `test_the_default_cap_is_two`; `config.py` `max_clarifications`.
