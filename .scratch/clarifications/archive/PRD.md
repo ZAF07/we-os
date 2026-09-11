@@ -1,10 +1,10 @@
 # PRD: Clarifications — the specialist asks the tenant, never guesses
 
-Status: ready-for-agent
+Status: completed
 Category: feature
 Date: 2026-09-11
 
-Governed by ADRs [0028](../../docs/adr/0028-clarifications-are-brand-dna-the-specialist-asks-for.md) (this feature), [0018](../../docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md) (the exception it makes), [0015](../../docs/adr/0015-human-approval-gates-and-versioned-deliverables.md) (the halt-and-resume it reuses), [0017](../../docs/adr/0017-stages-and-lifecycle-are-separate-axes.md), [0025](../../docs/adr/0025-one-campaign-one-person-and-a-single-worker.md), [0001](../../docs/adr/0001-ports-and-adapters-architecture.md). Vocabulary per [CONTEXT.md](../../CONTEXT.md): **Clarification**, **Brand DNA**, **Questionnaire**, **DNA Gate**, **Specialist**, **Stage**, **Action Queue**, **Guardrail**, **Usage Ledger**, **Tenant**.
+Governed by ADRs [0028](../../../docs/adr/0028-clarifications-are-brand-dna-the-specialist-asks-for.md) (this feature), [0018](../../../docs/adr/0018-human-authored-dna-from-a-curated-questionnaire.md) (the exception it makes), [0015](../../../docs/adr/0015-human-approval-gates-and-versioned-deliverables.md) (the halt-and-resume it reuses), [0017](../../../docs/adr/0017-stages-and-lifecycle-are-separate-axes.md), [0025](../../../docs/adr/0025-one-campaign-one-person-and-a-single-worker.md), [0001](../../../docs/adr/0001-ports-and-adapters-architecture.md). Vocabulary per [CONTEXT.md](../../../CONTEXT.md): **Clarification**, **Brand DNA**, **Questionnaire**, **DNA Gate**, **Specialist**, **Stage**, **Action Queue**, **Guardrail**, **Usage Ledger**, **Tenant**.
 
 ## Problem Statement
 
@@ -104,3 +104,17 @@ Tests assert what a business owner or an operator can observe: run and campaign 
 - The `.claude/` interactive layer keeps its markdown subagents unchanged. This feature lives in the compiled harness, which is the product surface (ADR-0026). A follow-up may teach the interactive orchestrator to stop and ask the operator in the same situations.
 - The reviewed-at timestamp is the single source for both the email and the in-app item, so the two can never disagree about whether a review is due.
 - ADR-0018's test that no questionnaire question asks for a crafted artifact should gain a sibling for the ask tool's description, so the rule is checked in both places it is stated.
+
+## Completion
+
+- Completed: 2026-09-11
+- Commits, one branch per issue, each merged into `main`:
+  - issue 01 `feat/clarifications-01-ask-and-halt` — `8d64b68`, `58c562c`, `76e3f05`; merged as `a7ac06b`
+  - issue 02 `feat/clarifications-02-answer-and-continue` — `fd4af45`, `9b21ce0`; merged as `ce9a925`
+  - issue 03 `feat/clarifications-03-clarifications-tab` — `32157e9`, `8c5c088`; merged as `e41d990`
+  - issue 04 `feat/clarifications-04-review-due` — `b908f63`, `f722148`; merged as `390c6d9`
+  - issue 05 `feat/clarifications-05-reminder-email` — `084b1fc`, `6acc6fc`, `125fedb`; merged as `3869f2d`
+  - this archive: `<to be filled in>`
+- Per-criterion evidence lives on the five archived issues in [issues/archive/](../issues/archive/).
+- Verified at close-out on `main` at `ecbc8da`: every Implementation Decision has a home in the code — `ask_tenant` in `adapters/tools/clarify.py`; `awaiting_clarification` on run and campaign; `max_clarifications`, `dna_review_interval`, `mailer`, Resend key and sender in `config.py`; `stage.awaiting_clarification` and `stage.clarified` in `graph/nodes.py`; the `## Clarifications` section in `questionnaire/render.py`; `GET`/`POST /runs/{id}/clarifications`, `PUT /brand-dna/clarifications/{id}`, `GET`/`POST /brand-dna/review` in the API; `dna_reviewed_at` and `dna_reminded_at` on the tenant; `send_due_reminders` and `remind_on_interval` in `reminders.py`; the `Mailer` port with Resend and no-op adapters in `adapters/mail.py`; the Home tag palette (Decision red, Review and Setup amber) and three-reason empty state; the "Asks, never assumes" line in `guardrails/shared.md`; the scripted model's `MARKETING_OS_SCRIPTED_ASK_STAGE` mode; the ADR-0018 sibling test `test_the_ask_tool_states_the_questionnaire_rule`.
+- `make check` (786 passed, 130 skipped) and `make test-postgres` (916 passed) pass on `main` at `ecbc8da`. `make test-e2e` passed on each issue's branch before its merge and was not re-run for this archive, which changes no code.
