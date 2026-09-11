@@ -3,12 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import type { ActionResult } from "@/app/(app)/campaigns/[slug]/clarifications/actions";
 import type { ClarificationAnswer, RunClarifications } from "@/lib/engine";
 import { stageTitle } from "@/lib/workspace";
-
-export interface AnswerResult {
-  error: string | null;
-}
 
 /**
  * Renders the questions a specialist stopped to ask, each with an answer box.
@@ -36,7 +33,7 @@ export function ClarificationsForm({
     slug: string,
     runId: string,
     answers: ClarificationAnswer[],
-  ) => Promise<AnswerResult>;
+  ) => Promise<ActionResult>;
 }) {
   const router = useRouter();
   const [answers, setAnswers] = useState<string[]>(() =>

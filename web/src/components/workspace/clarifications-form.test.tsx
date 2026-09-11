@@ -85,11 +85,9 @@ describe("ClarificationsForm", () => {
   });
 
   it("shows the engine's refusal and stays on the page", async () => {
-    const submit = vi
-      .fn()
-      .mockResolvedValue({
-        error: "Run 'run_1' is not waiting for a clarification.",
-      });
+    const submit = vi.fn().mockResolvedValue({
+      error: "Run 'run_1' is not waiting for a clarification.",
+    });
     render(
       <ClarificationsForm
         slug="summer-push"

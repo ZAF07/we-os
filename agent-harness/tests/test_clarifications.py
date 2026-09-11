@@ -33,6 +33,7 @@ from conftest import (
     FakeReviewer,
     Handler,
     ProgrammableChatModel,
+    answered_clarifications,
     asking_handler,
     asking_until_answered_handler,
     authenticate,
@@ -50,7 +51,7 @@ from marketing_os.errors import ClarificationLimitError
 from marketing_os.graph.graph import build_campaign_graph
 from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage, pending_hold
 from marketing_os.questionnaire import CLARIFICATIONS_HEADING, SEED_QUESTIONNAIRE, render_brand_dna
-from marketing_os.schemas import BrandDnaRecord, Clarification, DnaAnswer
+from marketing_os.schemas import BrandDnaRecord, DnaAnswer
 
 
 def _adapters(settings: Settings, saver: MemorySaver) -> dict[str, Any]:
@@ -233,17 +234,7 @@ def _answer_in_the_dna(settings: Settings, stage: str) -> str:
             DnaAnswer(question_id=question.id, answer=f"Answer to {question.field}")
             for question in SEED_QUESTIONNAIRE.required_questions
         ],
-        clarifications=[
-            Clarification(
-                id=f"clr_{index}",
-                answer=f"Answer {index}",
-                stage=stage,
-                slug=SLUG,
-                answered_at="2026-09-11T09:00:00Z",
-                **question,
-            )
-            for index, question in enumerate(ASK_QUESTIONS)
-        ],
+        clarifications=answered_clarifications(stage),
     )
     rendered = render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Acme")
     (settings.tenant_dir(TENANT) / "dna.md").write_text(rendered, encoding="utf-8")
@@ -275,7 +266,8 @@ async def test_answering_re_runs_the_stage_from_the_updated_dna(
         if "campaigns/" + SLUG + "/research.md" in text and CLARIFICATIONS_HEADING in text
     )
     assert CLARIFICATIONS_HEADING in seeded
-    assert "Answer 0" in seeded and "Answer 1" in seeded
+    for clarification in answered_clarifications("research"):
+        assert clarification.answer in seeded
 
 
 async def test_the_trace_carries_the_answer(
@@ -561,6 +553,22 @@ def test_answering_a_run_that_is_not_asking_is_refused(
     assert response.status_code == 409
     assert response.json()["type"] == "run_not_awaiting_clarification"
     assert status == "awaiting_approval"
+
+
+def test_a_colleague_cannot_answer_and_nothing_is_saved(answering_client: TestClient) -> None:
+    """A run is driven by the person who started it; to a colleague it reads as absent."""
+    from marketing_os.entrypoints.api.app import app
+
+    client = answering_client
+    run_id = _halt(client)
+    authenticate(app, user="usr_colleague")
+
+    response = client.post(f"/runs/{run_id}/clarifications", json={"answers": _answers()})
+
+    authenticate(app)
+    assert response.status_code == 404
+    assert client.get("/brand-dna").json()["clarifications"] == []
+    assert client.get(f"/runs/{run_id}").json()["status"] == "awaiting_clarification"
 
 
 def test_answering_an_unknown_run_is_404(answering_client: TestClient) -> None:

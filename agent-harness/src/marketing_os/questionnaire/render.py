@@ -111,9 +111,11 @@ def render_brand_dna(
 def _render_clarification(clarification: Clarification) -> list[str]:
     """Render one answered Clarification as its own titled block.
 
-    A heading rather than a ``- **label:** value`` line, so the field walker the
-    gate parses with stops at it: a Clarification is never a Required field,
-    and must never be mistaken for one.
+    Nothing in the block can read as a ``- **label:** value`` field line, so the
+    walker the gate parses with can never take a Clarification for a Required
+    field: the question is a heading on one line, the answer is quoted line by
+    line, and the reason follows prose on one line. An owner who happens to
+    answer in the field format changes nothing about their gate.
 
     Args:
         clarification: The question, the answer, and where it was asked.
@@ -121,15 +123,27 @@ def _render_clarification(clarification: Clarification) -> list[str]:
     Returns:
         The markdown lines for the block.
     """
-    answer = "\n".join(
+    answer_lines = [
         line.strip() for line in clarification.answer.strip().splitlines() if line.strip()
-    )
+    ]
     return [
         "",
-        f"### {clarification.question.strip()}",
+        f"### {_one_line(clarification.question)}",
         "",
-        answer,
+        *[f"> {line}" for line in answer_lines],
         "",
         f"Asked by the {clarification.stage} stage of campaign `{clarification.slug}`: "
-        f"{clarification.reason.strip()}",
+        f"{_one_line(clarification.reason)}",
     ]
+
+
+def _one_line(text: str) -> str:
+    """Collapse text onto one line.
+
+    Args:
+        text: The text, possibly spanning lines.
+
+    Returns:
+        The text with every run of whitespace folded to one space.
+    """
+    return " ".join(text.split())

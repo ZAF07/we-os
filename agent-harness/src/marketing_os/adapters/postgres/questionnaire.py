@@ -176,8 +176,7 @@ class PostgresAnswerStore:
                 _to_clarification(row)
                 for row in connection.execute(
                     "SELECT clarification_id, question, reason, answer, stage, slug, answered_at "
-                    "FROM dna_clarifications WHERE tenant_id = %s "
-                    "ORDER BY answered_at, clarification_id",
+                    "FROM dna_clarifications WHERE tenant_id = %s ORDER BY ordinal",
                     (scoped,),
                 ).fetchall()
             ]
@@ -289,12 +288,12 @@ def _to_clarification(row: Any) -> Clarification:
 
 
 def _iso(timestamp: Any) -> str:
-    """Render a timestamp as psycopg returns it as an ISO-8601 string ending in ``Z``.
+    """Render a ``timestamptz`` psycopg returned as ISO-8601 text ending in ``Z``.
 
     Args:
-        timestamp: The ``timestamptz`` value.
+        timestamp: The timestamp as psycopg returns it.
 
     Returns:
-        The ISO-8601 text.
+        The ISO-8601 text, in the form the in-memory store writes.
     """
-    return str(timestamp.isoformat()).replace("+00:00", "Z")
+    return timestamp.isoformat().replace("+00:00", "Z")

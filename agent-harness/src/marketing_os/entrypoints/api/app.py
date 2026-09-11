@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, replace
 from functools import lru_cache
@@ -2060,7 +2060,6 @@ async def _resume_run(
     if waiting != decision.stage_key:
         raise _http_error(StageNotAwaitingApprovalError(decision.stage_key))
     await _relaunch(
-        run_id,
         record,
         identity,
         held_as=AWAITING_APPROVAL,
@@ -2071,13 +2070,13 @@ async def _resume_run(
 
 
 async def _relaunch(
-    run_id: str,
     record: RunRecord,
     identity: VerifiedIdentity,
     *,
     held_as: str,
     resume: dict[str, object],
     refusal: MarketingOSError,
+    save: Callable[[], None] | None = None,
 ) -> None:
     """Continue a halted run on its own checkpoint thread with what a person supplied.
 
@@ -2086,34 +2085,51 @@ async def _relaunch(
     ADR-0028). What is left is the same for all three — bring the run store
     back into line if it disagrees with the checkpoint, and resume the run.
 
+    The run store is read again here, after the checkpoint read the caller
+    awaited, and everything from that read to the resume is synchronous. The
+    service is one event loop, so nothing else can resume the same run inside
+    that window — which is what lets ``save`` write the answers with no risk
+    of a second submission, or a colleague's, writing them too: anything that
+    does not pass is refused before the save runs.
+
     Args:
-        run_id: The halted run.
-        record: The run's record, as the registry holds it.
+        record: The run's record, as the caller read it before its checkpoint read.
         identity: The verified identity resuming the run.
         held_as: The status the record should be holding at, given what the
             checkpoint says: ``awaiting_approval`` or ``awaiting_clarification``.
         resume: The payload the pending ``interrupt()`` returns with.
-        refusal: The error to answer with when the record turns out to be
-            terminal and so cannot be resumed after all.
+        refusal: The error to answer with when the run turns out not to be
+            resumable after all — it finished, or another request resumed it.
+        save: What to record before the run continues, if anything; the
+            answers to a clarification, which the resumed stage reads.
 
     Raises:
         HTTPException: ``refusal`` when the run cannot be resumed; 404 when the
-            caller does not hold it.
+            caller does not hold it — a colleague's run reads as absent, exactly
+            as cancelling does.
     """
     settings = get_settings()
     registry = get_registry()
+    run_id = record.run_id
     tenant = record.tenant_id
     slug = record.slug
-    if record.status != held_as:
+    current = registry.get(run_id, tenant)
+    if current is None or (current.user_id and current.user_id != identity.user_id):
+        raise _http_error(DocumentNotFoundError(f"No run '{run_id}'"))
+    if current.status != held_as:
+        if current.status != record.status:
+            raise _http_error(refusal)
         _LOGGER.warning(
             "run.hold_out_of_sync run_id=%s slug=%s recorded=%s checkpoint=%s",
             run_id,
             slug,
-            record.status,
+            current.status,
             held_as,
         )
         if registry.mark_held(run_id, tenant, held_as) is None:
             raise _http_error(refusal)
+    if save is not None:
+        save()
 
     async def relaunch() -> CampaignResult:
         """Continue the halted run from where it is holding.
@@ -2254,29 +2270,12 @@ class AnswerClarifications(BaseModel):
     and leaving another would re-run it on a guess.
 
     Attributes:
-        answers: One answer per pending question, each carrying content.
+        answers: One answer per pending question. A blank answer counts as no
+            answer, so the one rule — every question needs one — is checked in
+            one place, where the answers meet the questions.
     """
 
     answers: list[ClarificationAnswer]
-
-    @field_validator("answers")
-    @classmethod
-    def _require_non_blank(cls, answers: list[ClarificationAnswer]) -> list[ClarificationAnswer]:
-        """Refuse an answer that is empty or only whitespace.
-
-        Args:
-            answers: The answers as submitted.
-
-        Returns:
-            The answers unchanged.
-
-        Raises:
-            ValueError: If any answer holds no non-whitespace character.
-        """
-        blank = [item.question for item in answers if not item.answer.strip()]
-        if blank:
-            raise ValueError(f"Every question needs an answer. Blank: {'; '.join(blank)}")
-        return answers
 
 
 def _clarifications_from(
@@ -2294,10 +2293,10 @@ def _clarifications_from(
 
     Raises:
         ValidationError: If an answer names a question the run did not ask, or
-            a question the run asked was left unanswered.
+            a question the run asked was left unanswered or answered blank.
     """
     asked = {question.question.strip(): question for question in hold.questions}
-    given = {item.question.strip(): item.answer.strip() for item in answers}
+    given = {item.question.strip(): item.answer.strip() for item in answers if item.answer.strip()}
     unknown = sorted(set(given) - set(asked))
     if unknown:
         raise ValidationError(f"The run did not ask: {'; '.join(unknown)}")
@@ -2362,17 +2361,21 @@ async def answer_clarifications(
         clarifications = _clarifications_from(hold, body.answers, record.slug)
     except ValidationError as exc:
         raise _http_error(exc) from exc
-    updated = get_answer_store().add_clarifications(
-        identity.tenant_id, clarifications=clarifications
-    )
-    project_brand_dna(identity, get_questionnaire_store().published(), updated)
+
+    def save_answers() -> None:
+        """Record the answers on the Brand DNA and re-render the markdown the re-run reads."""
+        updated = get_answer_store().add_clarifications(
+            identity.tenant_id, clarifications=clarifications
+        )
+        project_brand_dna(identity, get_questionnaire_store().published(), updated)
+
     await _relaunch(
-        run_id,
         record,
         identity,
         held_as=AWAITING_CLARIFICATION,
-        resume={"answered": True, "stage_key": hold.stage},
+        resume={"answered": True},
         refusal=RunNotAwaitingClarificationError(run_id),
+        save=save_answers,
     )
     return {"run_id": run_id, "slug": record.slug, "stage": hold.stage, "status": RUNNING}
 

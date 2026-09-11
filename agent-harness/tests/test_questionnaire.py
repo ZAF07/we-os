@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import OTHER_TENANT, TENANT
+from conftest import OTHER_TENANT, TENANT, answered_clarifications
 from marketing_os.adapters.questionnaire import (
     InMemoryAnswerStore,
     InMemoryQuestionnaireStore,
@@ -23,13 +23,7 @@ from marketing_os.questionnaire import (
     render_brand_dna,
     required_dna_fields,
 )
-from marketing_os.schemas import (
-    BrandDnaRecord,
-    Clarification,
-    DnaAnswer,
-    Question,
-    Questionnaire,
-)
+from marketing_os.schemas import BrandDnaRecord, DnaAnswer, Question, Questionnaire
 
 """Onboarding asks for facts, never for the artifacts the engine owes the
 business. These are the phrasings that would mean a question had crossed the
@@ -344,15 +338,7 @@ def test_the_ask_tool_states_the_questionnaire_rule():
     assert "never" in description
 
 
-EMAIL_LIST = Clarification(
-    id="clr_1",
-    question="Does the business have an email list it can send to?",
-    reason="Email can only be planned as a channel if there is a list to send to.",
-    answer="Yes, about 1,200 subscribers.",
-    stage="performance-plan",
-    slug="summer-push",
-    answered_at="2026-09-11T09:00:00Z",
-)
+EMAIL_LIST = answered_clarifications("performance-plan", "summer-push")[0]
 """One answered Clarification, as the performance plan of one campaign asked it."""
 
 
@@ -367,7 +353,7 @@ def test_rendered_dna_carries_clarifications_under_their_own_section_after_the_q
     assert section > markdown.index("Hard constraints")
     body = markdown[section:]
     assert f"### {EMAIL_LIST.question}" in body
-    assert EMAIL_LIST.answer in body
+    assert f"> {EMAIL_LIST.answer}" in body
     assert EMAIL_LIST.reason in body
     assert "performance-plan" in body
     assert "summer-push" in body
@@ -415,7 +401,7 @@ def test_answer_store_appends_clarifications_in_the_order_they_were_answered():
 
     store.add_clarifications(TENANT, clarifications=[second])
 
-    assert [item.id for item in store.read(TENANT).clarifications] == ["clr_1", "clr_2"]
+    assert [item.id for item in store.read(TENANT).clarifications] == ["clr_0", "clr_2"]
 
 
 def test_saving_a_questionnaire_answer_leaves_the_clarifications_alone():

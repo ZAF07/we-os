@@ -67,7 +67,11 @@ Seven tables (ADR-0014, ADR-0015, ADR-0018, ADR-0020):
     rendered into the same markdown projection, but their own table because a
     Clarification has no question id in the published set: the question text,
     the reason, and the stage and campaign that asked are what identify it.
-    One row per answer, keyed by the id the answer endpoint minted.
+    One row per answer, keyed by the id the answer endpoint minted. ``ordinal``
+    is the order the answers were saved in, which is the order the DNA renders
+    them: a stage's questions are answered together and stamped with one
+    ``answered_at``, so the timestamp alone cannot keep them in the order they
+    were asked.
 
 ``usage_ledger``
     Every billable call, with the model, the units, and what it cost, charged to
@@ -242,6 +246,7 @@ CREATE POLICY dna_answers_tenant_isolation ON dna_answers
 CREATE TABLE IF NOT EXISTS dna_clarifications (
     tenant_id        text NOT NULL,
     clarification_id text NOT NULL,
+    ordinal          bigserial NOT NULL,
     question         text NOT NULL,
     reason           text NOT NULL,
     answer           text NOT NULL,

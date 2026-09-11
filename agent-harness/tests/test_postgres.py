@@ -32,6 +32,7 @@ from conftest import (
     OTHER_TENANT,
     SLUG,
     TENANT,
+    answered_clarifications,
     asking_handler,
     asking_until_answered_handler,
     install_scripted_graph,
@@ -55,7 +56,7 @@ from marketing_os.errors import RunConflictError, TierAlreadySetError, ToolError
 from marketing_os.graph.checkpoints import clear_campaign_threads, thread_id
 from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage, pending_hold
 from marketing_os.questionnaire import CLARIFICATIONS_HEADING, SEED_QUESTIONNAIRE, render_brand_dna
-from marketing_os.schemas import BrandDnaRecord, Clarification, DnaAnswer, RunRecord
+from marketing_os.schemas import DnaAnswer, RunRecord
 
 pytestmark = pytest.mark.slow
 
@@ -489,37 +490,19 @@ async def test_a_run_holding_for_a_question_still_carries_it_after_a_restart(
     assert [question.model_dump() for question in hold.questions] == ASK_QUESTIONS
 
 
-def _email_list(tenant_slug: str = SLUG) -> Clarification:
-    """Build one answered Clarification, as a performance plan would have asked it.
-
-    Args:
-        tenant_slug: The campaign the stage was working on.
-
-    Returns:
-        The Clarification.
-    """
-    return Clarification(
-        id="clr_email_list",
-        question=ASK_QUESTIONS[0]["question"],
-        reason=ASK_QUESTIONS[0]["reason"],
-        answer="Yes, about 1,200 subscribers.",
-        stage="research",
-        slug=tenant_slug,
-        answered_at="2026-09-11T09:00:00Z",
-    )
-
-
 async def test_a_run_holding_for_a_question_continues_after_a_restart_once_answered(
     settings: Settings,
     postgres_superuser_dsn: str,
+    postgres_pool: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The acceptance criterion for answering: it works across a process boundary.
 
     Two savers stand in for a deploy, as the approval test does: the first
     process halts on the specialist's question and goes away; the second saves
-    the answer into the Brand DNA, resumes the run, and the stage re-runs from
-    that DNA and continues to the next gate (ADR-0028).
+    the answers through the Postgres answer store, renders the Brand DNA from
+    what it reads back, resumes the run, and the stage re-runs from that DNA
+    and continues to the next gate (ADR-0028).
     """
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
@@ -533,14 +516,16 @@ async def test_a_run_holding_for_a_question_continues_after_a_restart_once_answe
         halted = await arun_campaign(settings, TENANT, SLUG, **{**adapters, "checkpointer": first})
     assert halted.awaiting_clarification_stage == "research"
 
-    record = BrandDnaRecord(
-        questionnaire_version=SEED_QUESTIONNAIRE.version,
+    answers = PostgresAnswerStore(postgres_pool)
+    answers.upsert(
+        TENANT,
+        version=SEED_QUESTIONNAIRE.version,
         answers=[
             DnaAnswer(question_id=question.id, answer=f"Answer to {question.field}")
             for question in SEED_QUESTIONNAIRE.required_questions
         ],
-        clarifications=[_email_list()],
     )
+    record = answers.add_clarifications(TENANT, clarifications=answered_clarifications("research"))
     adapters["document_store"].write(
         TENANT, "dna.md", render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Acme")
     )
@@ -749,26 +734,38 @@ def test_clarifications_are_read_back_beside_the_answers(postgres_pool: Any) -> 
     """One read renders the whole Brand DNA: questionnaire answers and Clarifications."""
     store = PostgresAnswerStore(postgres_pool)
     store.upsert(TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$50")])
+    email_list = answered_clarifications("research")[0]
 
-    record = store.add_clarifications(TENANT, clarifications=[_email_list()])
+    record = store.add_clarifications(TENANT, clarifications=[email_list])
 
     assert record.answer_for("q_price_point") == "$50"
-    assert [item.id for item in record.clarifications] == ["clr_email_list"]
-    saved = record.clarifications[0]
-    assert saved.answer == "Yes, about 1,200 subscribers."
-    assert saved.reason == ASK_QUESTIONS[0]["reason"]
-    assert saved.stage == "research"
-    assert saved.slug == SLUG
-    assert saved.answered_at.endswith("Z")
-    assert PostgresAnswerStore(postgres_pool).read(TENANT).clarifications == [saved]
+    assert record.clarifications == [email_list]
+    assert PostgresAnswerStore(postgres_pool).read(TENANT).clarifications == [email_list]
     assert CLARIFICATIONS_HEADING in render_brand_dna(
         SEED_QUESTIONNAIRE, record, business_name="Acme"
     )
 
 
+def test_clarifications_answered_together_keep_the_order_they_were_asked_in(
+    postgres_pool: Any,
+) -> None:
+    """One save stamps every answer with the same time, so the time cannot order them."""
+    store = PostgresAnswerStore(postgres_pool)
+    asked = answered_clarifications("research")
+    reversed_ids = [
+        item.model_copy(update={"id": f"clr_{9 - index}"}) for index, item in enumerate(asked)
+    ]
+
+    store.add_clarifications(TENANT, clarifications=reversed_ids)
+
+    assert [item.question for item in store.read(TENANT).clarifications] == [
+        item.question for item in asked
+    ]
+
+
 def test_one_business_cannot_read_anothers_clarifications(postgres_pool: Any) -> None:
     store = PostgresAnswerStore(postgres_pool)
-    store.add_clarifications(TENANT, clarifications=[_email_list()])
+    store.add_clarifications(TENANT, clarifications=answered_clarifications("research"))
 
     assert store.read(OTHER_TENANT).clarifications == []
     with postgres_pool.connection() as connection:

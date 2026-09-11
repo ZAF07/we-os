@@ -29,6 +29,7 @@ from marketing_os.config import Settings
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE, render_brand_dna
 from marketing_os.schemas import (
     BrandDnaRecord,
+    Clarification,
     Discrepancy,
     DnaAnswer,
     ReviewVerdict,
@@ -455,6 +456,36 @@ def asking_handler(stage_key: str) -> Handler:
         return write_call(path, f"# Deliverable\n\nDraft {index} for {path}.")
 
     return handler
+
+
+def answered_clarifications(stage: str, slug: str = SLUG) -> list[Clarification]:
+    """Build :data:`ASK_QUESTIONS` as the business would have answered them.
+
+    The one shape every test that needs an answered Clarification uses, so the
+    render, the stores, the gate and the graph are all exercised with the same
+    facts: the first question answered with the subscriber count, the second
+    with the size.
+
+    Args:
+        stage: The stage that asked.
+        slug: The campaign the stage was working on when it asked.
+
+    Returns:
+        One answered Clarification per question, in the order asked.
+    """
+    answers = ["Yes, about 1,200 subscribers.", "About 1,200."]
+    return [
+        Clarification(
+            id=f"clr_{index}",
+            question=question["question"],
+            reason=question["reason"],
+            answer=answer,
+            stage=stage,
+            slug=slug,
+            answered_at="2026-09-11T09:00:00Z",
+        )
+        for index, (question, answer) in enumerate(zip(ASK_QUESTIONS, answers, strict=True))
+    ]
 
 
 def asking_until_answered_handler(stage_key: str) -> Handler:
