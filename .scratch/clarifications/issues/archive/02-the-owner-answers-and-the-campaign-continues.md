@@ -50,7 +50,7 @@ On resume the stage re-enters from its entry node with a fresh conversation seed
 ## Completion
 
 - Completed: 2026-09-11
-- Commits: `fd4af45` (the slice), `9b21ce0` (review fixes), on branch `feat/clarifications-02-answer-and-continue`; status commit and merge into `main`: see below.
+- Commits: `fd4af45` (the slice), `9b21ce0` (review fixes), on branch `feat/clarifications-02-answer-and-continue`; status commit `d36e85c`; merged into `main` as `ce9a925`.
 - Evidence per criterion:
   - Answering saves the Clarifications, resumes the run, the stage re-runs with a DNA carrying the section, and reaches its next gate — `tests/test_clarifications.py::test_answering_saves_the_clarifications_and_the_run_continues_to_its_next_gate` (API), `::test_answering_re_runs_the_stage_from_the_updated_dna` (graph).
   - Resumed stage seeded with the updated DNA, observable in the model's received messages — `test_answering_re_runs_the_stage_from_the_updated_dna` asserts the `## Clarifications` section and both answers in the conversation the specialist was handed (`ProgrammableChatModel.received`).
