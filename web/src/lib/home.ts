@@ -1,6 +1,7 @@
 import type {
   CampaignSummary,
   DnaCompleteness,
+  DnaReview,
   UsageReport,
 } from "@/lib/engine";
 import type { StatTone } from "@/components/ui/stat-card";
@@ -15,7 +16,7 @@ import { statusLabel } from "@/lib/campaigns";
  * cannot be traced to a campaign the engine reported does not belong on it.
  */
 
-export type QueueTag = "Decision" | "Setup" | "Stale";
+export type QueueTag = "Decision" | "Review" | "Setup" | "Stale";
 
 export interface QueueItem {
   slug: string;
@@ -49,27 +50,33 @@ const MISSING_FIELDS_SHOWN = 3;
 /**
  * Builds the decision queue from everything that actually needs a person.
  *
- * Four things land here. A campaign is holding at an Approval Gate, or a
+ * Five things land here. A campaign is holding at an Approval Gate, or a
  * specialist has stopped to ask the owner a question — both block a run in
  * flight, and both are tagged Decision because both are the owner's to make.
  * A campaign rests on a decision that has since been re-opened; that clears
  * itself no more than the others, which is what makes this a queue rather than
- * a status list. The last is an unfinished Brand DNA, which gates every
- * campaign stage there is, so a business with no campaigns yet still has one
- * thing waiting on it.
+ * a status list. An unfinished Brand DNA gates every campaign stage there is,
+ * so a business with no campaigns yet still has one thing waiting on it. And
+ * a Brand DNA that has not been looked at for a while is due a review: it
+ * blocks nothing, which is why it is tagged Review rather than Decision, but
+ * stale facts quietly ground every later campaign (ADR-0028).
  *
  * Args:
  *   campaigns: The tenant's active campaigns as the engine reports them.
  *   completeness: What the Brand DNA still owes, or null when that read
  *     failed — an unread report costs this one item, not the queue.
+ *   review: Whether the Brand DNA is due a review, or null when that read
+ *     failed, which costs this one item likewise.
  *
  * Returns:
  *   The queue: decisions first, since those block a run in flight; then the
- *   Brand DNA, which blocks work not yet started; then stale work.
+ *   Brand DNA, which blocks work not yet started; then the review, which
+ *   blocks nothing; then stale work.
  */
 export function toQueue(
   campaigns: CampaignSummary[],
   completeness: DnaCompleteness | null,
+  review: DnaReview | null = null,
 ): QueueItem[] {
   const waiting: QueueItem[] = [];
   const stale: QueueItem[] = [];
@@ -99,7 +106,62 @@ export function toQueue(
   }
 
   const setup = toSetupItem(completeness);
-  return [...waiting, ...(setup === null ? [] : [setup]), ...stale];
+  const due = toReviewItem(review);
+  return [
+    ...waiting,
+    ...(setup === null ? [] : [setup]),
+    ...(due === null ? [] : [due]),
+    ...stale,
+  ];
+}
+
+/**
+ * Turns a due Brand DNA review into the queue item that stands for it.
+ *
+ * The meta line says when the DNA was last looked at, so the owner can judge
+ * for themselves how much may have changed since.
+ *
+ * Args:
+ *   review: Whether a review is due and when the last one was, or null when
+ *     that could not be read.
+ *
+ * Returns:
+ *   The Review item, or null when no review is due or the read failed.
+ */
+function toReviewItem(review: DnaReview | null): QueueItem | null {
+  if (review === null || !review.due) return null;
+
+  const since =
+    review.reviewed_at === null
+      ? ""
+      : `Last reviewed ${formatDay(review.reviewed_at)}. `;
+  return {
+    slug: "brand-dna-review",
+    tag: "Review",
+    title: "Your Brand DNA is due a review",
+    meta: `${since}Check the facts every campaign is grounded in still hold.`,
+    cta: "Review",
+    href: "/brand",
+  };
+}
+
+/**
+ * Renders a timestamp as the day it fell on, for a line a person reads.
+ *
+ * Args:
+ *   iso: The timestamp, as the engine reports it.
+ *
+ * Returns:
+ *   The day, month and year — `3 Sept 2026` — in UTC, so the server and the
+ *   browser agree on the day whatever zone either is in.
+ */
+function formatDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 /**

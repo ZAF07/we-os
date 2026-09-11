@@ -21,6 +21,7 @@ all of them with hermetic fakes.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 from marketing_os.schemas import (
@@ -357,6 +358,25 @@ class TenantDirectory(Protocol):
 
         Raises:
             TierAlreadySetError: If a different tier is already recorded.
+            ToolError: If no tenant has that id.
+        """
+        ...
+
+    def mark_dna_reviewed(self, tenant_id: str, *, at: datetime) -> Tenant:
+        """Record that the business reviewed its Brand DNA at an instant (ADR-0028).
+
+        Called when the business marks a review done and whenever it edits its
+        DNA, so it is never asked to review what it just changed. Whether a
+        review is due is derived from the recorded instant on every read.
+
+        Args:
+            tenant_id: The platform tenant id.
+            at: When the review happened.
+
+        Returns:
+            The tenant, carrying the review it now has recorded.
+
+        Raises:
             ToolError: If no tenant has that id.
         """
         ...

@@ -29,3 +29,15 @@ Due-ness is derived from the timestamp on every read, never stored, so the item 
 ## Blocked by
 
 None - can start immediately.
+
+## Comments
+
+**2026-09-11 — plan (agent).** Branch `feat/clarifications-04-review-due`, worked in a scratchpad worktree.
+
+- Settings: `dna_review_interval` from `MARKETING_OS_DNA_REVIEW_INTERVAL`, a duration such as `7d`, `1m`, `20s` or bare seconds. Default a week; the dev compose passes `1m`, the e2e compose `20s`.
+- Domain: `questionnaire/review.py` holds one pure function. A review is due when the DNA is complete and now minus the last review exceeds the interval. The last review is the tenant's `dna_reviewed_at`, or when it has none, when its answers were last saved — the closest thing to "when the DNA was first completed" for a tenant seeded or migrated without one. Never stored.
+- Port: `Tenant.dna_reviewed_at`; `TenantDirectory.mark_dna_reviewed(tenant_id, at=...)` on the in-memory and Postgres directories; the passthrough directory accepts and keeps nothing, as it does for the tier. Postgres gains the column through `ADD COLUMN IF NOT EXISTS`, which the drift check picks up on its own.
+- API: `GET /brand-dna/review` reports `{due, reviewed_at}`; `POST /brand-dna/review` marks it. Saving or deleting a questionnaire answer, editing a Clarification, and answering a run's questions all mark it too. The clock is one seam, `get_clock`, so the API tests drive a fake one.
+- Seed: the seeded e2e tenant is written with a reviewed-at a month old, so the review is due from the first request and again after every reset; the blank tenant has none.
+- Web: `getDnaReview` / `markDnaReviewed`; Home's queue gains an amber Review item linking to `/brand`; the Brand screen shows a banner with a Reviewed button while due; the empty-state copy names a due review.
+- Tests: config parse; the pure function; directories (in-memory, passthrough, Postgres); API with a fake clock — due exactly past the interval, cleared by each of the four writes, not due right after completing, and the interval re-read from settings; vitest for the queue and the banner; `review.spec.ts` on the compose stack, which polls for due-ness because other specs' saves clear it and the 20 s interval brings it back.

@@ -8,6 +8,7 @@ output the QA reviewer is asked to return.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, get_args
 
 from pydantic import BaseModel, Field
@@ -87,12 +88,17 @@ class Tenant(BaseModel):
             Organization id (``org_...``).
         tier: The tier the business chose, recorded once through the tenant
             directory (ADR-0027); ``None`` until it has been.
+        dna_reviewed_at: When the business last reviewed its Brand DNA — by
+            marking it reviewed or by editing it — or ``None`` when it never
+            has. Whether a review is *due* is derived from this on every read,
+            never stored (ADR-0028).
     """
 
     tenant_id: str
     name: str
     external_auth_id: str
     tier: TierName | None = None
+    dna_reviewed_at: datetime | None = None
 
 
 class VerifiedIdentity(BaseModel):

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE, render_brand_dna
@@ -55,6 +56,14 @@ Seeded explicitly rather than left to :meth:`PostgresTenantDirectory.resolve`'s
 auto-provisioning. Auto-provisioning does produce a blank tenant, but with a
 random id nothing can name — and it does not exist until someone signs in, so
 there would be no reliable moment at which to blank it again.
+"""
+
+REVIEWED_LONG_AGO = timedelta(days=30)
+"""How far in the past the seeded tenant's last Brand DNA review is placed.
+
+Far past any interval the e2e stack could be configured with, so a review is
+due from the first request after a seed — and due again after every reset,
+however recently a spec marked it reviewed (ADR-0028).
 """
 
 BLANK_BUSINESS_NAME = "Blank Slate Testing"
@@ -209,7 +218,13 @@ def _purge_clarifications(connection: Any, tenant_id: str) -> None:
     connection.execute("DELETE FROM dna_clarifications WHERE tenant_id = %s", (tenant_id,))
 
 
-def _upsert_tenant(connection: Any, tenant_id: str, name: str, organization_id: str) -> None:
+def _upsert_tenant(
+    connection: Any,
+    tenant_id: str,
+    name: str,
+    organization_id: str,
+    dna_reviewed_at: datetime | None,
+) -> None:
     """Write the ``tenants`` row pairing a fixed tenant id to a Clerk organization.
 
     The row carries the recommended tier. Both suite tenants are businesses
@@ -219,21 +234,27 @@ def _upsert_tenant(connection: Any, tenant_id: str, name: str, organization_id: 
     test users to Get Started to choose one, and every signed-in spec would
     fail there.
 
+    The last Brand DNA review is written too, and re-established on every
+    reset for the same reason the campaigns are purged: the review spec marks
+    it reviewed, and the next run needs it due again.
+
     Args:
         connection: An open psycopg connection with administrative rights.
         tenant_id: The fixed tenant id to write.
         name: The business name to record.
         organization_id: The Clerk organization id the test user belongs to.
+        dna_reviewed_at: When the business last reviewed its Brand DNA, or
+            ``None`` for a business that never has.
     """
     connection.execute(
         """
-        INSERT INTO tenants (tenant_id, name, external_auth_id, tier)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO tenants (tenant_id, name, external_auth_id, tier, dna_reviewed_at)
+        VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT (external_auth_id)
         DO UPDATE SET tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name,
-                      tier = EXCLUDED.tier
+                      tier = EXCLUDED.tier, dna_reviewed_at = EXCLUDED.dna_reviewed_at
         """,
-        (tenant_id, name, organization_id, RECOMMENDED_TIER),
+        (tenant_id, name, organization_id, RECOMMENDED_TIER, dna_reviewed_at),
     )
 
 
@@ -254,7 +275,13 @@ def seed_complete_tenant(dsn: str, organization_id: str) -> None:
 
     version = SEED_QUESTIONNAIRE.version
     with psycopg.connect(dsn, autocommit=True) as connection:
-        _upsert_tenant(connection, TEST_TENANT_ID, TEST_BUSINESS_NAME, organization_id)
+        _upsert_tenant(
+            connection,
+            TEST_TENANT_ID,
+            TEST_BUSINESS_NAME,
+            organization_id,
+            dna_reviewed_at=datetime.now(UTC) - REVIEWED_LONG_AGO,
+        )
         _purge_campaigns(connection, TEST_TENANT_ID)
         _purge_clarifications(connection, TEST_TENANT_ID)
         for question_id, answer in ANSWERS.items():
@@ -311,7 +338,9 @@ def seed_blank_tenant(dsn: str, organization_id: str) -> None:
     import psycopg
 
     with psycopg.connect(dsn, autocommit=True) as connection:
-        _upsert_tenant(connection, BLANK_TENANT_ID, BLANK_BUSINESS_NAME, organization_id)
+        _upsert_tenant(
+            connection, BLANK_TENANT_ID, BLANK_BUSINESS_NAME, organization_id, dna_reviewed_at=None
+        )
         _purge_campaigns(connection, BLANK_TENANT_ID)
         _purge_clarifications(connection, BLANK_TENANT_ID)
         connection.execute("DELETE FROM dna_answers WHERE tenant_id = %s", (BLANK_TENANT_ID,))

@@ -108,6 +108,11 @@ services:
       # (ADR-0028). Two gates deep on purpose: every spec that runs to the
       # first or second gate is untouched by it.
       MARKETING_OS_SCRIPTED_ASK_STAGE: performance-plan
+      # Short enough that a review the brand and clarification specs clear by
+      # saving an answer is due again before the review spec gives up waiting,
+      # and long enough that marking it reviewed holds while the spec walks
+      # back to Home to see the item gone (ADR-0028).
+      MARKETING_OS_DNA_REVIEW_INTERVAL: 20s
       MARKETING_OS_WEB: "0"
       MARKETING_OS_LOG_LEVEL: INFO
     volumes:

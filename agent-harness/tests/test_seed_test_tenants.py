@@ -13,6 +13,7 @@ seed leaves in real tables, which no fake can honestly model.
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -363,3 +364,30 @@ def test_purging_leaves_another_tenants_campaigns_alone(empty_database: str) -> 
         "usage_ledger": 1,
         "checkpoints": 1,
     }
+
+
+def test_the_seeded_tenant_is_due_a_review_and_the_blank_one_is_not(empty_database: str) -> None:
+    """The review spec needs a review due; the blank tenant has no DNA to review (ADR-0028)."""
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+
+    reviewed = dict(_fetch(empty_database, "SELECT tenant_id, dna_reviewed_at FROM tenants", ()))
+
+    assert reviewed[seed_test_tenants.BLANK_TENANT_ID] is None
+    assert reviewed[seed_test_tenants.TEST_TENANT_ID] < datetime.now(UTC) - timedelta(days=29)
+
+
+def test_reseeding_puts_the_review_back_in_the_past(empty_database: str) -> None:
+    """A spec marks it reviewed; the reset must make it due again, as it purges campaigns."""
+    import psycopg
+
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+    with psycopg.connect(empty_database, autocommit=True) as connection:
+        connection.execute(
+            "UPDATE tenants SET dna_reviewed_at = now() WHERE tenant_id = %s",
+            (seed_test_tenants.TEST_TENANT_ID,),
+        )
+
+    seed_test_tenants.seed_all(empty_database, ORG_ID, BLANK_ORG_ID)
+
+    reviewed = dict(_fetch(empty_database, "SELECT tenant_id, dna_reviewed_at FROM tenants", ()))
+    assert reviewed[seed_test_tenants.TEST_TENANT_ID] < datetime.now(UTC) - timedelta(days=29)

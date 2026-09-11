@@ -9,7 +9,9 @@ runs locally, in CI, and in a backend by changing environment only.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
+from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path
 
@@ -122,6 +124,41 @@ def _parse_human_gate_stages(raw: str | None) -> list[str] | None:
             f"Unknown stage(s) in MARKETING_OS_HUMAN_GATES: {', '.join(unknown)}. Known: {known}."
         )
     return keys
+
+
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+_DEFAULT_DNA_REVIEW_INTERVAL = "7d"
+
+
+def parse_duration(raw: str) -> timedelta:
+    """Parse a duration written the way an operator writes one.
+
+    A whole number followed by ``s``, ``m``, ``h`` or ``d``, or a bare number
+    of seconds — ``7d``, ``1m``, ``20s``, ``90``. A deployment moves from a
+    one-minute dev interval to a weekly one by changing this value, so it has
+    to read as a duration rather than as a count of seconds (ADR-0028).
+
+    Args:
+        raw: The value as written.
+
+    Returns:
+        The duration.
+
+    Raises:
+        ConfigError: If the value is empty, not a whole number with a known
+            unit, or not positive.
+    """
+    match = re.fullmatch(r"(\d+)([smhd]?)", raw.strip().lower())
+    if match is None:
+        known = ", ".join(_DURATION_UNITS)
+        raise ConfigError(
+            f"Not a duration: '{raw}'. Write a whole number with a unit ({known}), "
+            "such as 7d or 1m, or a bare number of seconds."
+        )
+    seconds = int(match.group(1)) * _DURATION_UNITS[match.group(2) or "s"]
+    if seconds <= 0:
+        raise ConfigError(f"A duration must be positive, not '{raw}'.")
+    return timedelta(seconds=seconds)
 
 
 _DEFAULT_TOKEN_RATE = 0.000002
@@ -260,6 +297,10 @@ class Settings:
         max_clarifications: How many times one stage may halt to ask the
             business a question within one run. Past it the run halts with what
             is still missing rather than proceeding on a guess (ADR-0028).
+        dna_review_interval: How long after a business last reviewed its
+            Brand DNA the platform asks it to look again, from
+            ``MARKETING_OS_DNA_REVIEW_INTERVAL`` as a duration such as ``7d``
+            or ``1m``. A week by default; a minute in development (ADR-0028).
         usage_credits: What a tenant may spend before billable work is
             refused, in credits. The platform-wide default; a tenant may carry
             its own override, so raising one business's cap is a row rather than
@@ -327,6 +368,11 @@ class Settings:
     )
     max_clarifications: int = field(
         default_factory=lambda: int(os.environ.get("MARKETING_OS_MAX_CLARIFICATIONS", "2"))
+    )
+    dna_review_interval: timedelta = field(
+        default_factory=lambda: parse_duration(
+            os.environ.get("MARKETING_OS_DNA_REVIEW_INTERVAL", _DEFAULT_DNA_REVIEW_INTERVAL)
+        )
     )
     usage_credits: float = field(
         default_factory=lambda: float(os.environ.get("MARKETING_OS_CREDITS", "25"))

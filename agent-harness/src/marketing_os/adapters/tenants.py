@@ -14,14 +14,16 @@ filesystem layer, where a tenant *is* a directory name and there is no table to
 mint an id in: it reports the external id as the tenant id, which is exactly the
 pre-Postgres behaviour it preserves.
 
-The directory also records a business's **tier**, once (ADR-0027). The tier is
-the platform's own record rather than the identity provider's, so it lives on
-the tenant row beside the pairing — which is why the passthrough adapter, having
-no row, holds none.
+The directory also records a business's **tier**, once (ADR-0027), and when
+it last **reviewed its Brand DNA** (ADR-0028). Both are the platform's own
+record rather than the identity provider's, so they live on the tenant row
+beside the pairing — which is why the passthrough adapter, having no row, holds
+neither.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import uuid4
 
 from marketing_os.errors import TierAlreadySetError, ToolError
@@ -161,6 +163,27 @@ class PassthroughTenantDirectory:
         cleaned = validate_external_auth_id(tenant_id)
         return Tenant(tenant_id=cleaned, name=cleaned, external_auth_id=cleaned)
 
+    def mark_dna_reviewed(self, tenant_id: str, *, at: datetime) -> Tenant:
+        """Accept a review for a tenant, and keep none of it.
+
+        As with the tier: the filesystem layer has no row to hold a timestamp
+        in, so nothing is recorded and the tenant keeps reporting no review.
+        Accepted rather than refused so the DNA writes that count as a review
+        do not fail on the one layer that cannot keep one.
+
+        Args:
+            tenant_id: The platform tenant id, which here is the external id.
+            at: When the review happened, which is not retained.
+
+        Returns:
+            The tenant, still carrying no review.
+
+        Raises:
+            ToolError: If the tenant id is empty.
+        """
+        cleaned = validate_external_auth_id(tenant_id)
+        return Tenant(tenant_id=cleaned, name=cleaned, external_auth_id=cleaned)
+
 
 class InMemoryTenantDirectory:
     """Mints platform tenant ids and holds the pairings in a dict.
@@ -196,6 +219,7 @@ class InMemoryTenantDirectory:
             name=display_name_for(cleaned, name),
             external_auth_id=cleaned,
             tier=existing.tier if existing else None,
+            dna_reviewed_at=existing.dna_reviewed_at if existing else None,
         )
         self._remember(tenant)
         return tenant
@@ -231,6 +255,26 @@ class InMemoryTenantDirectory:
         if existing.tier is not None:
             return refuse_a_different_tier(existing, tier)
         tenant = existing.model_copy(update={"tier": tier})
+        self._remember(tenant)
+        return tenant
+
+    def mark_dna_reviewed(self, tenant_id: str, *, at: datetime) -> Tenant:
+        """Record when a tenant reviewed its Brand DNA.
+
+        Args:
+            tenant_id: The platform tenant id.
+            at: When the review happened.
+
+        Returns:
+            The tenant, carrying the review it now has recorded.
+
+        Raises:
+            ToolError: If no tenant has that id.
+        """
+        existing = self._by_tenant.get(tenant_id)
+        if existing is None:
+            raise ToolError(f"No tenant '{tenant_id}' is registered.")
+        tenant = existing.model_copy(update={"dna_reviewed_at": at})
         self._remember(tenant)
         return tenant
 

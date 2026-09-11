@@ -25,11 +25,14 @@ import { loadHome } from "./actions";
 export const dynamic = "force-dynamic";
 
 /**
- * The tag palette. Decision is red because it blocks a run in flight; Setup is
- * amber because it blocks work not yet started; Stale keeps its status colour.
+ * The tag palette. Decision is red because it blocks a run in flight; Review
+ * and Setup are amber because neither blocks a run — one asks for a look at
+ * the Brand DNA, the other blocks work not yet started; Stale keeps its
+ * status colour.
  */
 const TAG_CLASSES: Record<QueueTag, string> = {
   Decision: "bg-red-100 text-red-700",
+  Review: "bg-amber-100 text-amber-800",
   Setup: "bg-amber-100 text-amber-800",
   Stale: statusPillClasses("Stale"),
 };
@@ -56,8 +59,8 @@ export default async function HomePage() {
   }
   if (data.tier === null) redirect("/get-started");
 
-  const { campaigns, usage, completeness } = data;
-  const queue = toQueue(campaigns, completeness);
+  const { campaigns, usage, completeness, review } = data;
+  const queue = toQueue(campaigns, completeness, review);
   const active = toActiveCampaigns(campaigns);
 
   return (
@@ -117,8 +120,9 @@ function ActionQueue({ queue }: { queue: ReturnType<typeof toQueue> }) {
       {queue.length === 0 ? (
         <p className="px-[18px] py-4 text-[13px] text-muted-foreground">
           Nothing is waiting on a decision. When a campaign reaches an approval
-          gate, a specialist has a question for you, or work goes stale because
-          you re-opened something upstream, it appears here.
+          gate, a specialist has a question for you, your Brand DNA is due a
+          review, or work goes stale because you re-opened something upstream,
+          it appears here.
         </p>
       ) : (
         <ul aria-label="Decision queue">

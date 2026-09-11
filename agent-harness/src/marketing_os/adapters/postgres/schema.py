@@ -95,6 +95,11 @@ Seven tables (ADR-0014, ADR-0015, ADR-0018, ADR-0020):
     is on the column, not the value, so a later ``init-db`` never defaults a
     business that is mid-way through choosing.
 
+    When the business last **reviewed its Brand DNA** is the third fact about
+    it kept here (ADR-0028): a nullable ``timestamptz``, ``NULL`` until it
+    marks a review or edits its DNA. Whether a review is *due* is derived
+    from it on every read, so there is no column for that.
+
 **Creating the schema is an operator step, not a boot step.** The service
 connects as an ordinary role that deliberately has no rights to create tables —
 handing the runtime DDL privileges to save one deployment command is how an
@@ -166,6 +171,8 @@ BEGIN
     END IF;
 END
 $$;
+
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS dna_reviewed_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS documents (
     tenant_id  text NOT NULL,

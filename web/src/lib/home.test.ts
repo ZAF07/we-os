@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CampaignSummary,
   DnaCompleteness,
+  DnaReview,
   UsageReport,
 } from "@/lib/engine";
 import { progressWidth, toActiveCampaigns, toQueue, toStats } from "@/lib/home";
@@ -313,5 +314,64 @@ describe("toQueue with Brand DNA completeness", () => {
 
   it("leaves the queue alone when completeness could not be read", () => {
     expect(toQueue([], null)).toEqual([]);
+  });
+});
+
+describe("toQueue, with a Brand DNA review", () => {
+  const dueReview: DnaReview = {
+    due: true,
+    reviewed_at: "2026-09-03T09:00:00Z",
+  };
+
+  it("adds an amber Review item leading to the Brand page when a review is due", () => {
+    const queue = toQueue([], null, dueReview);
+
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({
+      tag: "Review",
+      title: "Your Brand DNA is due a review",
+      cta: "Review",
+      href: "/brand",
+    });
+    expect(queue[0].meta).toContain("Last reviewed");
+    expect(queue[0].meta).toContain("2026");
+  });
+
+  it("adds nothing when no review is due, or the review could not be read", () => {
+    expect(
+      toQueue([], null, { due: false, reviewed_at: "2026-09-10T09:00:00Z" }),
+    ).toEqual([]);
+    expect(toQueue([], null, null)).toEqual([]);
+  });
+
+  it("puts the review after decisions and before stale work, since it blocks nothing", () => {
+    const queue = toQueue(
+      [
+        campaign("stale-one", {
+          status: "running",
+          blocked_reason: "Plan rests on a decision you have since re-opened.",
+        }),
+        campaign("gate-one", {
+          status: "awaiting_approval",
+          blocked_reason: "Strategy is waiting for your approval.",
+        }),
+      ],
+      null,
+      dueReview,
+    );
+
+    expect(queue.map((item) => item.tag)).toEqual([
+      "Decision",
+      "Review",
+      "Stale",
+    ]);
+  });
+
+  it("does not repeat the date when the engine reports no last review", () => {
+    const queue = toQueue([], null, { due: true, reviewed_at: null });
+
+    expect(queue[0].meta).toBe(
+      "Check the facts every campaign is grounded in still hold.",
+    );
   });
 });

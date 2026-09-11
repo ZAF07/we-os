@@ -291,6 +291,30 @@ export function getBrandDnaCompleteness(): Promise<DnaCompleteness> {
 }
 
 /**
+ * Whether the business is due to look at its Brand DNA again, and when it
+ * last did — by marking a review done, or by editing an answer (ADR-0028).
+ */
+export interface DnaReview {
+  due: boolean;
+  reviewed_at: string | null;
+}
+
+/** Reports whether the Brand DNA is due a review, and when it was last reviewed. */
+export function getDnaReview(): Promise<DnaReview> {
+  return engineFetch<DnaReview>("/brand-dna/review");
+}
+
+/**
+ * Records that the business reviewed its Brand DNA and found it still true.
+ *
+ * Returns:
+ *   The review as it now stands: not due.
+ */
+export function markDnaReviewed(): Promise<DnaReview> {
+  return engineFetch<DnaReview>("/brand-dna/review", { method: "POST" });
+}
+
+/**
  * Saves questionnaire answers, upserting so onboarding can be resumed.
  *
  * Args:
