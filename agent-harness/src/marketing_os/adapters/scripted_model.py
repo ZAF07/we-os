@@ -40,17 +40,12 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
 
 from marketing_os.errors import ConfigError
+from marketing_os.questionnaire import CLARIFICATIONS_HEADING
 from marketing_os.schemas import ClarificationQuestion, ReviewVerdict
 
 PROVIDER_NAME = "scripted"
 ENABLE_FLAG = "MARKETING_OS_ALLOW_SCRIPTED_MODEL"
 ASK_STAGE_ENV = "MARKETING_OS_SCRIPTED_ASK_STAGE"
-
-CLARIFICATIONS_HEADING = "## Clarifications"
-"""The heading the Brand DNA renders answered Clarifications under.
-
-Its presence in the seed is how the ask mode tells a re-run from a first run.
-"""
 
 SCRIPTED_QUESTION = ClarificationQuestion(
     question="Does the business have an email list it can send to, and roughly how big is it?",

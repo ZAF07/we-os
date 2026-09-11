@@ -21,7 +21,13 @@ from marketing_os.adapters.documents import validate_tenant_id
 from marketing_os.adapters.postgres.schema import TENANT_SETTING
 from marketing_os.adapters.questionnaire import UNANSWERED_VERSION, validate_publication
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
-from marketing_os.schemas import BrandDnaRecord, DnaAnswer, Question, Questionnaire
+from marketing_os.schemas import (
+    BrandDnaRecord,
+    Clarification,
+    DnaAnswer,
+    Question,
+    Questionnaire,
+)
 
 
 def _to_questionnaire(version: int, published_at: Any, questions: Any) -> Questionnaire:
@@ -166,13 +172,25 @@ class PostgresAnswerStore:
                 "FROM dna_answers WHERE tenant_id = %s ORDER BY question_id",
                 (scoped,),
             ).fetchall()
+            clarifications = [
+                _to_clarification(row)
+                for row in connection.execute(
+                    "SELECT clarification_id, question, reason, answer, stage, slug, answered_at "
+                    "FROM dna_clarifications WHERE tenant_id = %s "
+                    "ORDER BY answered_at, clarification_id",
+                    (scoped,),
+                ).fetchall()
+            ]
         if not rows:
-            return BrandDnaRecord(questionnaire_version=UNANSWERED_VERSION)
+            return BrandDnaRecord(
+                questionnaire_version=UNANSWERED_VERSION, clarifications=clarifications
+            )
         updated_at = max(row[3] for row in rows)
         return BrandDnaRecord(
             questionnaire_version=max(row[2] for row in rows),
-            updated_at=updated_at.isoformat().replace("+00:00", "Z"),
+            updated_at=_iso(updated_at),
             answers=[DnaAnswer(question_id=row[0], answer=row[1]) for row in rows],
+            clarifications=clarifications,
         )
 
     def upsert(self, tenant: str, *, version: int, answers: list[DnaAnswer]) -> BrandDnaRecord:
@@ -217,3 +235,66 @@ class PostgresAnswerStore:
                 (scoped, question_id),
             )
         return self.read(tenant)
+
+    def add_clarifications(
+        self, tenant: str, *, clarifications: list[Clarification]
+    ) -> BrandDnaRecord:
+        """Record facts a specialist asked for and the business has now answered.
+
+        Args:
+            tenant: The tenant the answers belong to.
+            clarifications: The answered questions to add, ids already minted.
+
+        Returns:
+            The business's full record after the save.
+        """
+        with self._scoped_to(tenant) as (connection, scoped):
+            for item in clarifications:
+                connection.execute(
+                    "INSERT INTO dna_clarifications "
+                    "(tenant_id, clarification_id, question, reason, answer, stage, slug, "
+                    "answered_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        scoped,
+                        item.id,
+                        item.question,
+                        item.reason,
+                        item.answer,
+                        item.stage,
+                        item.slug,
+                        item.answered_at,
+                    ),
+                )
+        return self.read(tenant)
+
+
+def _to_clarification(row: Any) -> Clarification:
+    """Build a Clarification from one ``dna_clarifications`` row.
+
+    Args:
+        row: The row, in the column order the read selects.
+
+    Returns:
+        The Clarification the row records.
+    """
+    return Clarification(
+        id=row[0],
+        question=row[1],
+        reason=row[2],
+        answer=row[3],
+        stage=row[4],
+        slug=row[5],
+        answered_at=_iso(row[6]),
+    )
+
+
+def _iso(timestamp: Any) -> str:
+    """Render a timestamp as psycopg returns it as an ISO-8601 string ending in ``Z``.
+
+    Args:
+        timestamp: The ``timestamptz`` value.
+
+    Returns:
+        The ISO-8601 text.
+    """
+    return str(timestamp.isoformat()).replace("+00:00", "Z")

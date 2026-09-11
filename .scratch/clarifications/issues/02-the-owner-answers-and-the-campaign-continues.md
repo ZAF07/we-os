@@ -32,3 +32,15 @@ On resume the stage re-enters from its entry node with a fresh conversation seed
 ## Blocked by
 
 - [01 — The specialist asks and the run halts](01-the-specialist-asks-and-the-run-halts.md)
+
+## Comments
+
+**2026-09-11 — plan (agent).** Branch `feat/clarifications-02-answer-and-continue`, worked in a scratchpad worktree.
+
+- Domain: `Clarification(id, question, reason, answer, stage, slug, answered_at)` in `schemas.py`; `BrandDnaRecord.clarifications`. A Clarification is a tenant-scoped answer stored beside the questionnaire answers, so one record carries both and the DNA render reads one thing.
+- Port: `AnswerStore.add_clarifications(tenant, clarifications)`; in-memory and Postgres adapters (`dna_clarifications` table with the same RLS policy as `dna_answers`). `read()` returns them on the record. Completeness looks only at `answers`, so the gate and the report ignore them by construction; tests pin it.
+- Render: `render_brand_dna` appends a `## Clarifications` section after Required/Recommended: a note, then per Clarification a `###` question heading, the answer, and an "Asked by <stage> for campaign <slug>: <reason>" line. Headings keep the field walker from misreading them. The scripted model imports the heading from `render.py` instead of spelling its own.
+- Graph: the clarify node takes the document store; once the interrupt returns it re-reads `dna.md`, emits `stage.clarified`, and puts the fresh DNA on state, so the entry node's fresh conversation is seeded from the updated DNA — the same seeding path revise and reopen use. Nothing else in the graph changes.
+- API: `POST /runs/{run_id}/clarifications` with `{"answers": [{"question", "answer"}]}`. 404 unknown run; 409 `run_not_awaiting_clarification` when not holding for one; 422 when a pending question is unanswered or an answer names a question that was not asked; 402 when credits are spent (the stage re-runs, which bills). Saves the Clarifications, re-projects `dna.md`, resumes through the same relaunch path approve uses (`_relaunch`, generalised over the hold kind; registry `resume` and `mark_held` accept both held statuses). `GET /brand-dna` gains `clarifications`.
+- Web: the clarifications page becomes a form (one textarea per question, "Send answers"), posting through `answerClarificationsAction`, then lands on the Workspace, which follows the run to its next gate. Run rail narrates `stage.clarified`.
+- Tests: graph (answer → stage re-runs from a DNA carrying the section, seen in the model's received messages; second campaign seeded with it; trace carries `stage.clarified`), API (all refusals, DNA read, completeness unchanged), Postgres (clarification rows isolated by RLS; resume across a process boundary as the approve test does), seed script purges `dna_clarifications` on reset, e2e spec answers from Home and reaches the next gate.

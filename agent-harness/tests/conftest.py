@@ -244,11 +244,14 @@ class ProgrammableChatModel(BaseChatModel):
 
     The handler receives the current message list and the zero-based index of the
     model call, so a test can make the model write a deliverable, refuse to, or
-    revise based on the conversation so far. No network is used.
+    revise based on the conversation so far. No network is used. ``received``
+    keeps the text of every conversation the model was handed, so a test can
+    check what a specialist was seeded with — the Brand DNA it read, say.
     """
 
     handler: Handler
     calls: list[int] = Field(default_factory=list)
+    received: list[str] = Field(default_factory=list)
     model_config = {"arbitrary_types_allowed": True}
 
     @property
@@ -288,6 +291,7 @@ class ProgrammableChatModel(BaseChatModel):
         """
         index = len(self.calls)
         self.calls.append(1)
+        self.received.append("\n".join(str(message.content) for message in messages))
         message = self.handler(list(messages), index)
         return ChatResult(generations=[ChatGeneration(message=message)])
 
@@ -447,6 +451,35 @@ def asking_handler(stage_key: str) -> Handler:
             return AIMessage(content="Saved. Done.")
         path = deliverable_from(messages)
         if path.endswith(f"/{stage_key}.md"):
+            return ask_call(ASK_QUESTIONS)
+        return write_call(path, f"# Deliverable\n\nDraft {index} for {path}.")
+
+    return handler
+
+
+def asking_until_answered_handler(stage_key: str) -> Handler:
+    """Build a handler that asks at one stage until its Brand DNA carries an answer.
+
+    The seeded Brand DNA is the only thing the handler reads, so what it proves
+    is what a business owner needs to be true: a stage re-run after an answer,
+    and every later campaign's specialist, is seeded with a DNA that carries
+    the Clarifications section, and asks nothing (ADR-0028).
+
+    Args:
+        stage_key: The stage whose specialist asks :data:`ASK_QUESTIONS` while
+            the seeded DNA has no Clarifications section.
+
+    Returns:
+        A handler for :class:`ProgrammableChatModel`.
+    """
+    from marketing_os.questionnaire import CLARIFICATIONS_HEADING
+
+    def handler(messages: list[BaseMessage], index: int) -> AIMessage:
+        if isinstance(messages[-1], ToolMessage):
+            return AIMessage(content="Saved. Done.")
+        path = deliverable_from(messages)
+        seeded = "\n".join(str(message.content) for message in messages)
+        if path.endswith(f"/{stage_key}.md") and CLARIFICATIONS_HEADING not in seeded:
             return ask_call(ASK_QUESTIONS)
         return write_call(path, f"# Deliverable\n\nDraft {index} for {path}.")
 

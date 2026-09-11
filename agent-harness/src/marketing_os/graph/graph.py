@@ -94,7 +94,7 @@ def _add_stage(
     Every stage gets a clarification node beside its specialist: when the
     specialist asks the business a question instead of writing, the run halts
     there, and answering routes back to the stage's entry node so the stage
-    re-runs from the updated Brand DNA (ADR-0028).
+    re-runs from the Brand DNA the answers were saved into (ADR-0028).
 
     A ``human``-policy stage gets a further node between review and the next
     stage. Everything downstream of that node is unreachable until a person
@@ -128,7 +128,7 @@ def _add_stage(
     builder.add_node(
         review, make_review_node(settings, stage, reviewer, store, deliverables, ledger)
     )
-    builder.add_node(clarify, make_clarify_node(settings, stage))
+    builder.add_node(clarify, make_clarify_node(settings, stage, store))
     builder.add_conditional_edges(enter, route_after_enter, {"specialist": specialist, "end": END})
     builder.add_conditional_edges(
         specialist, route_after_specialist, {"clarify": clarify, "review": review}

@@ -34,6 +34,7 @@ from conftest import (
     Handler,
     ProgrammableChatModel,
     asking_handler,
+    asking_until_answered_handler,
     authenticate,
     clear_prototype_adapters,
     install_prototype_adapters,
@@ -48,7 +49,8 @@ from marketing_os.config import Settings
 from marketing_os.errors import ClarificationLimitError
 from marketing_os.graph.graph import build_campaign_graph
 from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage, pending_hold
-from marketing_os.questionnaire import SEED_QUESTIONNAIRE
+from marketing_os.questionnaire import CLARIFICATIONS_HEADING, SEED_QUESTIONNAIRE, render_brand_dna
+from marketing_os.schemas import BrandDnaRecord, Clarification, DnaAnswer
 
 
 def _adapters(settings: Settings, saver: MemorySaver) -> dict[str, Any]:
@@ -212,6 +214,115 @@ async def test_the_trace_carries_the_questions(
     assert summary["stage"] == "research"
 
 
+def _answer_in_the_dna(settings: Settings, stage: str) -> str:
+    """Write the business's answers to :data:`ASK_QUESTIONS` into its Brand DNA.
+
+    What the answer endpoint does once it has saved the Clarifications: the DNA
+    the specialists read is re-rendered so the re-run is seeded from it.
+
+    Args:
+        settings: The harness settings locating the tenant's documents.
+        stage: The stage that asked.
+
+    Returns:
+        The rendered DNA now on disk.
+    """
+    record = BrandDnaRecord(
+        questionnaire_version=SEED_QUESTIONNAIRE.version,
+        answers=[
+            DnaAnswer(question_id=question.id, answer=f"Answer to {question.field}")
+            for question in SEED_QUESTIONNAIRE.required_questions
+        ],
+        clarifications=[
+            Clarification(
+                id=f"clr_{index}",
+                answer=f"Answer {index}",
+                stage=stage,
+                slug=SLUG,
+                answered_at="2026-09-11T09:00:00Z",
+                **question,
+            )
+            for index, question in enumerate(ASK_QUESTIONS)
+        ],
+    )
+    rendered = render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Acme")
+    (settings.tenant_dir(TENANT) / "dna.md").write_text(rendered, encoding="utf-8")
+    return rendered
+
+
+async def test_answering_re_runs_the_stage_from_the_updated_dna(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stage re-enters seeded with a DNA that carries the answers, and continues."""
+    write_all_agent_specs(settings)
+    model = ProgrammableChatModel(handler=asking_until_answered_handler("research"))
+    install_scripted_graph(monkeypatch, model_factory=lambda: model)
+    adapters = _adapters(settings, MemorySaver())
+    halted = await arun_campaign(settings, TENANT, SLUG, **adapters)
+    assert halted.awaiting_clarification_stage == "research"
+    _answer_in_the_dna(settings, "research")
+
+    resumed = await arun_campaign(
+        settings, TENANT, SLUG, **adapters, resume=Command(resume={"answered": True})
+    )
+
+    assert resumed.awaiting_clarification_stage is None
+    assert resumed.awaiting_approval_stage == "brand-strategy"
+    assert [stage.stage for stage in resumed.stages] == ["research", "brand-strategy"]
+    seeded = next(
+        text
+        for text in model.received
+        if "campaigns/" + SLUG + "/research.md" in text and CLARIFICATIONS_HEADING in text
+    )
+    assert CLARIFICATIONS_HEADING in seeded
+    assert "Answer 0" in seeded and "Answer 1" in seeded
+
+
+async def test_the_trace_carries_the_answer(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_all_agent_specs(settings)
+    install_scripted_graph(monkeypatch, handler=asking_until_answered_handler("research"))
+    adapters = _adapters(settings, MemorySaver())
+    halted = await arun_campaign(settings, TENANT, SLUG, **adapters)
+    _answer_in_the_dna(settings, "research")
+
+    resumed = await arun_campaign(
+        settings, TENANT, SLUG, **adapters, resume=Command(resume={"answered": True})
+    )
+
+    assert halted.run_log is not None
+    events = read_events(settings.root / halted.run_log) + read_events(
+        settings.root / str(resumed.run_log)
+    )
+    names = [event["event"] for event in events]
+    asked = names.index("stage.awaiting_clarification")
+    clarified = names.index("stage.clarified")
+    assert asked < clarified < names.index("stage.start", clarified)
+    assert events[clarified]["stage"] == "research"
+    assert events[clarified]["questions"] == ASK_QUESTIONS
+
+
+async def test_a_later_campaign_is_seeded_with_the_answer_and_never_asks_again(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_all_agent_specs(settings)
+    model = ProgrammableChatModel(handler=asking_until_answered_handler("research"))
+    install_scripted_graph(monkeypatch, model_factory=lambda: model)
+    _answer_in_the_dna(settings, "research")
+    second = "second-push"
+    goal = settings.tenant_dir(TENANT) / "campaigns" / SLUG / "goal.md"
+    target = settings.tenant_dir(TENANT) / "campaigns" / second / "goal.md"
+    target.parent.mkdir(parents=True)
+    target.write_text(goal.read_text(encoding="utf-8"), encoding="utf-8")
+
+    result = await arun_campaign(settings, TENANT, second, **_adapters(settings, MemorySaver()))
+
+    assert result.awaiting_clarification_stage is None
+    assert result.awaiting_approval_stage == "brand-strategy"
+    assert CLARIFICATIONS_HEADING in model.received[0]
+
+
 @contextmanager
 def _client_for(
     repo: Path, monkeypatch: pytest.MonkeyPatch, handler: Handler
@@ -345,6 +456,155 @@ def test_a_run_holding_for_a_question_can_be_cancelled(client: TestClient) -> No
 
     assert response.status_code == 200
     assert client.get(f"/runs/{run_id}").json()["status"] == "cancelled"
+
+
+def _answers() -> list[dict[str, str]]:
+    """Answer both of :data:`ASK_QUESTIONS`, as the owner would from the screen.
+
+    Returns:
+        The request body's ``answers``.
+    """
+    return [
+        {"question": ASK_QUESTIONS[0]["question"], "answer": "Yes, about 1,200 subscribers."},
+        {"question": ASK_QUESTIONS[1]["question"], "answer": "About 1,200."},
+    ]
+
+
+@pytest.fixture
+def answering_client(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """Yield a client whose brand-strategy specialist asks until its DNA carries the answer.
+
+    Args:
+        repo: The hermetic repository root fixture.
+        monkeypatch: The pytest monkeypatch fixture.
+
+    Yields:
+        An entered FastAPI test client.
+    """
+    with _client_for(repo, monkeypatch, asking_until_answered_handler("brand-strategy")) as entered:
+        yield entered
+
+
+def test_answering_saves_the_clarifications_and_the_run_continues_to_its_next_gate(
+    answering_client: TestClient,
+) -> None:
+    client = answering_client
+    run_id = _halt(client)
+
+    response = client.post(f"/runs/{run_id}/clarifications", json={"answers": _answers()})
+
+    assert response.status_code == 202, response.text
+    assert response.json() == {
+        "run_id": run_id,
+        "slug": SLUG,
+        "stage": "brand-strategy",
+        "status": "running",
+    }
+    _wait_for_status(client, run_id, "awaiting_approval")
+    campaign = client.get(f"/campaigns/{SLUG}").json()
+    assert campaign["status"] == "awaiting_approval"
+    states = {stage["key"]: stage["state"] for stage in campaign["stages"]}
+    assert states["brand-strategy"] == "awaiting_approval"
+
+    dna = client.get("/brand-dna").json()
+    assert [item["question"] for item in dna["clarifications"]] == [
+        question["question"] for question in ASK_QUESTIONS
+    ]
+    saved = dna["clarifications"][0]
+    assert saved["answer"] == "Yes, about 1,200 subscribers."
+    assert saved["reason"] == ASK_QUESTIONS[0]["reason"]
+    assert saved["stage"] == "brand-strategy"
+    assert saved["slug"] == SLUG
+    assert saved["id"].startswith("clr_")
+    assert CLARIFICATIONS_HEADING in dna["markdown"]
+    assert "Yes, about 1,200 subscribers." in dna["markdown"]
+
+
+def test_the_completeness_report_ignores_the_clarifications(
+    answering_client: TestClient,
+) -> None:
+    client = answering_client
+    before = client.get("/brand-dna/completeness").json()
+    run_id = _halt(client)
+
+    client.post(f"/runs/{run_id}/clarifications", json={"answers": _answers()})
+
+    assert client.get("/brand-dna/completeness").json() == before
+
+
+def test_the_stage_re_runs_from_the_dna_the_answers_were_saved_into(
+    answering_client: TestClient,
+) -> None:
+    """The trace shows the answer landing, then the stage starting over from it."""
+    client = answering_client
+    run_id = _halt(client)
+
+    client.post(f"/runs/{run_id}/clarifications", json={"answers": _answers()})
+    _wait_for_status(client, run_id, "awaiting_approval")
+
+    events = client.get(f"/campaigns/{SLUG}/runs/{run_id}").json()["events"]
+    names = [event["event"] for event in events]
+    assert "stage.clarified" in names
+    assert names.index("stage.clarified") < len(names) - 1 - names[::-1].index("stage.start")
+
+
+def test_answering_a_run_that_is_not_asking_is_refused(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with _client_for(repo, monkeypatch, writing_handler) as client:
+        run_id = client.post(f"/campaigns/{SLUG}/run", json={}).json()["run_id"]
+        _wait_for_status(client, run_id, "awaiting_approval")
+
+        response = client.post(f"/runs/{run_id}/clarifications", json={"answers": _answers()})
+        status = client.get(f"/runs/{run_id}").json()["status"]
+
+    assert response.status_code == 409
+    assert response.json()["type"] == "run_not_awaiting_clarification"
+    assert status == "awaiting_approval"
+
+
+def test_answering_an_unknown_run_is_404(answering_client: TestClient) -> None:
+    response = answering_client.post("/runs/ghost/clarifications", json={"answers": _answers()})
+
+    assert response.status_code == 404
+
+
+def test_leaving_a_question_unanswered_is_refused(answering_client: TestClient) -> None:
+    client = answering_client
+    run_id = _halt(client)
+
+    response = client.post(f"/runs/{run_id}/clarifications", json={"answers": _answers()[:1]})
+
+    assert response.status_code == 422
+    assert ASK_QUESTIONS[1]["question"] in response.json()["message"]
+    assert client.get(f"/runs/{run_id}").json()["status"] == "awaiting_clarification"
+    assert client.get("/brand-dna").json()["clarifications"] == []
+
+
+def test_a_blank_answer_is_refused(answering_client: TestClient) -> None:
+    client = answering_client
+    run_id = _halt(client)
+    answers = _answers()
+    answers[0]["answer"] = "   "
+
+    response = client.post(f"/runs/{run_id}/clarifications", json={"answers": answers})
+
+    assert response.status_code == 422
+    assert client.get(f"/runs/{run_id}").json()["status"] == "awaiting_clarification"
+
+
+def test_an_answer_to_a_question_the_run_did_not_ask_is_refused(
+    answering_client: TestClient,
+) -> None:
+    client = answering_client
+    run_id = _halt(client)
+    answers = [*_answers(), {"question": "What colour is the logo?", "answer": "Blue"}]
+
+    response = client.post(f"/runs/{run_id}/clarifications", json={"answers": answers})
+
+    assert response.status_code == 422
+    assert "What colour is the logo?" in response.json()["message"]
+    assert client.get("/brand-dna").json()["clarifications"] == []
 
 
 def test_clarifications_404_for_an_unknown_run(client: TestClient) -> None:

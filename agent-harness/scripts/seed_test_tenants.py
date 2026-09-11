@@ -193,6 +193,22 @@ def _purge_campaigns(connection: Any, tenant_id: str) -> None:
         )
 
 
+def _purge_clarifications(connection: Any, tenant_id: str) -> None:
+    """Delete every Clarification a specialist asked the tenant during a previous run.
+
+    The clarification spec answers the scripted question, and the answer joins
+    the Brand DNA (ADR-0028) — after which the scripted specialist, seeded with
+    a DNA that carries the section, asks nothing. The spec needs it to ask, so
+    the answers go with the campaigns. The rendered ``dna.md`` is rewritten
+    from the questionnaire answers alone just below, which drops the section.
+
+    Args:
+        connection: An open autocommit connection with rights to the table.
+        tenant_id: The tenant whose Clarifications are deleted.
+    """
+    connection.execute("DELETE FROM dna_clarifications WHERE tenant_id = %s", (tenant_id,))
+
+
 def _upsert_tenant(connection: Any, tenant_id: str, name: str, organization_id: str) -> None:
     """Write the ``tenants`` row pairing a fixed tenant id to a Clerk organization.
 
@@ -240,6 +256,7 @@ def seed_complete_tenant(dsn: str, organization_id: str) -> None:
     with psycopg.connect(dsn, autocommit=True) as connection:
         _upsert_tenant(connection, TEST_TENANT_ID, TEST_BUSINESS_NAME, organization_id)
         _purge_campaigns(connection, TEST_TENANT_ID)
+        _purge_clarifications(connection, TEST_TENANT_ID)
         for question_id, answer in ANSWERS.items():
             connection.execute(
                 """
@@ -296,6 +313,7 @@ def seed_blank_tenant(dsn: str, organization_id: str) -> None:
     with psycopg.connect(dsn, autocommit=True) as connection:
         _upsert_tenant(connection, BLANK_TENANT_ID, BLANK_BUSINESS_NAME, organization_id)
         _purge_campaigns(connection, BLANK_TENANT_ID)
+        _purge_clarifications(connection, BLANK_TENANT_ID)
         connection.execute("DELETE FROM dna_answers WHERE tenant_id = %s", (BLANK_TENANT_ID,))
         connection.execute(
             "DELETE FROM documents WHERE tenant_id = %s AND path = %s",

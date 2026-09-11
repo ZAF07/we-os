@@ -17,12 +17,19 @@ from marketing_os.adapters.questionnaire import (
 )
 from marketing_os.errors import ValidationError
 from marketing_os.questionnaire import (
+    CLARIFICATIONS_HEADING,
     SEED_QUESTIONNAIRE,
     completeness,
     render_brand_dna,
     required_dna_fields,
 )
-from marketing_os.schemas import BrandDnaRecord, DnaAnswer, Question, Questionnaire
+from marketing_os.schemas import (
+    BrandDnaRecord,
+    Clarification,
+    DnaAnswer,
+    Question,
+    Questionnaire,
+)
 
 """Onboarding asks for facts, never for the artifacts the engine owes the
 business. These are the phrasings that would mean a question had crossed the
@@ -335,3 +342,87 @@ def test_the_ask_tool_states_the_questionnaire_rule():
     for term in ("positioning", "messaging", "channel"):
         assert term in description, f"the tool must forbid asking for '{term}'"
     assert "never" in description
+
+
+EMAIL_LIST = Clarification(
+    id="clr_1",
+    question="Does the business have an email list it can send to?",
+    reason="Email can only be planned as a channel if there is a list to send to.",
+    answer="Yes, about 1,200 subscribers.",
+    stage="performance-plan",
+    slug="summer-push",
+    answered_at="2026-09-11T09:00:00Z",
+)
+"""One answered Clarification, as the performance plan of one campaign asked it."""
+
+
+def test_rendered_dna_carries_clarifications_under_their_own_section_after_the_questionnaire():
+    record = answers_for(SEED_QUESTIONNAIRE)
+    record.clarifications.append(EMAIL_LIST)
+
+    markdown = render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Acme")
+
+    assert CLARIFICATIONS_HEADING == "## Clarifications"
+    section = markdown.index(CLARIFICATIONS_HEADING)
+    assert section > markdown.index("Hard constraints")
+    body = markdown[section:]
+    assert f"### {EMAIL_LIST.question}" in body
+    assert EMAIL_LIST.answer in body
+    assert EMAIL_LIST.reason in body
+    assert "performance-plan" in body
+    assert "summer-push" in body
+
+
+def test_rendered_dna_has_no_clarifications_section_until_one_is_answered():
+    markdown = render_brand_dna(
+        SEED_QUESTIONNAIRE, answers_for(SEED_QUESTIONNAIRE), business_name="Acme"
+    )
+    assert CLARIFICATIONS_HEADING not in markdown
+
+
+def test_clarifications_never_count_toward_completeness():
+    """The gate and the report ignore them: a specialist's question never locks the business out."""
+    price = next(q for q in SEED_QUESTIONNAIRE.questions if q.field == "Price point")
+    incomplete = answers_for(SEED_QUESTIONNAIRE, skip={price.id})
+    incomplete.clarifications.extend([EMAIL_LIST, EMAIL_LIST.model_copy(update={"id": "clr_2"})])
+    complete = answers_for(SEED_QUESTIONNAIRE)
+    complete.clarifications.append(EMAIL_LIST)
+
+    assert completeness(SEED_QUESTIONNAIRE, incomplete) == completeness(
+        SEED_QUESTIONNAIRE, answers_for(SEED_QUESTIONNAIRE, skip={price.id})
+    )
+    assert completeness(SEED_QUESTIONNAIRE, complete) == completeness(
+        SEED_QUESTIONNAIRE, answers_for(SEED_QUESTIONNAIRE)
+    )
+
+
+def test_answer_store_keeps_clarifications_beside_the_answers_and_scoped_to_one_tenant():
+    store = InMemoryAnswerStore()
+    store.upsert(TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$50")])
+
+    record = store.add_clarifications(TENANT, clarifications=[EMAIL_LIST])
+
+    assert record.clarifications == [EMAIL_LIST]
+    assert record.answer_for("q_price_point") == "$50"
+    assert store.read(TENANT).clarifications == [EMAIL_LIST]
+    assert store.read(OTHER_TENANT).clarifications == []
+
+
+def test_answer_store_appends_clarifications_in_the_order_they_were_answered():
+    store = InMemoryAnswerStore()
+    second = EMAIL_LIST.model_copy(update={"id": "clr_2", "question": "How big is it?"})
+    store.add_clarifications(TENANT, clarifications=[EMAIL_LIST])
+
+    store.add_clarifications(TENANT, clarifications=[second])
+
+    assert [item.id for item in store.read(TENANT).clarifications] == ["clr_1", "clr_2"]
+
+
+def test_saving_a_questionnaire_answer_leaves_the_clarifications_alone():
+    store = InMemoryAnswerStore()
+    store.add_clarifications(TENANT, clarifications=[EMAIL_LIST])
+
+    store.upsert(TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$50")])
+    store.remove(TENANT, question_id="q_price_point")
+
+    assert store.read(TENANT).clarifications == [EMAIL_LIST]

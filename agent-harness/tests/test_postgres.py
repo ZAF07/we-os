@@ -33,6 +33,7 @@ from conftest import (
     SLUG,
     TENANT,
     asking_handler,
+    asking_until_answered_handler,
     install_scripted_graph,
     prototype_adapters,
     write_all_agent_specs,
@@ -53,8 +54,8 @@ from marketing_os.config import Settings
 from marketing_os.errors import RunConflictError, TierAlreadySetError, ToolError
 from marketing_os.graph.checkpoints import clear_campaign_threads, thread_id
 from marketing_os.graph.runner import arun_campaign, awaiting_approval_stage, pending_hold
-from marketing_os.questionnaire import SEED_QUESTIONNAIRE
-from marketing_os.schemas import DnaAnswer, RunRecord
+from marketing_os.questionnaire import CLARIFICATIONS_HEADING, SEED_QUESTIONNAIRE, render_brand_dna
+from marketing_os.schemas import BrandDnaRecord, Clarification, DnaAnswer, RunRecord
 
 pytestmark = pytest.mark.slow
 
@@ -488,6 +489,75 @@ async def test_a_run_holding_for_a_question_still_carries_it_after_a_restart(
     assert [question.model_dump() for question in hold.questions] == ASK_QUESTIONS
 
 
+def _email_list(tenant_slug: str = SLUG) -> Clarification:
+    """Build one answered Clarification, as a performance plan would have asked it.
+
+    Args:
+        tenant_slug: The campaign the stage was working on.
+
+    Returns:
+        The Clarification.
+    """
+    return Clarification(
+        id="clr_email_list",
+        question=ASK_QUESTIONS[0]["question"],
+        reason=ASK_QUESTIONS[0]["reason"],
+        answer="Yes, about 1,200 subscribers.",
+        stage="research",
+        slug=tenant_slug,
+        answered_at="2026-09-11T09:00:00Z",
+    )
+
+
+async def test_a_run_holding_for_a_question_continues_after_a_restart_once_answered(
+    settings: Settings,
+    postgres_superuser_dsn: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The acceptance criterion for answering: it works across a process boundary.
+
+    Two savers stand in for a deploy, as the approval test does: the first
+    process halts on the specialist's question and goes away; the second saves
+    the answer into the Brand DNA, resumes the run, and the stage re-runs from
+    that DNA and continues to the next gate (ADR-0028).
+    """
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+    write_all_agent_specs(settings)
+    install_scripted_graph(monkeypatch, handler=asking_until_answered_handler("research"))
+    versions = InMemoryDeliverableStore()
+    adapters = {**prototype_adapters(settings.root), "deliverable_store": versions}
+
+    async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as first:
+        await first.setup()
+        halted = await arun_campaign(settings, TENANT, SLUG, **{**adapters, "checkpointer": first})
+    assert halted.awaiting_clarification_stage == "research"
+
+    record = BrandDnaRecord(
+        questionnaire_version=SEED_QUESTIONNAIRE.version,
+        answers=[
+            DnaAnswer(question_id=question.id, answer=f"Answer to {question.field}")
+            for question in SEED_QUESTIONNAIRE.required_questions
+        ],
+        clarifications=[_email_list()],
+    )
+    adapters["document_store"].write(
+        TENANT, "dna.md", render_brand_dna(SEED_QUESTIONNAIRE, record, business_name="Acme")
+    )
+    async with AsyncPostgresSaver.from_conn_string(postgres_superuser_dsn) as second:
+        resumed = await arun_campaign(
+            settings,
+            TENANT,
+            SLUG,
+            **{**adapters, "checkpointer": second},
+            resume=Command(resume={"answered": True}),
+        )
+
+    assert resumed.awaiting_clarification_stage is None
+    assert resumed.awaiting_approval_stage == "brand-strategy"
+    assert versions.latest(TENANT, SLUG, "research") is not None
+
+
 async def test_clearing_a_campaigns_threads_removes_its_durable_state(
     settings: Settings,
     postgres_superuser_dsn: str,
@@ -673,6 +743,38 @@ def test_publishing_a_question_set_changes_what_the_gate_requires(
     published = PostgresQuestionnaireStore(postgres_pool).published()
     assert published.version == tightened.version
     assert "Seasonality" in [question.field for question in published.required_questions]
+
+
+def test_clarifications_are_read_back_beside_the_answers(postgres_pool: Any) -> None:
+    """One read renders the whole Brand DNA: questionnaire answers and Clarifications."""
+    store = PostgresAnswerStore(postgres_pool)
+    store.upsert(TENANT, version=1, answers=[DnaAnswer(question_id="q_price_point", answer="$50")])
+
+    record = store.add_clarifications(TENANT, clarifications=[_email_list()])
+
+    assert record.answer_for("q_price_point") == "$50"
+    assert [item.id for item in record.clarifications] == ["clr_email_list"]
+    saved = record.clarifications[0]
+    assert saved.answer == "Yes, about 1,200 subscribers."
+    assert saved.reason == ASK_QUESTIONS[0]["reason"]
+    assert saved.stage == "research"
+    assert saved.slug == SLUG
+    assert saved.answered_at.endswith("Z")
+    assert PostgresAnswerStore(postgres_pool).read(TENANT).clarifications == [saved]
+    assert CLARIFICATIONS_HEADING in render_brand_dna(
+        SEED_QUESTIONNAIRE, record, business_name="Acme"
+    )
+
+
+def test_one_business_cannot_read_anothers_clarifications(postgres_pool: Any) -> None:
+    store = PostgresAnswerStore(postgres_pool)
+    store.add_clarifications(TENANT, clarifications=[_email_list()])
+
+    assert store.read(OTHER_TENANT).clarifications == []
+    with postgres_pool.connection() as connection:
+        connection.execute("SELECT set_config(%s, %s, true)", (TENANT_SETTING, OTHER_TENANT))
+        rows = connection.execute("SELECT clarification_id FROM dna_clarifications").fetchall()
+    assert rows == []
 
 
 def test_a_run_holding_for_a_clarification_keeps_its_campaign_claim(postgres_pool: Any) -> None:

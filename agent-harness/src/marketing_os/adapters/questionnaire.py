@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 
 from marketing_os.errors import ValidationError
 from marketing_os.questionnaire import SEED_QUESTIONNAIRE
-from marketing_os.schemas import BrandDnaRecord, DnaAnswer, Questionnaire
+from marketing_os.schemas import BrandDnaRecord, Clarification, DnaAnswer, Questionnaire
 
 UNANSWERED_VERSION = 0
 
@@ -143,7 +143,8 @@ class InMemoryAnswerStore:
         Returns:
             The business's full record after the save.
         """
-        merged = {answer.question_id: answer.answer for answer in self.read(tenant).answers}
+        existing = self.read(tenant)
+        merged = {answer.question_id: answer.answer for answer in existing.answers}
         merged.update({answer.question_id: answer.answer for answer in answers})
         record = BrandDnaRecord(
             questionnaire_version=version,
@@ -152,6 +153,7 @@ class InMemoryAnswerStore:
                 DnaAnswer(question_id=question_id, answer=text)
                 for question_id, text in merged.items()
             ],
+            clarifications=existing.clarifications,
         )
         self._records[tenant] = record
         return record.model_copy(deep=True)
@@ -175,6 +177,26 @@ class InMemoryAnswerStore:
             questionnaire_version=existing.questionnaire_version,
             updated_at=existing.updated_at,
             answers=kept,
+            clarifications=existing.clarifications,
+        )
+        self._records[tenant] = record
+        return record.model_copy(deep=True)
+
+    def add_clarifications(
+        self, tenant: str, *, clarifications: list[Clarification]
+    ) -> BrandDnaRecord:
+        """Record facts a specialist asked for and the business has now answered.
+
+        Args:
+            tenant: The tenant the answers belong to.
+            clarifications: The answered questions to add, ids already minted.
+
+        Returns:
+            The business's full record after the save.
+        """
+        existing = self.read(tenant)
+        record = existing.model_copy(
+            update={"clarifications": [*existing.clarifications, *clarifications]}
         )
         self._records[tenant] = record
         return record.model_copy(deep=True)
