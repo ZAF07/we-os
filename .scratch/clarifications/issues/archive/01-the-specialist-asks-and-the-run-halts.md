@@ -1,6 +1,6 @@
 # 01 — The specialist asks and the run halts
 
-Status: ready-for-agent
+Status: completed
 Type: task
 
 ## Parent
@@ -23,15 +23,15 @@ On Home, the **Action Queue** shows a **Decision** item for each campaign awaiti
 
 ## Acceptance criteria
 
-- [ ] Driving the compiled graph with a model that calls `ask_tenant`, the run halts, its status and the campaign's read `awaiting_clarification`, and the questions and reasons are readable from the run.
-- [ ] A model that asks more times than the cap halts the run with a `clarification` error naming what is still missing; the cap is read from settings.
-- [ ] The Usage Ledger is charged for the model calls made before the halt.
-- [ ] The run trace carries a `stage.awaiting_clarification` event with the questions.
-- [ ] The tool's description states the Questionnaire rule, and a test checks it the way the questionnaire's own rule is checked.
-- [ ] The shared rubric contains the "fact absent from the DNA" line and the guardrail-docs test covers it.
-- [ ] With the scripted model in ask mode, a run halts at the configured stage through the API.
-- [ ] Home shows a red Decision item for the halted campaign; following it shows the questions and reasons. Setup is amber.
-- [ ] `make check` and `make test-postgres` pass; `make test-e2e` passes; the halt and the Home item are confirmed in the running app.
+- [x] Driving the compiled graph with a model that calls `ask_tenant`, the run halts, its status and the campaign's read `awaiting_clarification`, and the questions and reasons are readable from the run.
+- [x] A model that asks more times than the cap halts the run with a `clarification` error naming what is still missing; the cap is read from settings.
+- [x] The Usage Ledger is charged for the model calls made before the halt.
+- [x] The run trace carries a `stage.awaiting_clarification` event with the questions.
+- [x] The tool's description states the Questionnaire rule, and a test checks it the way the questionnaire's own rule is checked.
+- [x] The shared rubric contains the "fact absent from the DNA" line and the guardrail-docs test covers it.
+- [x] With the scripted model in ask mode, a run halts at the configured stage through the API.
+- [x] Home shows a red Decision item for the halted campaign; following it shows the questions and reasons. Setup is amber.
+- [x] `make check` and `make test-postgres` pass; `make test-e2e` passes; the halt and the Home item are confirmed in the running app.
 
 ## Blocked by
 
@@ -47,3 +47,20 @@ None - can start immediately.
 - Lifecycle: `awaiting_clarification` joins the live run statuses (claim index in Postgres widened), the campaign statuses and stage states in `campaign/progress.py` (which now takes a `RunHold` rather than a stage string), the trace outcomes, and the registry's held statuses. `GET /runs/{run_id}/clarifications` reads the pending questions; 409 when the run is not holding for one.
 - Scripted model: `MARKETING_OS_SCRIPTED_ASK_STAGE=<stage>` makes that stage ask a fixed question unless the seeded DNA already carries a `## Clarifications` section. The e2e engine sets it to `performance-plan`, two gates deep, so existing specs are untouched.
 - Web: Decision item (red) for `awaiting_clarification` linking to `/campaigns/{slug}/clarifications`, a read-only page listing questions and reasons; the Workspace rail says the stage has a question and links there; the run rail narrates the new event.
+
+**2026-09-11 — done (agent).** Gates on the final tree: `make check` 683 passed; `make test-postgres` 796 passed; `make test-e2e` 74 passed, including the new `clarifications.spec.ts`, which walks two approvals on the scripted stack, sees the Workspace say the plan has a question, finds the red Decision item on Home, and follows it to the questions and reasons. Code review (standards + spec) findings were resolved in the second commit: the limit error carries typed questions, the cap halts with the same `stage.failed` event a spent QA budget emits, re-opening releases a run holding for an answer, the ledger test proves real tokens were charged, and the Postgres suite reads the questions back after a restart. The Home stat tiles became named groups to fix a pre-existing spec race the longer run exposed. Not built here, by design: answering and resuming (issue 02), the DNA `## Clarifications` section (issue 02).
+
+## Completion
+
+- Completed: 2026-09-11
+- Commits: `8d64b68` (the slice), `58c562c` (review fixes), `76e3f05` (stat tiles, glossary), on branch `feat/clarifications-01-ask-and-halt`, merged into `main`.
+- Evidence per criterion:
+  - Graph halts, run and campaign read `awaiting_clarification`, questions readable — `tests/test_clarifications.py` (`test_the_run_halts_and_reports_the_questions_it_is_holding_for`, `test_the_campaign_and_its_stage_read_awaiting_clarification`, `test_the_questions_and_reasons_are_readable_from_the_run`).
+  - Cap from settings, `clarification` error naming what is missing — `test_asking_past_the_cap_halts_with_a_clarification_error`, `test_the_cap_is_read_from_settings`, `test_the_default_cap_is_two`; `config.py` `max_clarifications`.
+  - Ledger charged before the halt — `test_the_ledger_is_charged_for_the_work_before_the_halt` (units > 0).
+  - Trace carries `stage.awaiting_clarification` with the questions — `test_the_trace_carries_the_questions`.
+  - Tool description states the Questionnaire rule; sibling test — `adapters/tools/clarify.py`; `tests/test_questionnaire.py::test_the_ask_tool_states_the_questionnaire_rule`.
+  - Shared rubric line and docs test — `guardrails/shared.md` "Asks, never assumes"; `tests/test_guardrail_docs.py::test_shared_rubric_fails_a_recommendation_resting_on_a_fact_absent_from_the_dna`.
+  - Scripted ask mode halts through the API — `tests/test_scripted_model.py` ask-mode tests; `web/tests/clarifications.spec.ts` on the compose stack with `MARKETING_OS_SCRIPTED_ASK_STAGE=performance-plan`.
+  - Home shows a red Decision item leading to the questions; Setup amber — `web/src/app/(app)/home/page.tsx` `TAG_CLASSES`; `clarifications.spec.ts` asserts `text-red-700`; `onboarding.spec.ts` asserts `text-amber-800`.
+  - `make check`, `make test-postgres`, `make test-e2e` pass; halt and Home item confirmed in the running app by the e2e spec above.
